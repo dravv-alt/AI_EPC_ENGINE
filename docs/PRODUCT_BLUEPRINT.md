@@ -158,6 +158,291 @@ Given a system or commissioning gate, produce a **defensible readiness score wit
 - Fine-tuned models
 - Blockchain notarization
 
+## What We Are Actually Building
+
+Pramana Cx is a **responsive web application and installable PWA**, not a chatbot and not a collection of disconnected AI agents. The main interface is a commissioning control room: a project dashboard, a source-document workspace, a human review queue, a system/gate readiness view, field evidence capture, change impact, and turnover export.
+
+The first complete pilot supports one project, one electrical or cooling system, and one commissioning gate. A user must be able to move through this full loop without leaving the product:
+
+1. Create a project and assign roles.
+2. Upload specifications, an asset register, a test procedure, and an issue log.
+3. Review AI-extracted requirement proposals against the exact source page.
+4. Link accepted requirements to a system, assets, gate, tests, and required evidence.
+5. Capture evidence, record test outcomes, and assign unresolved blockers.
+6. See rules-based readiness and the reason for every red, amber, unknown, or ready state.
+7. Upload a revised source and see which evidence and decisions became stale.
+8. Record an authorized gate decision.
+9. Generate and verify a turnover evidence pack.
+
+### Frontend Information Architecture
+
+The desktop layout uses a persistent left navigation rail, project switcher, page header, and contextual right-side detail drawer. On mobile, the rail becomes a bottom navigation plus a `More` sheet. Dense tables become filterable card lists; critical actions remain reachable with one thumb.
+
+| Navigation item | What it opens | Primary users |
+|---|---|---|
+| **Overview** | Project health, gate readiness, urgent blockers, stale evidence, pending reviews | Everyone |
+| **Sources** | Documents, versions, imports, processing status, and source viewer | Commissioning engineer, QA/QC |
+| **Requirements** | AI proposal review queue and accepted requirement register | Reviewer, commissioning engineer |
+| **Systems** | System, asset, and gate hierarchy | Cx manager, MEP manager |
+| **Readiness** | Gate matrix, evidence coverage, blockers, and approval state | Cx manager, owner representative |
+| **Actions** | Findings, NCR-like issues, assignments, comments, and due dates | QA/QC, MEP manager, field engineer |
+| **Field Capture** | Offline-capable evidence and test-result capture | Field engineer |
+| **Changes** | Revision comparison and downstream blast radius | Reviewer, QA/QC |
+| **Turnover** | Evidence-pack preview, generation, download, and verification | Cx manager, operations readiness |
+| **Audit & Settings** | Members, roles, gate rules, document precedence, audit trail, retention | Project admin, approver |
+
+### Global Application Shell
+
+Every authenticated screen contains:
+
+- **Project switcher:** shows the active project and prevents cross-project actions.
+- **Global search:** searches exact tags, clause numbers, assets, findings, and source text; results always show their project and source.
+- **Sync indicator:** `Online`, `Offline`, `3 pending`, `Syncing`, or `Sync failed`.
+- **Notifications button:** opens assignments, overdue actions, failed jobs, review requests, and approval requests.
+- **Help / keyboard shortcuts button:** opens task-specific guidance without hiding the current record.
+- **User menu:** profile, TOTP setup, organization switch, and sign out.
+- **Context drawer:** opens the selected source, evidence, asset, finding, or audit history without losing table filters.
+
+No global button can silently alter readiness. Every state-changing action shows the affected record, required authority, and resulting audit event.
+
+### Screen 1: Sign In and Project Selection
+
+**Purpose:** Authenticate the user and establish the tenant/project boundary before any data is loaded.
+
+**Visible UI:** email magic-link form, TOTP challenge for approvers, recent projects, project role, last activity, and an empty state for first-time users.
+
+**Buttons and actions:**
+
+| Button | Result |
+|---|---|
+| `Send magic link` | Sends a single-use login link and shows delivery status. |
+| `Verify code` | Completes TOTP verification for protected approval actions. |
+| `Open project` | Loads the selected project's Overview page. |
+| `Create project` | Opens the guided project setup flow for authorized users. |
+| `Request access` | Sends a request to the project administrator; it does not grant access automatically. |
+
+### Screen 2: Guided Project Setup
+
+**Purpose:** Create the minimum controlled workspace needed for reliable readiness.
+
+The setup is a five-step wizard:
+
+1. **Project details:** name, code, timezone, location, and retention period.
+2. **System and gate:** choose electrical/cooling, name the first system, and define L3/L4/L5 or a custom gate.
+3. **Authority:** assign project administrator, requirement reviewer, evidence owners, and gate approver.
+4. **Document precedence:** rank owner's requirements, approved specifications, submittals, procedures, and field records.
+5. **Import data:** upload sources now or continue to an empty workspace.
+
+**Buttons:** `Back`, `Save draft`, `Continue`, `Invite member`, `Remove member`, `Add precedence rule`, `Upload now`, and `Create project`.
+
+`Create project` stays disabled until the project has a name, timezone, one system, one gate, and one project administrator. The UI lists missing setup items instead of failing after submission.
+
+### Screen 3: Project Overview
+
+**Purpose:** Tell the team what needs attention now, not just how many records exist.
+
+**Top summary cards:**
+
+- Gate readiness: `READY`, `BLOCKED`, `IN REVIEW`, or `UNKNOWN`.
+- Evidence coverage: accepted mandatory evidence / total mandatory evidence.
+- Open blockers: critical, high, overdue, and unassigned.
+- Stale evidence: count created by document or asset revisions.
+- Pending human reviews: requirements, evidence, and decision requests.
+- Latest turnover pack: generated time, baseline hash, and verification state.
+
+**Main panels:** gate readiness timeline, top blockers by owner, recent changes, processing jobs, and activity feed.
+
+**Primary buttons:** `Upload sources`, `Import asset register`, `Review requirements`, `Open readiness board`, `Add evidence`, `Record test result`, `Create action`, and `Generate turnover pack`.
+
+Each card is clickable and opens its filtered underlying records. There is no decorative AI score with no explanation.
+
+### Screen 4: Sources and Imports
+
+**Purpose:** Control every file and structured import that may support a readiness claim.
+
+**Visible UI:** source table with title, type, revision, authority status, effective date, uploader, processing state, page count, hash, and superseded-by relationship. Filters cover source type, status, revision, processing failure, and date.
+
+**Primary buttons:**
+
+| Button | Result |
+|---|---|
+| `Upload sources` | Opens multi-file upload for PDF, XLSX, CSV, image, and email export. |
+| `Import asset register` | Opens column mapping and row-validation preview before import. |
+| `Import issue log` | Imports controlled actions/findings with an error report for invalid rows. |
+| `Download CSV template` | Downloads the supported asset, milestone, or issue schema. |
+| `Add revision` | Uploads a new version against an existing logical document. |
+| `Compare revisions` | Opens changed pages, clauses, tables, and downstream impact. |
+| `View source` | Opens the source viewer at page one. |
+| `Retry processing` | Re-runs a failed idempotent ingestion job. |
+| `Archive` | Removes a source from active lists but preserves its audit history. |
+
+The upload drawer requires document type, revision, effective date, and authority state. A duplicate SHA-256 hash produces `Already uploaded` and links to the existing record instead of creating another source.
+
+### Screen 5: Source Viewer
+
+**Purpose:** Let a skeptical engineer verify every extracted claim against the original file.
+
+**Layout:** document pages on the left; extracted regions, requirements, linked assets, and history on the right. Selecting a requirement scrolls to and highlights its exact page region. Tables retain row and column coordinates where extraction supports them.
+
+**Buttons:** `Previous match`, `Next match`, `Zoom`, `Rotate`, `Open original`, `Copy citation`, `Create requirement`, `Report extraction issue`, and `View revision history`.
+
+`Create requirement` pre-fills the highlighted source text but still requires a reviewer to define modality, value, unit, tolerance, and applicability before acceptance.
+
+### Screen 6: Requirement Review Queue
+
+**Purpose:** Convert AI extraction into controlled project requirements through explicit human judgment.
+
+**Queue columns:** source, clause, proposed statement, system/asset match, confidence, value/unit validation, duplicate warning, reviewer, and age.
+
+Selecting a row opens a split view with the source region, proposed structured fields, similar accepted requirements, and affected gate preview.
+
+**Buttons and rules:**
+
+| Button | Who can use it | Result |
+|---|---|---|
+| `Accept` | Reviewer | Makes the requirement eligible for readiness after required links are complete. |
+| `Accept & next` | Reviewer | Saves and opens the next proposal without losing filters. |
+| `Edit proposal` | Reviewer | Opens typed fields for statement, modality, value, unit, tolerance, and applicability. |
+| `Reject` | Reviewer | Requires a reason and preserves the proposal for audit/evaluation. |
+| `Mark duplicate` | Reviewer | Links the proposal to the controlled requirement it duplicates. |
+| `Assign reviewer` | Commissioning manager | Changes ownership and due date. |
+| `Open source` | Any project member | Opens the exact cited region. |
+| `Bulk reject exact duplicates` | Reviewer | Acts only on hash/text-exact duplicates after confirmation. |
+
+There is deliberately no `Accept all AI suggestions` button.
+
+### Screen 7: Systems, Assets, and Gates
+
+**Purpose:** Show the physical and commissioning hierarchy that evidence applies to.
+
+**Layout:** expandable system tree on the left, asset/gate table in the centre, selected item detail drawer on the right. Asset rows show tag, type, vendor, serial, installation state, test state, evidence coverage, open findings, and gate impact.
+
+**Buttons:** `Add system`, `Add asset`, `Import assets`, `Add custom gate`, `Link requirement`, `Attach evidence`, `Open QR label`, `Export filtered CSV`, and `View readiness`.
+
+The `Open QR label` action creates a project-scoped deep link for field capture; scanning it never bypasses sign-in or project authorization.
+
+### Screen 8: Readiness Board and Gate Detail
+
+**Purpose:** Provide the product's core answer: what is required, what proves it, and what blocks acceptance.
+
+**Readiness Board:** rows are systems/assets, columns are configured gates, and each cell displays one state:
+
+- **Green / Ready:** every deterministic condition is satisfied for the current baseline.
+- **Red / Blocked:** a failed test, blocking finding, or mandatory prerequisite prevents readiness.
+- **Amber / In review:** required evidence exists but is pending authorized review or approval.
+- **Grey / Unknown:** the source, mapping, precedence, or required evidence is incomplete.
+- **Blue / Approved:** an authorized decision exists for the current evidence baseline.
+- **Striped / Stale:** a later change invalidated evidence or a prior decision baseline.
+
+Opening a cell shows sections for `Requirements`, `Evidence`, `Tests`, `Blockers`, `Prerequisite gates`, `Approvals`, and `History`. Each failed condition has an owner, source, due date, and next action.
+
+**Buttons:** `View source`, `Add evidence`, `Record test result`, `Create blocker`, `Assign owner`, `Request review`, `Request gate approval`, `Compare baseline`, `Export gate report`, and `Refresh status`.
+
+`Refresh status` reruns deterministic rules only. It cannot turn a missing human approval into green.
+
+### Screen 9: Actions and Findings
+
+**Purpose:** Turn readiness gaps into accountable work.
+
+**Visible UI:** list/Kanban toggle; filters for severity, state, system, gate, owner, contractor, due date, and stale status. Finding detail includes description, linked requirements/evidence, source citations, comments, files, disposition history, and audit events.
+
+**Buttons:** `Create action`, `Assign owner`, `Set due date`, `Add comment`, `Attach evidence`, `Link requirement`, `Mark ready for review`, `Accept resolution`, `Reject resolution`, and `Reopen`.
+
+Only an authorized reviewer can use `Accept resolution`. The system does not expose an AI-driven `Close NCR` action.
+
+### Screen 10: Field Capture and Test Run
+
+**Purpose:** Capture usable evidence where the work happens, including with intermittent connectivity.
+
+**Visible UI:** asset/gate selector, QR scan, evidence type, photo/file capture, measurement with unit, observation, test step list, instrument/calibration reference, timestamp, and sync state.
+
+**Buttons:** `Scan QR`, `Take photo`, `Choose file`, `Add measurement`, `Save offline`, `Submit evidence`, `Start test`, `Save step`, `Mark step pass`, `Mark step fail`, `Add witness`, `Complete test`, and `Retry sync`.
+
+Failed test steps require a note and may create a blocker. `Complete test` remains disabled until all mandatory steps have a result and the required witness/instrument fields are present. Offline records are labelled `Pending sync` and never count as accepted evidence until the server validates them.
+
+### Screen 11: Change Blast Radius
+
+**Purpose:** Show what a revision invalidates before the project relies on stale evidence.
+
+**Layout:** old/new source comparison on the left and an impact tree on the right: changed clause -> requirement -> asset/system -> test/evidence -> gate -> decision. The screen distinguishes directly changed records from inferred downstream impact.
+
+**Buttons:** `Open old source`, `Open new source`, `Accept change`, `Keep existing interpretation`, `Mark evidence stale`, `Request reassessment`, `Assign affected items`, and `Export impact report`.
+
+`Keep existing interpretation` requires a reason and approval authority; it does not erase the changed source. A previous gate approval remains visible but is marked stale when its evidence baseline changes.
+
+### Screen 12: Gate Approval
+
+**Purpose:** Record the authorized engineering decision after the rules engine and human reviews are complete.
+
+**Visible UI:** gate state, current evidence baseline hash, unresolved blockers, stale items, passed tests, prior decisions, approval authority, and mandatory reason field.
+
+**Buttons:** `Approve gate`, `Reject gate`, `Record waiver`, `Return for rework`, `View evidence baseline`, and `Verify TOTP`.
+
+`Approve gate` is disabled when deterministic blockers remain, the user lacks the approval role, TOTP is not verified, or the displayed baseline is no longer current. `Record waiver` requires a reason, scope, expiry/review condition, and linked authority; it does not edit the underlying failed requirement.
+
+### Screen 13: Turnover Pack and Manifest Verification
+
+**Purpose:** Produce a handover artifact whose contents and decisions can be checked independently.
+
+**Pack preview:** project/system/gate scope, included documents and revisions, accepted requirements, evidence, tests, findings/dispositions, decisions, audit history, rule/model versions, and excluded/missing items.
+
+**Buttons:** `Generate pack`, `Cancel job`, `Download PDF`, `Download evidence ZIP`, `Copy manifest hash`, `Verify manifest`, `Regenerate from latest baseline`, and `Share expiring link`.
+
+Generation runs asynchronously. The UI displays `Queued`, `Collecting evidence`, `Building manifest`, `Rendering`, `Complete`, or `Failed`. A pack generated from an older baseline remains downloadable but is visibly labelled `Superseded`.
+
+### Screen 14: Audit, Members, and Project Settings
+
+**Purpose:** Make authority, configuration, and history inspectable.
+
+**Tabs:** `Members & roles`, `Gate rules`, `Document precedence`, `Evidence types`, `Notifications`, `Retention`, `Integrations`, and `Audit log`.
+
+**Buttons:** `Invite member`, `Change role`, `Revoke access`, `Require TOTP`, `Add readiness rule`, `Test rule`, `Publish rule version`, `Add precedence rule`, `Export audit log`, and `Request project deletion`.
+
+Published readiness-rule versions are immutable. Editing creates a draft version; `Publish rule version` shows which gates will be recalculated and requires confirmation.
+
+### Role Permissions Visible in the Frontend
+
+| Role | Can do | Cannot do |
+|---|---|---|
+| Project administrator | Configure project, members, roles, rules, retention, and imports | Approve a gate unless separately assigned as approver |
+| Commissioning manager | Manage systems/gates, assignments, reviews, and approval requests | Override deterministic blockers or sign without authority |
+| Requirement reviewer | Accept/edit/reject requirement proposals and reassess changes | Approve a gate by virtue of review access alone |
+| Field engineer | Capture evidence, execute assigned tests, comment on actions | Accept their own evidence or close findings |
+| QA/QC lead | Create findings, review evidence, accept/reject resolutions | Alter original source files or erase audit history |
+| Gate approver | Approve/reject/waive the current baseline after TOTP | Change evidence or source records during approval |
+| Owner/operations viewer | Read readiness, sources, history, and packs | Modify controlled project records |
+
+Disabled buttons show the missing permission or prerequisite on hover/tap. The UI does not merely hide authorization failures; the API independently enforces every permission.
+
+### Required Frontend States
+
+Every data screen ships with these states, not just the populated happy path:
+
+- **Loading:** skeletons retain table/card shape; state-changing buttons stay disabled.
+- **Empty:** explains what data is missing and provides the correct setup action.
+- **Filtered empty:** shows active filters and a `Clear filters` button.
+- **Error:** shows a request/job identifier and `Retry`; sensitive provider details remain hidden.
+- **Offline:** shows cached read-only data, pending local writes, and the last successful sync time.
+- **Conflict:** prevents overwrite and offers `Reload latest` plus a comparison of changed fields.
+- **Access denied:** states the required role and offers `Request access` without revealing protected record data.
+- **Superseded/stale:** keeps old records visible with a strong banner and link to the replacing version.
+- **Unknown:** explicitly lists the missing source, mapping, rule, or authority; it is never styled as success.
+
+### The Hackathon/Pilot Demo That Must Work
+
+The polished demo uses a synthetic UPS commissioning package and takes five to seven minutes:
+
+1. Open Overview and show the UPS L4 gate as `UNKNOWN` with three missing prerequisites.
+2. Upload an approved specification, asset register, and test procedure.
+3. Open one AI-proposed requirement, click `Open source`, then `Accept & next`.
+4. Open the Readiness Board and show the gate move to `BLOCKED`, with one failed test and one missing witness signature.
+5. Scan the UPS QR code in the mobile PWA, attach a photo/measurement, and complete the missing test step.
+6. Upload a revised specification and show one previously accepted item become `STALE` in Change Blast Radius.
+7. Resolve the reassessment, request approval, verify TOTP, and click `Approve gate`.
+8. Generate the turnover pack, copy its manifest hash, and run `Verify manifest`.
+
+If this complete path is not reliable, the MVP is not complete. Secondary analytics, chat, portfolio views, integrations, and visual polish do not compensate for a broken evidence-to-approval loop.
+
 ### Success Metrics
 
 | Layer | Pilot acceptance threshold |
