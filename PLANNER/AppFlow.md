@@ -67,6 +67,7 @@ flowchart TD
 4. The manager creates or updates an action in `Finding Detail` and assigns an owner and due date.
 5. The owner uploads evidence or records a test result through `Field Capture` or `Test Run Detail`.
 6. The readiness engine recalculates after processing and shows the changed blocker set.
+7. The manager may also open the gate's linked `Schedule & Critical Path Board` context panel to see whether a feeding critical-path task is delayed; this is informational only and never changes the readiness state shown in step 2.
 **Exit point:** The gate is ready for approval, or remains visibly blocked with assigned actions.
 
 ```mermaid
@@ -85,6 +86,8 @@ flowchart TD
   L -- No --> M[Pending sync / processing]
   M --> K
   L -- Yes --> B
+  C --> S[Schedule Status Panel on Gate View]
+  S --> B
   E --> N{Approver authorized?}
   N -- No --> O([Exit: Await authorized approver])
   N -- Yes --> P([Exit: Gate ready for decision])
@@ -171,6 +174,129 @@ flowchart TD
   J --> K([Exit: Download Evidence Pack])
 ```
 
+### Flow: Generate Baseline Schedule (US-09)
+**Entry point:** Project Dashboard
+1. The project scheduler opens `Schedule Baseline Setup` and selects `Upload Schedule Source`.
+2. The scheduler uploads vendor contracts, mobilization timelines, purchase orders, and government approval documents.
+3. The app validates file type, size, and project membership, then queues an extraction job shown as `Extraction Processing Status`.
+4. The extraction job proposes task records (name, duration, dependencies, vendor, lead time, resource requirement, deadline type) and resource-capacity records (crew/equipment counts), each with confidence and a source-region citation.
+5. The scheduler opens `Task Record Review Queue`; ambiguous or missing fields are flagged and cannot be auto-accepted.
+6. The scheduler accepts, edits, or rejects each proposed record in `Task Record Detail`.
+7. Once the scheduler confirms the accepted record set is a complete DAG, the app runs `Dependency Graph Validation`; a detected cycle blocks solving with a clear error.
+8. The scheduler triggers `Baseline Solve Job`; the CP-SAT solver computes a feasible schedule respecting precedence, single-mode durations, resource capacity, and deadlines.
+9. The app stores the result as immutable `Schedule Version v1` and opens the `Schedule & Critical Path Board` with the critical path highlighted.
+**Exit point:** Baseline schedule version v1 available on the Schedule & Critical Path Board, cross-linked into the typed-edges graph.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[Schedule Baseline Setup]
+  B --> C[Upload Schedule Source]
+  C --> D{File and membership valid?}
+  D -- No --> E[Upload validation error]
+  E --> C
+  D -- Yes --> F[Extraction Processing Status]
+  F --> G{Extraction completed?}
+  G -- No --> H[Pending / retry / failed status]
+  H --> F
+  G -- Yes --> I[Task Record Review Queue]
+  I --> J[Task Record Detail]
+  J --> K{Field ambiguous or missing?}
+  K -- Yes --> L[Flagged for mandatory review]
+  L --> J
+  K -- No --> M{Reviewer decision}
+  M -- Accept --> N[Accepted Task Record]
+  M -- Edit --> J
+  M -- Reject --> O[Rejected Task Record]
+  N --> P[Dependency Graph Validation]
+  O --> P
+  P --> Q{Cycle detected?}
+  Q -- Yes --> R([Exit: Cycle error; solve blocked])
+  Q -- No --> S[Baseline Solve Job]
+  S --> T{Solver completed?}
+  T -- No / timeout --> U[SOLVE_FAILED state]
+  U --> S
+  T -- Yes --> V[Schedule Version v1]
+  V --> W([Exit: Schedule and Critical Path Board])
+```
+
+### Flow: Review Proposed Task and Resource Records
+**Entry point:** Task Record Review Queue
+1. The reviewer opens `Task Record Review Queue` and filters by document, vendor, or confidence level.
+2. The reviewer selects a proposed record and opens `Task Record Detail`, viewing the extracted fields, confidence score, and exact source-region citation.
+3. Fields the extractor marked ambiguous or missing are visually flagged and block a one-click accept.
+4. The reviewer accepts the record as-is, edits a field before accepting, or rejects it with a reason.
+5. The app records the reviewer's decision, actor, and timestamp for audit.
+**Exit point:** Accepted record available to the baseline or re-solve pipeline; rejected record retained for audit and excluded from solving.
+
+```mermaid
+flowchart TD
+  A([Entry: Task Record Review Queue]) --> B[Filter by document / vendor / confidence]
+  B --> C[Task Record Detail]
+  C --> D{Field flagged ambiguous or missing?}
+  D -- Yes --> E[Manual field resolution required]
+  E --> C
+  D -- No --> F{Reviewer decision}
+  F -- Accept --> G([Exit: Accepted Task Record])
+  F -- Edit --> H[Edited Record]
+  H --> C
+  F -- Reject --> I([Exit: Rejected Task Record])
+  C --> J{Session expired?}
+  J -- Yes --> K([Exit: Login])
+```
+
+### Flow: Event-Triggered Rescheduling (US-10)
+**Entry point:** Schedule & Critical Path Board
+1. A user or integration opens `Event Log / Trigger Entry` and logs a shipment delay, approval granted/rejected, or weather-delay event against a task.
+2. The app validates the event against the current schedule version and referenced task.
+3. The `Delta Detector` evaluates whether the event affects the critical path or a downstream dependency.
+4. If it does not, the app updates only the task's actual status/date and returns to the `Schedule & Critical Path Board`; no new schedule version is created.
+5. If it does, the app triggers a `Re-solve Job`; the CP-SAT solver is warm-started with completed tasks held fixed.
+6. On success, the app stores a new immutable `Schedule Version vN` and updates the `Schedule & Critical Path Board`.
+7. If the deadline is infeasible, the solver still returns a complete schedule and the board shows the minimum overrun and bottleneck constraint explicitly.
+8. The app generates a `Re-solve Explainer` describing the triggering event, shifted tasks, and net deadline impact.
+**Exit point:** Updated schedule version (or unchanged status-only update) visible on the Schedule & Critical Path Board, with an explainer available for any re-solve.
+
+```mermaid
+flowchart TD
+  A([Entry: Schedule and Critical Path Board]) --> B[Event Log / Trigger Entry]
+  B --> C{Event references valid task in current version?}
+  C -- No --> D([Exit: Explicit error; event rejected])
+  C -- Yes --> E[Delta Detector]
+  E --> F{Critical path or downstream dependency affected?}
+  F -- No --> G[Update task status/date only]
+  G --> H([Exit: Schedule and Critical Path Board unchanged version])
+  F -- Yes --> I[Re-solve Job - warm start]
+  I --> J{Solver completed?}
+  J -- No / timeout --> K[SOLVE_FAILED state]
+  K --> I
+  J -- Yes, feasible --> L[Schedule Version vN]
+  J -- Yes, infeasible deadline --> M[Schedule Version vN with min overrun and bottleneck shown]
+  L --> N[Re-solve Explainer]
+  M --> N
+  N --> O([Exit: Schedule and Critical Path Board updated])
+```
+
+### Flow: View Schedule History and Explainer (US-11)
+**Entry point:** Schedule & Critical Path Board
+1. The owner's representative opens `Schedule Version History` from the Schedule & Critical Path Board.
+2. The user browses prior `Schedule Version` entries, each timestamped and immutable.
+3. The user selects a version to open its `Re-solve Explainer`, showing the triggering event, tasks whose dates shifted, and the net deadline impact, clearly labelled as AI-generated.
+4. The user may optionally compare two versions in a `Schedule Version Diff` view.
+**Exit point:** User understands what changed and why, without any schedule date being altered by the explanation.
+
+```mermaid
+flowchart TD
+  A([Entry: Schedule and Critical Path Board]) --> B[Schedule Version History]
+  B --> C[Select Schedule Version]
+  C --> D[Re-solve Explainer]
+  D --> E{Compare with another version?}
+  E -- Yes --> F[Schedule Version Diff]
+  F --> B
+  E -- No --> G([Exit: Explainer reviewed])
+  B --> H{Session expired?}
+  H -- Yes --> I([Exit: Login])
+```
+
 ## Edge Cases in Flow
 
 - Any authenticated screen redirects to `Login` after session expiry and returns the user to the original route after reauthentication.
@@ -179,6 +305,20 @@ flowchart TD
 - Concurrent edits show a conflict state and require reload before a review or decision can be saved.
 - Empty projects show setup tasks and `UNKNOWN` readiness, never `READY`.
 - Failed jobs expose a retry action and job identifier; retries are idempotent.
+
+### Schedule Module Edge Cases
+
+- Unauthenticated or unauthorized access to `Schedule Baseline Setup`, `Task Record Review Queue`, `Schedule & Critical Path Board`, `Event Log / Trigger Entry`, or `Re-solve Explainer` redirects to `Login` or shows an access-denied state without revealing record existence.
+- A network failure, validation error, or API timeout during upload, extraction, or event logging shows a retryable error and preserves the prior valid state; retries are idempotent.
+- A solver timeout on either the baseline solve or a re-solve enters an explicit `SOLVE_FAILED` state with a retry action and job identifier; the prior schedule version remains untouched until a retry succeeds.
+- Session expiry mid-flow (e.g., mid-review in the `Task Record Review Queue` or mid-event-entry) redirects to `Login` and returns the user to the same screen and unsaved-safe state after reauthentication.
+- An infeasible deadline after a re-solve never fails silently: the solver returns a complete schedule with the minimum unavoidable overrun and the bottleneck constraint identified, surfaced directly on the `Schedule & Critical Path Board` and in the `Re-solve Explainer`.
+- An ambiguous or missing extracted field (task or resource-capacity) is flagged in the `Task Record Review Queue` and blocks one-click auto-accept; the reviewer must resolve or explicitly reject it.
+- A dependency cycle detected among accepted task records blocks the CP-SAT solve at `Dependency Graph Validation` with a clear, human-actionable error rather than silently dropping an edge.
+- Two events logged concurrently against the same task are serialized through the delta-detector/solve pipeline; the second event's re-solve runs against the already-updated schedule state rather than racing the first.
+- An event reported against a task that no longer exists in the current schedule version is rejected with an explicit error and never silently ignored or misapplied.
+- A Gemini API extraction or explanation failure/timeout leaves the prior schedule version and status untouched and surfaces a retryable error rather than a partially-applied schedule.
+- Schedule delay or critical-path status shown in the `Schedule Status Panel` on the gate view never alters the deterministic `READY`/`BLOCKED`/`IN_REVIEW`/`UNKNOWN` computation.
 
 ## Navigation Map
 
@@ -194,11 +334,25 @@ flowchart TD
         - `Requirement Detail`
     - `Readiness Board`
       - `Gate Review`
+        - `Schedule Status Panel` (linked schedule/critical-path context, read-only)
       - `Blocker Detail`
         - `Finding Detail`
       - `Evidence Detail`
       - `Test Run Detail`
     - `Field Capture`
+    - `Schedule Baseline Setup`
+      - `Upload Schedule Source`
+      - `Extraction Processing Status`
+      - `Task Record Review Queue`
+        - `Task Record Detail`
+      - `Dependency Graph Validation`
+      - `Baseline Solve Job`
+    - `Schedule & Critical Path Board`
+      - `Event Log / Trigger Entry`
+      - `Re-solve Job Status`
+      - `Schedule Version History`
+        - `Re-solve Explainer`
+        - `Schedule Version Diff`
     - `Exports`
       - `Export Preview`
       - `Export Job`

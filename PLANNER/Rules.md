@@ -1,68 +1,61 @@
 # Pramana Cx Engineering and Agent Rules
 
-## Naming Conventions
+## Coding Conventions
 
 - TypeScript variables, functions, and API payload properties use `camelCase`; React components and TypeScript types use `PascalCase`.
 - Files use `kebab-case` for route-independent modules and the framework's required route naming for app paths.
-- Database tables and columns use `snake_case`; entity vocabulary must match `Schema.md` exactly.
-- API paths use plural nouns for collections, for example `/v1/projects/{projectId}/documents`.
+- Database tables and columns use `snake_case`; entity vocabulary must match `Schema.md` exactly, including `schedule_tasks`, `schedule_versions`, `resources`, and `schedule_events`.
+- API paths use plural nouns for collections, for example `/v1/projects/{projectId}/documents` and `/v1/projects/{id}/schedule/documents`.
 - Boolean names begin with `is`, `has`, or `can`; timestamps end with `At` in TypeScript and `_at` in SQL.
-- Relationship values use the uppercase names defined in `Schema.md`, such as `PROVES` and `BLOCKS`.
-
-## Code Structure
-
+- Relationship values use the uppercase names defined in `Schema.md`, such as `PROVES`, `BLOCKS`, `PRECEDES`, and `AFFECTS`.
 - Keep route handlers thin: authentication, request parsing, and response mapping only.
 - Put business logic in domain services; put D1 queries in repository modules; do not issue database queries directly from React components or route handlers.
-- Keep readiness rules in a pure rules module with no model-provider, network, or UI imports.
-- Keep AI provider adapters behind `ModelProvider`; application code must not call a vendor SDK directly.
-- Keep R2 object access behind a storage service that verifies project scope and content hash.
-- UI screens own presentation and user interaction; they must call typed API clients rather than construct raw fetch payloads in multiple components.
-- Database migrations are ordered, committed, and never rewritten after they reach a shared environment.
+- Keep readiness rules in `lib/readiness` as a pure rules module with no model-provider, network, or UI imports.
+- The CP-SAT scheduling logic must live in a `lib/scheduling` module (e.g. DAG/critical-path helpers, solver request/response typing, delta-classification predicates) that mirrors `lib/readiness`'s purity rule exactly: zero model-provider, zero network, and zero UI imports. `lib/scheduling` may only shape data going into and coming out of the solver call — the actual HTTP call itself must live outside this module, in the domain service.
+- Scheduling business logic (delta detection, re-solve triggering, task/resource acceptance, version persistence, explanation orchestration) lives in a `services/scheduling` domain service, following the same domain-service pattern as the readiness and evidence services; it must not query D1 directly.
+- All D1 access for schedule tables goes through `repositories/scheduling` (or equivalently named) repository modules; only repository modules issue `schedule_tasks`, `schedule_versions`, `resources`, and `schedule_events` queries.
+- The CP-SAT solver microservice must be called only through a dedicated client module (e.g. `services/scheduling/solver-client`) wrapped the same way the storage service wraps R2 access: it is the single call site for the solver's internal HTTP API, and no other module may issue an HTTP request to the solver endpoint directly.
+- Keep AI provider adapters behind `ModelProvider`; application code must not call a vendor SDK directly. This applies identically to the Gemini-backed schedule extraction/explainer adapter (`GeminiModelProvider`) as it does to the Workers AI evidence adapter — no direct `@google/genai` (or equivalent) SDK calls outside that adapter.
+- Keep R2 object access behind a storage service that verifies project scope and content hash, for both evidence documents and schedule source documents (contracts, timelines, POs, approvals).
+- UI screens own presentation and user interaction; they must call typed API clients rather than construct raw fetch payloads in multiple components, including the schedule/Gantt/critical-path views.
+- Database migrations are ordered, committed, and never rewritten after they reach a shared environment; this applies to the `schedule_tasks`, `schedule_versions`, `resources`, and `schedule_events` migrations exactly as it does to existing tables.
 
-## Error Handling
+## Patterns to Follow
 
-- API errors use `{ "code": string, "message": string, "request_id": string }` and the correct HTTP status.
-- Expected validation, authorization, conflict, and not-found cases are returned as typed domain errors; do not expose stack traces or provider responses.
-- Unexpected errors are logged with `request_id`, tenant/project scope, operation, and safe metadata; source document contents and tokens are never logged.
-- Ingestion, AI, indexing, and export jobs must record retryable versus terminal failure and remain safe to retry.
-- UI failure states must show the action that can be retried or the person who must resolve it; never show a false success state.
-
-## Validation Rules
-
-- Validate all external input at the API boundary with the repository's schema validator before invoking a service.
-- Repeat authorization and business invariants in the service layer; API validation alone is not a security boundary.
-- Enforce foreign keys, unique constraints, enum checks, non-null rules, and numeric ranges in D1 migrations.
-- Reject unsupported files, invalid MIME types, oversized uploads, missing revision metadata, and malformed CSV/XLSX rows before extraction.
-- A requirement must have a source region and review state; only `accepted` requirements may affect readiness.
-- A readiness transition must be produced by the deterministic rules engine and include a rule version and input/evidence baseline.
-
-## Testing Requirements
-
-- Every readiness rule, state transition, unit conversion, and stale-evidence propagation path has unit tests.
-- Every API route has authorization, validation, success, and failure tests with mocked external providers.
-- Every primary AppFlow path has a Playwright test covering the happy path and at least one failure branch.
-- Upload, job retry, duplicate hash, signed URL, and export-manifest behavior have integration tests against a disposable D1/R2-compatible test setup.
-- Retrieval tests must verify project isolation and that every surfaced result resolves to a source region.
-- Accessibility checks use axe-core and keyboard navigation for review, readiness, approval, and field-capture screens.
-- Do not use live AI providers in deterministic unit tests; use recorded, versioned fixtures and separately run evaluation suites.
+- The delta-detector must always run and classify an incoming `schedule_event` before any re-solve is triggered; a re-solve must never be invoked unconditionally on every event. If the delta-detector determines the event does not affect the current critical path or downstream dependencies, only the task's status/date is updated and no solver call is made and no new `schedule_version` is created.
+- Every call to the CP-SAT solver microservice must be issued with an explicit request timeout (default 90 seconds, configurable) and a bounded, backed-off retry count. On timeout or exhausted retries, the call fails into a defined `SOLVE_FAILED` state: the prior `schedule_version` and all task statuses remain completely untouched, no partial or inconsistent schedule version is ever persisted, and the triggering event is marked `SOLVE_FAILED` for manual retry.
+- Every `schedule_version` is an immutable snapshot (task dates, critical path, solver status) written once, hash-linked to its predecessor and triggering event; a `schedule_version` row is never updated or deleted in place, only superseded by inserting a new version row.
+- The solver microservice call must be idempotent per `(schedule_version_id, event_id)` so that a Cloudflare Workflow retry cannot double-apply a re-solve or create duplicate versions for the same trigger.
+- A cycle detected in the accepted task dependency DAG must block the solve with an explicit, human-actionable error identifying the offending edge, before any CP-SAT call is made.
+- All extraction output (schedule `schedule_task` and `resource` proposals, exactly as with requirement proposals) must be schema-validated before insertion into the database; a record failing schema validation is rejected before it is written, never coerced into a best-effort shape.
+- Any extraction field that is missing or ambiguous (duration, dependency, vendor, lead time, resource requirement, deadline type, crew/equipment count) must always be routed to a mandatory `NEEDS_REVIEW` human-review queue; it must never be silently defaulted, guessed, or auto-accepted, regardless of confidence score.
+- Only `ACCEPTED` schedule task/resource records are eligible for inclusion in a solver DAG; `NEEDS_REVIEW` or rejected records must never be passed to the solver.
+- After every re-solve, the explainer agent runs as a separate Workflow step against the already-persisted before/after diff; explainer failure or timeout must never block, delay, or revert the already-persisted `schedule_version` — it only marks that version's explanation as pending/failed for independent retry.
+- Concurrent `schedule_event`s against the same task are serialized; the second event's delta check (and any resulting re-solve) must run against the already-updated state, never against a stale snapshot.
+- An event referencing a task absent from the current `schedule_version` must be rejected with an explicit error before any delta check or solve is attempted.
 
 ## AI Agent Behaviour Rules
 
-- AI may extract, classify, summarize, suggest mappings, and draft actions only within the current project scope.
-- AI must include source-region citations and confidence for every requirement or finding proposal.
+- AI may extract, classify, summarize, suggest mappings, and draft actions only within the current project scope, for both the Workers AI evidence pipeline and the Gemini schedule pipeline.
+- AI must include source-region citations and confidence for every requirement, finding, schedule task, or resource proposal.
 - AI must not approve a requirement, set readiness, close a finding/NCR, approve a waiver, sign a test, or create a gate decision.
-- AI must surface `UNKNOWN` when the source is missing, conflicting, illegible, stale, or outside the evaluated schema.
-- AI-generated text is labelled as a proposal until a human accepts it.
-- An implementation agent may add functions and tests within the approved PRD/TRD, but must ask before deleting files, changing accepted ADRs, modifying database migrations, changing auth boundaries, or adding an out-of-scope feature.
-- An implementation agent must not use customer documents, credentials, or production exports as test fixtures without explicit authorization and redaction.
+- AI must not set, mutate, or override a schedule date, critical path, or feasibility result. The Gemini extraction and explainer agents must never write directly to the `schedule_version` or `scheduled_task`/`schedule_tasks` tables under any circumstance; only the deterministic CP-SAT solver's output, persisted by the `services/scheduling` domain service, may write those tables.
+- The Gemini explainer agent's sole output is a human-readable narration of a before/after diff that the solver has already produced and that the domain service has already persisted; it never alters, re-ranks, or supersedes any task date or critical-path entry it is narrating.
+- AI must surface `UNKNOWN` (for readiness/evidence) or `NEEDS_REVIEW` (for schedule extraction) when the source is missing, conflicting, illegible, stale, or outside the evaluated schema.
+- AI-generated text is labelled as a proposal (or, for schedule explanations, clearly labelled as AI-generated) until a human accepts it or, for explanations, until it is displayed alongside the already-deterministic solver result it describes.
+- An implementation agent (human or AI coding assistant) implementing the scheduling module may not add auto-accept logic for low-confidence or ambiguous extraction output without explicit user approval; any such change is out of scope by default and must be flagged, not silently implemented.
+- The scheduling solver logic residing in `lib/scheduling` must remain completely free of AI/model-provider imports, network calls, and UI imports, exactly like `lib/readiness`; an implementation agent must not import `ModelProvider`, `GeminiModelProvider`, or any HTTP/fetch client into that module.
+- An implementation agent may add functions and tests within the approved PRD/TRD, but must ask before deleting files, changing accepted ADRs, modifying database migrations, changing auth boundaries, folding schedule/critical-path status into the readiness computation, or adding an out-of-scope feature (e.g. multi-mode task scheduling, native write-back to a scheduling tool, or ML-based forecasting).
+- An implementation agent must not use customer documents, credentials, production exports, or unlicensed vendor contracts/timelines as test fixtures without explicit authorization and redaction; use synthetic/dummy scheduling data for development and testing.
 
 ## Security Rules
 
-- Never hardcode secrets, API keys, tokens, signed URLs, or customer content. Use environment bindings and secret management.
-- Never commit `.env` files, raw uploads, model prompts containing customer data, or generated evidence packs.
-- Enforce tenant and project predicates on every D1 read/write and verify object ownership before issuing an R2 signed URL.
-- Use secure, HTTP-only session cookies; require TOTP for approver actions and re-check authorization at decision time.
-- Sanitize rendered source text and comments to prevent script injection; do not render extracted HTML as trusted markup.
-- Apply rate limits to auth, upload, search, AI, and export endpoints; return retryable responses without leaking account or project existence.
-- Audit role changes, source revisions, requirement reviews, evidence state changes, finding disposition, decisions, and exports in the append-only audit chain.
-- Do not send proprietary standards or customer content to a model/provider unless the project has authorized that processing path.
+- Never hardcode secrets, API keys, tokens, signed URLs, solver microservice endpoints/credentials, or customer content. Use environment bindings and secret management (env/vault) for the solver microservice's internal endpoint and any Gemini API credentials, exactly as for existing Workers AI/R2 secrets.
+- Never commit `.env` files, raw uploads, model prompts containing customer data, generated evidence packs, or schedule source documents (contracts, timelines, POs, approvals).
+- Enforce tenant and project predicates on every D1 read/write, including all new schedule tables (`schedule_tasks`, `schedule_versions`, `resources`, `schedule_events`), identically to existing tables; verify object ownership before issuing an R2 signed URL for schedule source documents.
+- The solver microservice must be treated as untrusted network boundary: calls to it require TLS and must be authenticated as internal-network requests only (no public ingress); the payload sent to it must be limited to task IDs, durations, dependencies, capacities, and deadlines — never tenant-identifying data beyond what a given solve requires, since the solver service is stateless and does not itself read D1 or R2.
+- Use secure, HTTP-only session cookies; require TOTP for approver actions and re-check authorization at decision time; the same project-scoped RBAC roles (e.g. project scheduler/planner) must be explicitly scoped to schedule endpoints rather than inheriting broad access implicitly.
+- Sanitize rendered source text and comments to prevent script injection; do not render extracted HTML as trusted markup, including extracted schedule task/resource fields displayed in the Gantt/critical-path views.
+- Apply rate limits to auth, upload, search, AI, export, and schedule endpoints (including `schedule/documents`, `schedule/baseline`, and `schedule/events`); return retryable responses without leaking account or project existence.
+- Audit role changes, source revisions, requirement reviews, evidence state changes, finding disposition, decisions, and exports in the append-only, hash-chained audit event log. Every `schedule_version` transition (creation, supersession by re-solve, and `SOLVE_FAILED` outcome), and every schedule task/resource review action, must produce its own append-only audit event consistent with the existing `audit_events` hash-chain pattern (`before_hash`, `after_hash`, `event_hash`, `previous_event_hash`) — schedule versioning must be fully reconstructible from the audit chain alone.
+- Do not send proprietary standards, customer content, or unlicensed vendor contract/timeline/PO/approval content to a model/provider (Workers AI or Gemini) unless the project has authorized that processing path; Gemini prompt inputs must be project-scoped, redacted for configured personal data, and excluded from shared/cross-tenant model training, identical to the Workers AI evidence-extraction path.
