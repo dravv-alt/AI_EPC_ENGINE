@@ -297,6 +297,101 @@ flowchart TD
   H -- Yes --> I([Exit: Login])
 ```
 
+### Flow: Generate and Review IST Checklist (US-13)
+**Entry point:** Project Dashboard
+1. The commissioning engineer opens `IST Checklist Workspace` and selects a system, gate, equipment, and standard set.
+2. The app confirms the chosen standards and test procedures are ingested into the RAG store with clause/section metadata and source citations before any generation runs.
+3. The Commissioning QA Copilot RAG-generates a `Draft Checklist` of structured steps, acceptance criteria, and cited clauses.
+4. The app verifies every LLM-generated clause citation against ingested-corpus metadata; a clause ID with no match is flagged as a possible hallucination rather than shown as verified.
+5. A malformed or schema-invalid checklist is rejected with a clear error and routed for retry or human review instead of being partially rendered.
+6. The engineer reviews the draft in `Checklist Review`, then accepts, edits, or rejects steps at the draft-acceptance gate; the draft is never treated as authoritative until accepted.
+**Exit point:** An accepted checklist ready for test execution, or a rejected/retry draft retained for review.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[IST Checklist Workspace]
+  B --> C[Select System, Gate, Equipment, Standards]
+  C --> D{Standards and procedures ingested with citations?}
+  D -- No --> E[Ingest Standards / Procedures into RAG store]
+  E --> C
+  D -- Yes --> F[RAG-Generate Draft Checklist]
+  F --> G{Checklist schema valid?}
+  G -- No --> H([Exit: Draft rejected; retry / human review])
+  G -- Yes --> I[Verify Clause Citations vs Corpus Metadata]
+  I --> J{Citation matches ingested clause?}
+  J -- No --> K[Flag as possible hallucination]
+  K --> L[Checklist Review]
+  J -- Yes --> L
+  L --> M{Engineer draft-acceptance decision}
+  M -- Accept --> N([Exit: Accepted Checklist ready for execution])
+  M -- Edit --> O[Edited Draft]
+  O --> L
+  M -- Reject --> P([Exit: Rejected Draft retained])
+```
+
+### Flow: Execute Test and Handle Failure (US-14–US-18)
+**Entry point:** Accepted Checklist
+1. The commissioning engineer opens `Test Execution` for the accepted checklist and runs each step, entering per-step field readings.
+2. The app records who entered each reading and when, and persists step state so execution can be resumed without loss.
+3. For each step, a deterministic acceptance check classifies numeric/threshold and boolean/presence steps as `proposed_pass` or `proposed_fail`; narrative/qualitative steps are always routed to `needs_human_review` and never auto-determined.
+4. On a `proposed_fail`, a `TEST_FAILED` event emits, the affected gate goes `BLOCKED`, a `findings` (NCR) record is created via the existing typed-graph + audit-event pattern, and a `Command Center` alert is raised.
+5. The engineer generates a `Draft Test Report` labelled "DRAFT — PENDING ENGINEER REVIEW".
+6. The engineer edits and approves the report; export is possible only after approval.
+7. When all steps pass, on approval the gate transitions to `PENDING_REVIEW` — never `READY`; only an authorized approver transitions it further.
+8. The approved test record is linked as `evidence` to its gate and added to the turnover pack.
+**Exit point:** An approved test record in the evidence graph and turnover pack, with the gate at `PENDING_REVIEW`, or a `BLOCKED` gate with an open finding on failure.
+
+```mermaid
+flowchart TD
+  A([Entry: Accepted Checklist]) --> B[Test Execution]
+  B --> C[Enter Per-Step Field Readings]
+  C --> D[Deterministic Acceptance Check]
+  D --> E{Step classification}
+  E -- proposed_fail --> F[Emit TEST_FAILED]
+  F --> G[Gate BLOCKED + Finding NCR + Command Center Alert]
+  G --> H([Exit: Gate BLOCKED with open finding])
+  E -- needs_human_review --> I[Route narrative step to human review]
+  I --> C
+  E -- proposed_pass --> J{All steps proposed_pass?}
+  J -- No --> C
+  J -- Yes --> K[Generate Draft Test Report - PENDING ENGINEER REVIEW]
+  K --> L{Engineer edit / approve}
+  L -- Edit --> K
+  L -- Approve --> M[Gate PENDING_REVIEW]
+  M --> N[Link Test Record as Evidence + Add to Turnover Pack]
+  N --> O([Exit: Approved test record; gate PENDING_REVIEW])
+```
+
+### Flow: Track Shipments and Handle Delay (US-19–US-23)
+**Entry point:** Project Dashboard
+1. The MEP package manager opens the `Supply Chain Map` and its `Shipment Navigator`; shipments render on a Leaflet map with red/amber/green status alongside a navigator table.
+2. The manager clicks a navigator row to zoom the map to that shipment's origin→destination route.
+3. The app polls (~30s) the live AIS vessel position, falling back to great-circle interpolation when AIS is unavailable, with each position transparently labelled live or simulated.
+4. The app computes a deterministic weather-adjusted ETA (an additive delay-factor multiplier on remaining transit duration, using weather at origin, current position, and destination) and classifies status against the required-on-site date minus a configurable buffer (🟢 on-time / 🟡 at-risk / 🔴 delayed).
+5. On a status change into at-risk/delayed, `SHIPMENT_DELAYED` emits into the existing `schedule_events` → delta-detector → CP-SAT re-solve pipeline and raises a `Command Center` alert, deduplicated against the last-notified status so the ~30s poll cannot spam repeat emits.
+6. On a return to on-time, `SHIPMENT_RECOVERED` emits to clear the stale alert rather than leaving a delayed status latched.
+**Exit point:** Shipments visible with live, deterministically-classified status; material status changes fed once into the schedule pipeline and surfaced in the Command Center.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[Supply Chain Map + Shipment Navigator]
+  B --> C[Shipments render on Leaflet map with R/A/G status]
+  C --> D[Click navigator row -> zoom to route]
+  D --> E[Poll AIS position ~30s]
+  E --> F{AIS available?}
+  F -- No --> G[Great-circle interpolation - labelled simulated]
+  F -- Yes --> H[Live position - labelled live]
+  G --> I[Compute deterministic weather-adjusted ETA]
+  H --> I
+  I --> J[Classify status vs required-on-site date minus buffer]
+  J --> K{Status changed since last notified?}
+  K -- No --> E
+  K -- Yes, into at-risk/delayed --> L[Emit SHIPMENT_DELAYED -> delta-detector / CP-SAT + Command Center Alert]
+  K -- Yes, back to on-time --> M[Emit SHIPMENT_RECOVERED -> clear stale alert]
+  L --> N([Exit: Delay fed to schedule pipeline + Command Center])
+  M --> O([Exit: Recovery clears alert; shipment on-time])
+```
+
 ## Edge Cases in Flow
 
 - Any authenticated screen redirects to `Login` after session expiry and returns the user to the original route after reauthentication.
@@ -319,6 +414,30 @@ flowchart TD
 - An event reported against a task that no longer exists in the current schedule version is rejected with an explicit error and never silently ignored or misapplied.
 - A Gemini API extraction or explanation failure/timeout leaves the prior schedule version and status untouched and surfaces a retryable error rather than a partially-applied schedule.
 - Schedule delay or critical-path status shown in the `Schedule Status Panel` on the gate view never alters the deterministic `READY`/`BLOCKED`/`IN_REVIEW`/`UNKNOWN` computation.
+
+### Commissioning QA Copilot Edge Cases
+
+- Unauthenticated or unauthorized access to `IST Checklist Workspace`, `Test Execution`, or the `Command Center` redirects to `Login` or shows an access-denied state without revealing record existence.
+- No checklist is generated until the selected standards and procedures are ingested into the RAG store with clause/section metadata and source citations.
+- The LLM returns a malformed or schema-invalid checklist JSON: the draft is rejected with a clear error and routed for retry/human review rather than partially rendered as a valid checklist.
+- The LLM cites a clause ID absent from the ingested-corpus metadata (hallucinated citation): the citation is flagged as unverifiable and never shown as verified.
+- A narrative/qualitative acceptance criterion is never auto-passed or auto-failed; it is always routed to `needs_human_review`.
+- A generated draft checklist is advisory only and never treated as an accepted or authoritative test procedure until an engineer accepts it at the draft-acceptance gate.
+- A `proposed_fail` never silently passes: it emits `TEST_FAILED`, raises the finding, sets the gate `BLOCKED`, and surfaces a `Command Center` alert as one atomic outcome recorded in the audit trail.
+- Test-step state and readings persist so an interrupted execution can be resumed without loss; the executing engineer and timestamp are recorded per reading.
+- A completed all-pass test sets the gate to `PENDING_REVIEW`, never `READY`; only an authorized approver transitions it further, preserving the AI-advisory boundary.
+- The draft test report is exportable only after engineer approval; the "DRAFT — PENDING ENGINEER REVIEW" label persists until approval.
+
+### Supply Chain Agent Edge Cases
+
+- Unauthenticated or unauthorized access to the `Supply Chain Map`, `Shipment Navigator`, or `Command Center` redirects to `Login` or shows an access-denied state without revealing record existence.
+- AIS is unavailable: the shipment position falls back to great-circle interpolation and is transparently labelled simulated rather than live.
+- The Open-Meteo weather service is unavailable: the deterministic delay factor defaults to 0 (no weather adjustment) rather than blocking or guessing an ETA.
+- Delay detection, ETA, and R/A/G status are deterministic threshold math, never LLM output; ETAs are labelled estimates, never guaranteed delivery dates.
+- Duplicate or stale `SHIPMENT_DELAYED` emissions from the ~30s poll are suppressed by deduplication against the last-notified status; only a genuine status change emits an event.
+- A shipment that returns to on-time emits `SHIPMENT_RECOVERED` to clear the stale `Command Center` alert rather than leaving a delayed status latched.
+- The agent surfaces risk only: emitting `SHIPMENT_DELAYED`/`SHIPMENT_RECOVERED` never itself reschedules, changes a gate status, selects a vendor, or modifies a PO; the schedule effect is produced only by the downstream delta-detector → CP-SAT re-solve.
+- Port congestion is a manual boolean flag, not a live feed; planned transit duration defaults to a configurable placeholder when absent.
 
 ## Navigation Map
 
@@ -353,6 +472,13 @@ flowchart TD
       - `Schedule Version History`
         - `Re-solve Explainer`
         - `Schedule Version Diff`
+    - `IST Checklist Workspace` (Commissioning QA Copilot)
+      - `Checklist Review` (draft-acceptance gate)
+      - `Test Execution`
+        - `Draft Test Report` ("DRAFT — PENDING ENGINEER REVIEW")
+    - `Supply Chain Map`
+      - `Shipment Navigator` (click-to-zoom table)
+    - `Command Center` (unified alerts: TEST_FAILED, SHIPMENT_DELAYED / SHIPMENT_RECOVERED, cross-linked to the affected gate/finding/schedule impact)
     - `Exports`
       - `Export Preview`
       - `Export Job`

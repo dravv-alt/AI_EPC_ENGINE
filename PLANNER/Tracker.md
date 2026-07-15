@@ -2,11 +2,12 @@
 
 | File | Status | Notes |
 |---|---|---|
-| StructuredPlan.md | ✅ Approved | Assumptions updated after grill session: no design partner yet, synthetic/dummy data for prototype, deployment profile deferred |
-| PRD.md | ✅ Approved | Verified already fully merged with Proactive Schedule Management module (US-09–US-12, features, metrics, edge cases, constraints) — no changes needed |
-| TRD.md | ✅ Approved | Merged schedule module: CP-SAT via dedicated solver microservice from Workflow step; Better Auth carried forward; re-solve p95 ≤30s w/ SOLVE_FAILED fallback |
-| Schema.md | ✅ Approved | Added schedule_tasks/resources/schedule_versions/scheduled_tasks/schedule_events; dependencies reuse edges (PRECEDES); schedule never feeds readiness |
-| DesignDecisions.md | ✅ Approved | ADRs added: solver microservice, GeminiModelProvider extraction w/ human-review gate, immutable schedule_version + delta-detector |
-| AppFlow.md | 🔄 In Progress | appflow-agent was dispatched (parallel) — session paused by user before completion/approval; resume by checking this agent or re-dispatching |
-| Rules.md | ✅ Approved | Added lib/scheduling purity rule, delta-detector gating + SOLVE_FAILED fallback, LLM never writes schedule tables directly |
+| StructuredPlan.md | ✅ Approved | 2 remaining agents integrated (Commissioning QA Copilot + Supply Chain Visibility & Risk); stack override + Divergence Note added; supply-chain exclusion flipped to single-leg committed; orchestrator event contract recorded as emerging. Approved by user. Minor consistency edit: kind→event_type terminology (2 spots). |
+| PRD.md | ✅ Approved | Approved by user incl. Agent Suite section, US-01–US-31, all 5 agents' features/constraints/edge cases. |
+| TRD.md | 🔄 In Progress | Re-opened to propagate approved PRD: endpoints/flows/entities for Spec-Compliance, Predictive-Risk, and RFI agents |
+| Schema.md | 🔄 In Progress | Re-opened to propagate approved PRD: endpoints/flows/entities for Spec-Compliance, Predictive-Risk, and RFI agents |
+| DesignDecisions.md | 🔄 In Progress | Re-opened to propagate approved PRD: endpoints/flows/entities for Spec-Compliance, Predictive-Risk, and RFI agents |
+| AppFlow.md | 🔄 In Progress | Re-opened to propagate approved PRD: endpoints/flows/entities for Spec-Compliance, Predictive-Risk, and RFI agents |
+| Rules.md | 🔄 In Progress | Re-opened to propagate approved PRD: endpoints/flows/entities for Spec-Compliance, Predictive-Risk, and RFI agents |
+| Features.md | 👀 Needs Review | New frontend context doc: all 33 TRD endpoints, 24 screen specs, event-contract UI semantics, 11 documented open items (incl. missing endpoints for 3 agents + predicted_risk_delay enum gap). |
 | ImplementationPlan.md | ⏳ Pending | Blocked on Schema/DesignDecisions/AppFlow/Rules approval |
