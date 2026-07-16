@@ -155,7 +155,7 @@ flowchart TD
 2. The app previews included accepted evidence, decisions, audit history, and source references.
 3. The user requests an export and the app creates an `Export Job`.
 4. The exporter builds the pack and hash manifest from a versioned evidence baseline.
-5. The user downloads the pack through a short-lived signed URL or retries a failed job.
+5. The user downloads the pack through a short-lived signed URL served by the local Node server, or retries a failed job.
 **Exit point:** Downloadable pack with manifest hash and verification metadata.
 
 ```mermaid
@@ -365,7 +365,7 @@ flowchart TD
 ### Flow: Track Shipments and Handle Delay (US-19–US-23)
 **Entry point:** Project Dashboard
 1. The MEP package manager opens the `Supply Chain Map` and its `Shipment Navigator`; shipments render on a Leaflet map with red/amber/green status alongside a navigator table.
-2. The manager clicks a navigator row to zoom the map to that shipment's origin→destination route.
+2. The manager clicks a navigator row to zoom the map to that shipment's origin→destination route (single-leg only).
 3. The app polls (~30s) the live AIS vessel position, falling back to great-circle interpolation when AIS is unavailable, with each position transparently labelled live or simulated.
 4. The app computes a deterministic weather-adjusted ETA (an additive delay-factor multiplier on remaining transit duration, using weather at origin, current position, and destination) and classifies status against the required-on-site date minus a configurable buffer (🟢 on-time / 🟡 at-risk / 🔴 delayed).
 5. On a status change into at-risk/delayed, `SHIPMENT_DELAYED` emits into the existing `schedule_events` → delta-detector → CP-SAT re-solve pipeline and raises a `Command Center` alert, deduplicated against the last-notified status so the ~30s poll cannot spam repeat emits.
@@ -390,6 +390,161 @@ flowchart TD
   K -- Yes, back to on-time --> M[Emit SHIPMENT_RECOVERED -> clear stale alert]
   L --> N([Exit: Delay fed to schedule pipeline + Command Center])
   M --> O([Exit: Recovery clears alert; shipment on-time])
+```
+
+### Flow: Review Compliance Deviations (US-24–US-25)
+**Entry point:** Project Dashboard
+1. The QA/QC lead opens `Compliance Review Queue`; the Specification & Quality Compliance Agent has compared vendor submittals, POs, and shop-drawing text callouts against accepted `requirements` (extending the existing requirement-extraction/evidence-graph pipeline, not a parallel one).
+2. The lead selects a proposed flag and opens `Compliance Flag Detail`, which cites the exact requirement clause vs. the exact submittal/PO/drawing line with a confidence score.
+3. The app routes evaluation by `requirements.modality`: numeric/threshold, categorical/enum, and boolean/presence deviations are deterministic and auto-flaggable; narrative/qualitative comparisons surface an LLM "possible mismatch" suggestion routed to mandatory human review and are never auto-flagged. Shop-drawing geometry is out of scope (text callouts only).
+4. For an alternative/superior-spec claim, the agent must ground it via `lookup_standard_clause` or `check_precedent` (with `compare_spec_values`) before proposing a flag; an ungrounded claim is downgraded to "no precedent found, needs engineering judgment," and a client-spec-vs-standard conflict is surfaced with document hierarchy/date rather than silently resolved.
+5. When a flag is proposed, the app auto-proposes a `findings` (NCR) record (owner, severity, due date) pending human acceptance plus an `audit_events` entry; no flag closes or accepts itself.
+6. The lead accepts, edits, or rejects the proposed flag; on acceptance a `findings` record is persisted and, when it blocks a gate, a `Command Center` alert cross-links it.
+**Exit point:** An accepted `findings` (NCR) record linked into the evidence graph, or a downgraded/rejected proposal retained for audit — never an AI-closed conformance decision.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[Compliance Review Queue]
+  B --> C[Compliance Flag Detail]
+  C --> D{requirements.modality}
+  D -- Numeric / enum / boolean --> E[Deterministic deviation - auto-flaggable]
+  D -- Narrative / qualitative --> F[LLM possible-mismatch -> mandatory human review]
+  C --> G{Equivalence / superior-spec claim?}
+  G -- Yes --> H[Ground via lookup_standard_clause / check_precedent]
+  H --> I{Grounded in clause or approved-equal precedent?}
+  I -- No --> J[Downgrade: needs engineering judgment - not a flag]
+  I -- Yes --> K[Propose flag citing clause vs line]
+  G -- No --> K
+  E --> K
+  F --> L[Human review decision]
+  K --> L
+  L --> M{Reviewer decision}
+  M -- Accept --> N[Persist findings NCR + audit_events]
+  N --> O([Exit: Accepted finding; Command Center cross-link if gate-blocking])
+  M -- Edit --> C
+  M -- Reject --> P([Exit: Rejected proposal retained])
+  J --> Q([Exit: Downgraded claim retained for judgment])
+```
+
+### Flow: Review Predicted Schedule Risk (US-26–US-27)
+**Entry point:** Schedule & Critical Path Board
+1. A single Predictive Schedule Risk Engine worker runs on a periodic local cron/job poll (not a multi-agent system), reading the latest schedule version/critical path and polling procurement status, equipment lead times, workforce availability, and weather forecast.
+2. When a signal crosses a configurable materiality threshold against the critical path or a downstream dependency, the engine emits a `schedule_events.event_type = predicted_risk_delay` event carrying affected task(s), estimated delay/probability, source signal, and one or more mitigation options (proposals only).
+3. The engine deduplicates by task + risk-type and re-emits only on material change — never every poll cycle — and updates its flagged-risk state when a risk self-resolves.
+4. The commissioning manager opens the dedicated `Live Events` and `Delays/Risks` surface: `Live Events` lists the real-time polled signals and `Delays/Risks` lists the flagged `predicted_risk_delay` advisories with their affected tasks and mitigation options.
+5. The manager opens a flagged risk in `Predicted Risk Detail`; it cross-links to the affected task on the `Schedule & Critical Path Board` and raises a `Command Center` alert, without itself altering any schedule date.
+6. Acting on a mitigation option is a human/deterministic step only: a human or the CP-SAT solver (given a selected option as a constraint change) runs the re-solve through the existing delta-detector → re-solve pipeline. The engine never reschedules, selects, or applies an option.
+**Exit point:** An advisory predicted-risk alert surfaced and cross-linked to its task, with any actual re-solve executed deterministically by a human/CP-SAT — never by the engine.
+
+```mermaid
+flowchart TD
+  A([Entry: Schedule and Critical Path Board]) --> B[Periodic Local Cron/Job Poll]
+  B --> C[Poll procurement / lead-time / workforce / weather forecast]
+  C --> D{Signal available?}
+  D -- No --> E[Explicit data-unavailable state - skip signal]
+  E --> B
+  D -- Yes --> F{Risk crosses materiality threshold vs critical path?}
+  F -- No --> B
+  F -- Yes --> G{Already flagged for task + risk-type without material change?}
+  G -- Yes --> B
+  G -- No --> H[Emit predicted_risk_delay + mitigation options]
+  H --> I[Live Events / Delays-Risks surface]
+  I --> J[Predicted Risk Detail]
+  J --> K[Cross-link to affected task + Command Center Alert]
+  K --> L{Human selects a mitigation option?}
+  L -- No --> M([Exit: Advisory risk surfaced; no schedule change])
+  L -- Yes --> N[Human / CP-SAT re-solve via delta-detector pipeline]
+  N --> O([Exit: Deterministic re-solve; engine never applied it])
+```
+
+### Flow: Query Project Knowledge and Retrieve Similar RFIs (US-28–US-29)
+**Entry point:** Project Dashboard
+1. The MEP package manager opens the `Knowledge Query Chatbot` and asks a natural-language project question.
+2. The Project Knowledge & RFI Intelligence Agent classifies intent and logically routes to a doc-type index (spec/submittal/test-record/RFI/change-order), then applies a mandatory-first deterministic metadata filter (tenant/project/system/asset/gate/doc_type/date/revision) before any vector search.
+3. The agent decomposes the query, traverses the existing `edges`-table typed graph for context, and runs vector similarity scoped only to the filtered+routed subset — never a global search — over the local (self-hosted) pgvector store.
+4. The agent synthesizes a cited NL answer where every claim cites `source_region_id`, `document_version`, and content hash; uncitable claims are dropped rather than shown.
+5. The user opens `Source Region Viewer` to jump to the exact source PDF/doc region backing a cited claim.
+6. In parallel, for an RFI-style question the agent surfaces "previously resolved similar RFI" suggestions from a `doc_type = RFI`-scoped index above a cosine-similarity threshold; suggestions are advisory, cite their source RFI record, and never auto-answer or close the query.
+**Exit point:** A fully cited answer (or an explicit no-results answer with zero uncited claims) plus any advisory similar-RFI suggestions, each resolvable to its exact source region.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[Knowledge Query Chatbot]
+  B --> C[Intent classification + doc-type routing]
+  C --> D[Mandatory-first deterministic metadata filter]
+  D --> E[Typed-graph traversal + scoped vector search - never global]
+  E --> F{Any documents in filtered scope?}
+  F -- No --> G([Exit: Explicit no-results; zero uncited claims])
+  F -- Yes --> H[Synthesize NL answer - drop uncitable claims]
+  H --> I{Every claim cites source_region_id + version + hash?}
+  I -- No --> J[Drop uncited claim]
+  J --> H
+  I -- Yes --> K[Cited Answer]
+  K --> L[Source Region Viewer - exact PDF/doc region]
+  C --> M{RFI-style question?}
+  M -- Yes --> N[Similar-RFI index scoped to doc_type=RFI]
+  N --> O{Above cosine-similarity threshold?}
+  O -- Yes --> P[Show previously-resolved-similar-RFI suggestion]
+  O -- No --> Q[No suggestion surfaced]
+  P --> R([Exit: Cited answer + advisory RFI suggestions])
+  L --> R
+  Q --> R
+```
+
+### Flow: Explore Interactive Project Graph / Timeline (US-30)
+**Entry point:** Project Dashboard
+1. The owner's representative opens the `Project Graph / Timeline` page, backed by the existing append-only, hash-chained `edges` + `audit_events` tables (no parallel datastore).
+2. The page reads live state via the local Node API; nodes represent entities (event/doc/test/decision) sourced directly from the typed graph.
+3. The user filters or scrolls the timeline and selects a node to open `Node Detail`.
+4. Clicking a node expands its linked documents, vendor supply records, and audit history via existing FK relations.
+5. The user follows a linked document into the `Source Region Viewer`, or follows a linked test/decision/finding into its detail screen, keeping the graph and the record views cross-linked.
+**Exit point:** The user has traced any project event to its linked docs, supply records, and audit trail, all read live from the authoritative typed graph.
+
+```mermaid
+flowchart TD
+  A([Entry: Project Dashboard]) --> B[Project Graph / Timeline]
+  B --> C[Read live state via local Node API - edges + audit_events]
+  C --> D[Render entity nodes: event/doc/test/decision]
+  D --> E{Node selected?}
+  E -- No --> D
+  E -- Yes --> F[Node Detail]
+  F --> G[Expand linked docs / vendor supply records / audits via FK relations]
+  G --> H{Follow a link?}
+  H -- Document --> I[Source Region Viewer]
+  H -- Test / Decision / Finding --> J[Linked record detail]
+  H -- No --> K([Exit: Event traced through graph])
+  I --> K
+  J --> K
+  B --> L{Session expired?}
+  L -- Yes --> M([Exit: Login])
+```
+
+### Flow: Triage Unified Alerts in the Command Center (US-31)
+**Entry point:** Command Center
+1. The commissioning manager opens the `Command Center`, a single unified alert surface fed by the four-event orchestrator contract: `TEST_FAILED`, `SHIPMENT_DELAYED`, `SHIPMENT_RECOVERED`, and `predicted_risk_delay`.
+2. Each active alert cross-links from its triggering event to its downstream impact: a `TEST_FAILED` links to the created `findings` (NCR) record and the gate it set to `BLOCKED`; a `SHIPMENT_DELAYED` links to the affected schedule task(s) and, when a re-solve occurred, the resulting schedule version; a `predicted_risk_delay` links to the affected task on the schedule/critical-path view and its mitigation options.
+3. Alerts are deduplicated on status change: an unchanged status across poll cycles produces zero new alerts, and one status transition produces exactly one alert.
+4. A `SHIPMENT_RECOVERED` event clears the corresponding stale `SHIPMENT_DELAYED` alert from the active view rather than leaving it latched; the cleared alert remains available in `Alert History`.
+5. The manager opens an alert to follow its cross-link into the relevant gate/finding/schedule surface and act there. The Command Center is a read/cross-link surface only — it never changes gate readiness, closes a finding, or alters a schedule date.
+**Exit point:** The manager sees, in one place, what fired, what it affected, and whether it is still live, then acts through the appropriate downstream deterministic/human surface.
+
+```mermaid
+flowchart TD
+  A([Entry: Command Center]) --> B[Unified active-alert list]
+  B --> C{Triggering event type}
+  C -- TEST_FAILED --> D[Cross-link: findings NCR + BLOCKED gate]
+  C -- SHIPMENT_DELAYED --> E[Cross-link: affected tasks + resulting schedule version]
+  C -- predicted_risk_delay --> F[Cross-link: affected task + mitigation options]
+  C -- SHIPMENT_RECOVERED --> G[Clear stale SHIPMENT_DELAYED alert -> Alert History]
+  D --> H{Status changed since last alert?}
+  E --> H
+  F --> H
+  H -- No --> I[No new alert - dedup]
+  I --> B
+  H -- Yes --> J[Exactly one alert per transition]
+  J --> K[Open alert -> follow cross-link to gate/finding/schedule surface]
+  K --> L([Exit: Act via downstream deterministic/human surface])
+  G --> M([Exit: Recovery clears alert; retained in history])
 ```
 
 ## Edge Cases in Flow
@@ -439,6 +594,35 @@ flowchart TD
 - The agent surfaces risk only: emitting `SHIPMENT_DELAYED`/`SHIPMENT_RECOVERED` never itself reschedules, changes a gate status, selects a vendor, or modifies a PO; the schedule effect is produced only by the downstream delta-detector → CP-SAT re-solve.
 - Port congestion is a manual boolean flag, not a live feed; planned transit duration defaults to a configurable placeholder when absent.
 
+### Specification & Quality Compliance Agent Edge Cases
+
+- Unauthenticated or unauthorized access to the `Compliance Review Queue`, `Compliance Flag Detail`, or `Command Center` redirects to `Login` or shows an access-denied state without revealing record existence.
+- Every proposed flag cites an exact requirement clause and an exact submittal/PO/drawing line with a confidence score; a flag missing either citation is never surfaced.
+- A narrative/qualitative comparison is never auto-flagged: it surfaces an LLM "possible mismatch" suggestion routed to mandatory human review, and the LLM never directly judges conformance.
+- An equivalence/superior-spec claim that neither `lookup_standard_clause` nor `check_precedent` can ground is downgraded to "no precedent found, needs engineering judgment" and is never auto-accepted, auto-rejected, or shown as a flag.
+- A client spec conflicting with a referenced standard is surfaced with document hierarchy/date rather than one being silently chosen or resolved.
+- Shop-drawing evaluation is limited to extracted text callouts; geometry/CAD comparison is out of scope and never attempted.
+- No flag closes or accepts itself: acceptance persists a `findings` (NCR) record and an `audit_events` entry only through a human decision, preserving the AI-advisory boundary.
+
+### Predictive Schedule Risk Engine Edge Cases
+
+- Unauthenticated or unauthorized access to the `Live Events`, `Delays/Risks`, `Predicted Risk Detail`, or `Command Center` surfaces redirects to `Login` or shows an access-denied state without revealing record existence.
+- An external signal feed (procurement status, equipment lead time, workforce availability, or weather forecast) is unavailable during a poll cycle: the engine skips that signal with an explicit data-unavailable state and never fabricates a risk or silently drops monitoring.
+- A risk crossing the materiality threshold repeatedly across poll cycles without material change is suppressed by the task + risk-type dedup state; no duplicate `predicted_risk_delay` event is produced.
+- A predicted risk that self-resolves (e.g., lead time recovers) before any human/solver action updates the flagged-risk state on the material change rather than latching a stale risk in the `Delays/Risks` view.
+- Every emitted `predicted_risk_delay` carries affected task(s), estimated delay/probability, source signal, and ≥1 mitigation option; mitigation options are proposals only.
+- The engine never reschedules, selects, or applies an option: any re-solve is executed by the deterministic CP-SAT solver or a human through the existing delta-detector → re-solve pipeline, and a flagged risk never itself alters a schedule date.
+
+### Project Knowledge & RFI Intelligence Agent Edge Cases
+
+- Unauthenticated or unauthorized access to the `Knowledge Query Chatbot`, `Project Graph / Timeline`, or `Source Region Viewer` redirects to `Login` or shows an access-denied state without revealing record existence.
+- A mandatory-first deterministic metadata filter (tenant/project/system/asset/gate/doc_type/date/revision) is always applied before any vector search; retrieval is scoped to the filtered+routed subset and never runs a global (unfiltered) semantic search over the local pgvector store.
+- A query that matches no documents after the metadata filter returns an explicit no-results answer with zero uncited claims, never a hallucinated answer from outside the filtered scope.
+- Retrieved chunks whose claims cannot be tied back to a `source_region_id` are dropped from the synthesized answer rather than shown uncited; every surfaced claim cites `source_region_id`, `document_version`, and content hash.
+- A similar-RFI candidate below the cosine-similarity threshold is not surfaced, and no forced "previously resolved similar RFI" suggestion is shown; RFI similarity is project-scoped only, never cross-project.
+- Similar-RFI suggestions are advisory and cite their source RFI record; they never auto-answer or close the current query.
+- The `Project Graph / Timeline` reads live state from the existing append-only, hash-chained `edges` + `audit_events` tables via the local Node API; there is no parallel datastore, and clicking a node expands linked docs/supply records/audits only via existing FK relations.
+
 ## Navigation Map
 
 - `Login`
@@ -472,13 +656,22 @@ flowchart TD
       - `Schedule Version History`
         - `Re-solve Explainer`
         - `Schedule Version Diff`
+      - `Live Events` (Predictive Schedule Risk Engine polled signals)
+      - `Delays/Risks` (flagged `predicted_risk_delay` advisories, cross-linked to the critical-path view)
+        - `Predicted Risk Detail` (affected task + mitigation options; advisory only)
     - `IST Checklist Workspace` (Commissioning QA Copilot)
       - `Checklist Review` (draft-acceptance gate)
       - `Test Execution`
         - `Draft Test Report` ("DRAFT — PENDING ENGINEER REVIEW")
     - `Supply Chain Map`
       - `Shipment Navigator` (click-to-zoom table)
-    - `Command Center` (unified alerts: TEST_FAILED, SHIPMENT_DELAYED / SHIPMENT_RECOVERED, cross-linked to the affected gate/finding/schedule impact)
+    - `Compliance Review Queue` (Specification & Quality Compliance Agent)
+      - `Compliance Flag Detail` (clause vs. submittal/PO/drawing line; proposed `findings` pending human acceptance)
+    - `Knowledge Query Chatbot` (Project Knowledge & RFI Intelligence Agent; cited NL answer + similar-RFI suggestions)
+      - `Source Region Viewer` (exact source PDF/doc region for a cited claim)
+    - `Project Graph / Timeline` (interactive nodes over `edges` + `audit_events`; click-to-expand via existing FK relations)
+    - `Command Center` (unified alerts: TEST_FAILED, SHIPMENT_DELAYED / SHIPMENT_RECOVERED, predicted_risk_delay, cross-linked to the affected gate/finding/schedule impact; dedups on status change; SHIPMENT_RECOVERED clears stale alerts)
+      - `Alert History` (cleared/dedup'd alerts retained)
     - `Exports`
       - `Export Preview`
       - `Export Job`

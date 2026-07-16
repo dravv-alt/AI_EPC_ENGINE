@@ -27,15 +27,20 @@
 | `audit_events` | Provides append-only history and hash chain | Application service | Audit and export verification |
 | `schedule_tasks` | Stores AI-proposed/human-reviewed schedule task records (duration, dependencies, vendor, lead time, resource requirement, deadline type) | Gemini extraction agent/reviewer | Solver assembly, review queue, schedule board |
 | `resources` | Stores AI-proposed/human-reviewed resource-capacity records (crew/equipment counts) per vendor | Gemini extraction agent/reviewer | Solver assembly, review queue |
-| `schedule_versions` | Stores an immutable, versioned snapshot produced by a baseline solve or re-solve | CP-SAT solver microservice call (via Workflow) | Schedule/critical-path view, explainer, exports |
-| `scheduled_tasks` | Stores a task's computed start/end dates and critical-path flag for one schedule version | CP-SAT solver microservice call (via Workflow) | Schedule/critical-path view, diff/explanation |
-| `schedule_events` | Stores a reported real-world event (shipment, approval, weather delay) and whether it triggered a re-solve | Field/vendor/approval report | Delta detector, re-solve audit trail |
-| `cx_checklists` | Stores an AI-generated **draft** IST checklist tied to a system, gate, equipment, and standard set | Commissioning QA Copilot agent-service (via Workers core) | Engineer review, step execution, turnover linkage |
-| `cx_checklist_steps` | Stores an ordered checklist step with a modality-typed acceptance criterion | Commissioning QA Copilot agent-service (via Workers core) | Step execution and deterministic acceptance checks |
-| `cx_clause_citations` | Stores an LLM-cited standard clause and its post-generation verification result | Commissioning QA Copilot agent-service (via Workers core) | Citation-verification display, engineer review |
+| `schedule_versions` | Stores an immutable, versioned snapshot produced by a baseline solve or re-solve | CP-SAT solver microservice call (via local job) | Schedule/critical-path view, explainer, exports |
+| `scheduled_tasks` | Stores a task's computed start/end dates and critical-path flag for one schedule version | CP-SAT solver microservice call (via local job) | Schedule/critical-path view, diff/explanation |
+| `schedule_events` | Stores a reported real-world event (shipment, approval, weather delay, predicted risk) and whether it triggered a re-solve | Field/vendor/approval report, Supply Chain / Predictive Risk agents | Delta detector, re-solve audit trail |
+| `cx_checklists` | Stores an AI-generated **draft** IST checklist tied to a system, gate, equipment, and standard set | Commissioning QA Copilot agent-service (via Node core) | Engineer review, step execution, turnover linkage |
+| `cx_checklist_steps` | Stores an ordered checklist step with a modality-typed acceptance criterion | Commissioning QA Copilot agent-service (via Node core) | Step execution and deterministic acceptance checks |
+| `cx_clause_citations` | Stores an LLM-cited standard clause and its post-generation verification result | Commissioning QA Copilot agent-service (via Node core) | Citation-verification display, engineer review |
 | `cx_test_records` | Stores one execution of a checklist: executing engineer, overall status, and draft/approved report lifecycle | Commissioning engineer via the copilot | Evidence/turnover linkage, gate impact, exports |
 | `cx_step_results` | Stores a per-step field reading and its deterministic or human-review verdict | Commissioning engineer via the copilot | Acceptance checks, `TEST_FAILED` handling, report drafting |
-| `shipments` | Stores a single-leg critical-equipment shipment tracking record (coords, MMSI, ETAs, R/A/G status, dedup state) | Supply Chain Visibility & Risk agent-service (via Workers core) | Map/navigator view, status classification, `schedule_events` emission |
+| `shipments` | Stores a single-leg critical-equipment shipment tracking record (coords, MMSI, ETAs, R/A/G status, dedup state) | Supply Chain Visibility & Risk agent-service (via Node core) | Map/navigator view, status classification, `schedule_events` emission |
+| `compliance_checks` | Stores one Specification & Quality Compliance comparison of an accepted `requirement` against a submittal/PO/shop-drawing line, its modality-routed verdict, groundedness state, and proposed finding | Specification & Quality Compliance agent-service (`services/compliance-check`, via Node core) | Compliance review queue, finding proposal, audit |
+| `schedule_risks` | Stores a Predictive Schedule Risk Engine flagged forward-risk (task + risk-type) with estimated delay/probability, mitigation-option proposals, and emitted-event link | Predictive Schedule Risk Engine periodic-poll worker | "Delays/Risks" surface, dedup state, schedule pipeline |
+| `risk_signal_readings` | Stores a per-poll external forward-risk signal observation (or explicit data-unavailable state) backing the "Live Events" surface | Predictive Schedule Risk Engine periodic-poll worker | "Live Events" surface, risk evaluation |
+| `knowledge_chunks` | Stores a retrieval chunk + pgvector embedding with mandatory metadata-filter columns for scoped, metadata-filtered semantic search (RFI user-facing) and internal extraction/classification matching | Ingestion/embedding service | RFI scoped semantic search, internal task/requirement/clause matching |
+| `alerts` | Stores a Command Center alert cross-linking a triggering event to its downstream gate/finding/schedule-version impact, deduplicated on status change and cleared on recovery | Node core (from agent-emitted events) | Command Center surface (read/cross-link only) |
 
 Every table includes `created_at TIMESTAMPTZ NOT NULL DEFAULT now()` and `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` unless noted otherwise. UUIDs are generated by the application or database and are never natural keys.
 
@@ -94,7 +99,7 @@ Unique constraint: `(project_id, user_id)`.
 |---|---|---|---|
 | id | UUID | PK, NOT NULL | Logical document identifier |
 | project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
-| document_type | VARCHAR(40) | NOT NULL | Specification, procedure, register, issue log, vendor contract, timeline, PO, approval, commissioning-standard excerpt (synthetic, agent-ingested), or other source category |
+| document_type | VARCHAR(40) | NOT NULL | Specification, procedure, register, issue log, vendor contract, timeline, PO, approval, commissioning-standard excerpt (synthetic, agent-ingested), submittal, shop-drawing text callout, approved-equal precedent, RFI, change order, or other source category |
 | title | VARCHAR(300) | NOT NULL | Human-readable document title |
 | created_by | UUID | FK -> users.id, NOT NULL | Uploading member |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | First upload time |
@@ -109,7 +114,7 @@ Unique constraint: `(project_id, user_id)`.
 | revision | VARCHAR(80) | NOT NULL | Customer revision label |
 | status | VARCHAR(20) | NOT NULL, CHECK IN ('draft','approved','superseded','rejected') | Revision authority state |
 | sha256 | CHAR(64) | UNIQUE, NOT NULL | Immutable content hash |
-| object_key | VARCHAR(500) | UNIQUE, NOT NULL | R2 object location |
+| object_key | VARCHAR(500) | UNIQUE, NOT NULL | Local object store (MinIO/filesystem) object location |
 | media_type | VARCHAR(120) | NOT NULL | Stored MIME type |
 | effective_at | TIMESTAMPTZ | NULL | Date the revision becomes contractually effective |
 | uploaded_by | UUID | FK -> users.id, NOT NULL | Uploading user |
@@ -191,6 +196,8 @@ No new gate status value is introduced for the Commissioning QA Copilot: the cop
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation time |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last review/change time |
 
+The Specification & Quality Compliance Agent evaluates an accepted `requirement` against a submittal/PO/shop-drawing line by routing on `requirements.modality` (numeric/threshold, categorical/enum, boolean/presence deterministic; narrative/qualitative to mandatory human review); the comparison itself is recorded in `compliance_checks`, and no compliance-specific column is added here.
+
 #### evidence
 
 | Column | Type | Constraints | Business Meaning |
@@ -209,7 +216,7 @@ No new gate status value is introduced for the Commissioning QA Copilot: the cop
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation time |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last state change |
 
-This table is reused, unchanged, as the durable home of an **approved Commissioning QA Copilot test record**: on engineer approval, a `cx_test_records` row is materialized as an `evidence` row (`evidence_type = 'test'`, `system_id`/`asset_id` from the checklist, `captured_by` = the executing engineer, `content_hash` = the R2 report artifact's hash) and linked to its gate through the existing typed-edges pattern, entering the turnover pack like any other accepted evidence. No parallel "agent evidence" table exists.
+This table is reused, unchanged, as the durable home of an **approved Commissioning QA Copilot test record**: on engineer approval, a `cx_test_records` row is materialized as an `evidence` row (`evidence_type = 'test'`, `system_id`/`asset_id` from the checklist, `captured_by` = the executing engineer, `content_hash` = the object-store report artifact's hash) and linked to its gate through the existing typed-edges pattern, entering the turnover pack like any other accepted evidence. No parallel "agent evidence" table exists.
 
 #### test_procedures
 
@@ -272,7 +279,7 @@ Unique constraint: `(test_procedure_id, sequence_number)`.
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation time |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last disposition change |
 
-This table is reused, unchanged, as the durable home of a **`TEST_FAILED` NCR**: a Commissioning QA Copilot `proposed_fail` verdict creates a `findings` row (`gate_id`/`system_id` from the failing test's checklist, severity proposed by the copilot, disposed through the existing findings lifecycle), and the originating step result points back to it via `cx_step_results.finding_id`. No parallel "agent NCR" table exists.
+This table is reused, unchanged, as the durable home of both a **`TEST_FAILED` NCR** and a **Specification & Quality Compliance deviation**: a Commissioning QA Copilot `proposed_fail` verdict creates a `findings` row (`gate_id`/`system_id` from the failing test's checklist, severity proposed by the copilot, disposed through the existing findings lifecycle) referenced back from `cx_step_results.finding_id`; and an accepted compliance deviation flag creates a `findings` row (owner/severity/due date proposed by the compliance agent, pending human acceptance) referenced back from `compliance_checks.proposed_finding_id`. No parallel "agent NCR" table exists.
 
 #### edges
 
@@ -284,7 +291,7 @@ This table is reused, unchanged, as the durable home of a **`TEST_FAILED` NCR**:
 | from_id | UUID | NOT NULL | Source entity identifier |
 | to_type | VARCHAR(40) | NOT NULL | Target entity type (includes `schedule_task`, `resource`, `scheduled_task`, and — new — `cx_checklist`, `cx_test_record`, `shipment`) |
 | to_id | UUID | NOT NULL | Target entity identifier |
-| relationship_type | VARCHAR(30) | NOT NULL, CHECK IN ('REQUIRES','PROVES','BLOCKS','SUPERSEDES','AFFECTS','PRECEDES','ASSIGNED_TO','TRACKS') | Meaning of the relationship; schedule tasks use `PRECEDES` for dependency-DAG edges and `AFFECTS`/`REQUIRES` to cross-link a `gate`/`system`/`asset` for contextual surfacing only. New agent usage: a `shipment` `TRACKS` the `asset`/equipment it delivers (`TRACKS` is the only new value) and `AFFECTS` the `schedule_task`(s) its delay threatens; a `cx_checklist` `REQUIRES` the standard/procedure `document`(s) it was generated from; a `cx_test_record` reuses `PROVES` toward a `requirement` and `AFFECTS` toward the `gate` it feeds |
+| relationship_type | VARCHAR(30) | NOT NULL, CHECK IN ('REQUIRES','PROVES','BLOCKS','SUPERSEDES','AFFECTS','PRECEDES','ASSIGNED_TO','TRACKS') | Meaning of the relationship; schedule tasks use `PRECEDES` for dependency-DAG edges and `AFFECTS`/`REQUIRES` to cross-link a `gate`/`system`/`asset` for contextual surfacing only. New agent usage: a `shipment` `TRACKS` the `asset`/equipment it delivers (`TRACKS` is the only new value) and `AFFECTS` the `schedule_task`(s) its delay threatens; a `cx_checklist` `REQUIRES` the standard/procedure `document`(s) it was generated from; a `cx_test_record` reuses `PROVES` toward a `requirement` and `AFFECTS` toward the `gate` it feeds; a Predictive Schedule Risk `schedule_risk` cross-links its affected `schedule_task`(s) via `AFFECTS`; the Specification agent's `check_precedent` reads existing `AFFECTS`/`PROVES` approved-equal history via `edges`/`decisions` |
 | created_by | UUID | FK -> users.id, NOT NULL | Creating actor |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Relationship creation time |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Relationship update time |
@@ -314,7 +321,7 @@ Unique constraint: `(project_id, from_type, from_id, to_type, to_id, relationshi
 | tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
 | project_id | UUID | FK -> projects.id, NULL | Project scope when applicable |
 | actor_id | UUID | FK -> users.id, NULL | User or service actor |
-| action | VARCHAR(80) | NOT NULL | Operation performed (includes schedule task/resource review, schedule version creation, event ingestion, and — new — Commissioning test acceptance/failure, checklist/report approval, gate `BLOCKED` transition, shipment status-change event ingestion) |
+| action | VARCHAR(80) | NOT NULL | Operation performed (includes schedule task/resource review, schedule version creation, event ingestion, Commissioning test acceptance/failure, checklist/report approval, gate `BLOCKED` transition, shipment status-change event ingestion, and — new — compliance-flag proposal/acceptance and predicted-risk emission) |
 | object_type | VARCHAR(40) | NOT NULL | Affected entity type |
 | object_id | UUID | NOT NULL | Affected entity identifier |
 | before_hash | CHAR(64) | NULL | Previous representation hash |
@@ -430,10 +437,11 @@ Reported real-world event evaluated by the delta detector against the current `s
 | tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
 | project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
 | schedule_task_id | UUID | FK -> schedule_tasks.id, NOT NULL | Affected task; must exist in the current schedule version or the event is rejected |
-| event_type | VARCHAR(30) | NOT NULL, CHECK IN ('shipment_received','shipment_delayed','shipment_recovered','approval_granted','approval_rejected','weather_delay') | Reported real-world event category (`shipment_recovered` is the one newly added value — see the mapping note below) |
-| shipment_id | UUID | FK -> shipments.id, NULL | **New column.** Originating `shipments` row when the event was emitted by the Supply Chain agent; `NULL` for manually/API-reported events |
+| event_type | VARCHAR(30) | NOT NULL, CHECK IN ('shipment_received','shipment_delayed','shipment_recovered','approval_granted','approval_rejected','weather_delay','predicted_risk_delay') | Reported real-world event category (`shipment_recovered` and `predicted_risk_delay` are the newly added values — see the mapping notes below) |
+| shipment_id | UUID | FK -> shipments.id, NULL | Originating `shipments` row when the event was emitted by the Supply Chain agent; `NULL` for manually/API-reported and predicted-risk events |
+| schedule_risk_id | UUID | FK -> schedule_risks.id, NULL | **New column.** Originating `schedule_risks` row when the event was emitted by the Predictive Schedule Risk Engine (`event_type = 'predicted_risk_delay'`); `NULL` otherwise |
 | occurred_at | TIMESTAMPTZ | NOT NULL | Event occurrence time |
-| details | TEXT | NULL | Free-text/JSON event detail (e.g., delay reason, approval reference; for agent-emitted shipment events: old/new ETA, delay days, reason — weather factor / AIS lag / port-congestion flag — and affected equipment) |
+| details | TEXT | NULL | Free-text/JSON event detail (e.g., delay reason, approval reference; for agent-emitted shipment events: old/new ETA, delay days, reason — weather factor / AIS lag / port-congestion flag — and affected equipment; for predicted-risk events: estimated delay/probability, source signal, mitigation-option proposals) |
 | triggered_resolve | BOOLEAN | NOT NULL, DEFAULT false | Whether the delta detector determined a re-solve was required |
 | resulting_schedule_version_id | UUID | FK -> schedule_versions.id, NULL | New version produced, when `triggered_resolve = true` |
 | solve_status | VARCHAR(20) | NOT NULL, DEFAULT 'not_applicable', CHECK IN ('not_applicable','pending','solved','solve_failed') | Idempotency/outcome tracking for the solver call keyed by `(schedule_version_id, event_id)` |
@@ -441,11 +449,13 @@ Reported real-world event evaluated by the delta detector against the current `s
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Ingestion time |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Delta-check/solve outcome update time |
 
-**`SHIPMENT_DELAYED` / `SHIPMENT_RECOVERED` persistence (reuse, not a new table).** The Supply Chain agent's delay and recovery events persist as ordinary `schedule_events` rows posted through the existing `POST /v1/projects/{id}/schedule/events` path: a status transition into at-risk/delayed inserts `event_type = 'shipment_delayed'`; a transition back to on-time inserts `event_type = 'shipment_recovered'` (the single new enum value — the recovery must be distinguishable from a delay for the alert-clearing semantics, while the delta detector treats both identically as ETA-change events against the affected task, so no new downstream solver logic is introduced). Each row links back to its `shipments` record via the new nullable `shipment_id` FK, carries the event payload (old/new ETA, delay days, reason, affected equipment) in `details`, and flows through the unchanged delta-detector → warm-started CP-SAT re-solve pipeline (`triggered_resolve`, `resulting_schedule_version_id`, and `solve_status` behave exactly as for every other event kind). Deduplication is enforced upstream by `shipments.last_notified_status`: at most one row per genuine status transition, never one per ~30s poll cycle.
+**`SHIPMENT_DELAYED` / `SHIPMENT_RECOVERED` persistence (reuse, not a new table).** The Supply Chain agent's delay and recovery events persist as ordinary `schedule_events` rows posted through the existing `POST /v1/projects/{id}/schedule/events` path: a status transition into at-risk/delayed inserts `event_type = 'shipment_delayed'`; a transition back to on-time inserts `event_type = 'shipment_recovered'` (the recovery must be distinguishable from a delay for the alert-clearing semantics, while the delta detector treats both identically as ETA-change events against the affected task, so no new downstream solver logic is introduced). Each row links back to its `shipments` record via the nullable `shipment_id` FK, carries the event payload (old/new ETA, delay days, reason, affected equipment) in `details`, and flows through the unchanged delta-detector → warm-started CP-SAT re-solve pipeline (`triggered_resolve`, `resulting_schedule_version_id`, and `solve_status` behave exactly as for every other event kind). Deduplication is enforced upstream by `shipments.last_notified_status`: at most one row per genuine status transition, never one per ~30s poll cycle.
+
+**`predicted_risk_delay` persistence (reuse, not a new table).** The Predictive Schedule Risk Engine's material forward-risk emits persist as ordinary `schedule_events` rows posted through the same `POST /v1/projects/{id}/schedule/events` path with `event_type = 'predicted_risk_delay'`, each linked back to its `schedule_risks` row via the nullable `schedule_risk_id` FK and carrying estimated delay/probability, source signal, and mitigation-option proposals in `details`. A risk affecting N tasks fans out to N `schedule_events` rows (one per affected task, resolved via the risk's `AFFECTS` edges), per the fan-out rule. It flows through the unchanged delta-detector → warm-started CP-SAT re-solve pipeline; mitigation options are proposals only — the engine never reschedules or applies one. Deduplication is enforced upstream by the `schedule_risks` `(project_id, schedule_task_id, risk_type)` uniqueness/state: at most one event per genuine material change, never one per poll cycle.
 
 #### cx_checklists
 
-New table for the Commissioning QA Copilot. An AI-generated (Gemini, via the agent-service) **draft** IST checklist for a chosen system, gate, equipment, and standard set. Mirrors the platform's proposal pattern: a draft is never an accepted or authoritative test procedure until an engineer reviews it. Only the durable outputs modeled here land in D1 — the agent's Chroma RAG store and Neo4j/NetworkX working graph are agent-local only (see Data Storage Notes).
+New table for the Commissioning QA Copilot. An AI-generated (Gemini, via the agent-service) **draft** IST checklist for a chosen system, gate, equipment, and standard set. Mirrors the platform's proposal pattern: a draft is never an accepted or authoritative test procedure until an engineer reviews it. Only the durable outputs modeled here land in Postgres — the agent's Chroma RAG store and Neo4j/NetworkX working graph are agent-local only (see Data Storage Notes).
 
 | Column | Type | Constraints | Business Meaning |
 |---|---|---|---|
@@ -519,7 +529,7 @@ One execution of a checklist by an engineer: executing engineer, deterministic o
 | executed_by | UUID | FK -> users.id, NOT NULL | Executing engineer |
 | overall_status | VARCHAR(30) | NOT NULL, DEFAULT 'in_progress', CHECK IN ('in_progress','proposed_pass','proposed_fail','needs_human_review') | Aggregate of step verdicts; recomputed deterministically from `cx_step_results`, never manually edited |
 | report_status | VARCHAR(20) | NOT NULL, DEFAULT 'draft', CHECK IN ('draft','approved') | Report lifecycle: labelled "DRAFT — PENDING ENGINEER REVIEW" until approved; export gated on approval |
-| report_object_key | VARCHAR(500) | UNIQUE, NULL | R2 location of the drafted/approved report artifact (ReportLab/python-docx output) |
+| report_object_key | VARCHAR(500) | UNIQUE, NULL | Local object store location of the drafted/approved report artifact (ReportLab/python-docx output) |
 | report_content_hash | CHAR(64) | NULL | Hash of the report artifact, referenced from the evidence record and export manifest |
 | evidence_id | UUID | FK -> evidence.id, NULL | The `evidence` row materialized on approval; set only when `report_status = 'approved'` (application-enforced) |
 | approved_by | UUID | FK -> users.id, NULL | Approving engineer |
@@ -554,7 +564,7 @@ Per-step field readings and verdicts for one test record. Verdicts for `numeric`
 
 Unique constraint: `(cx_test_record_id, cx_checklist_step_id)`.
 
-**`TEST_FAILED` mapping (reuse, not a new table).** A `proposed_fail` verdict on a step emits a `TEST_FAILED` event (per the TRD orchestrator event contract), which the Workers core persists entirely with existing tables plus the pointer above:
+**`TEST_FAILED` mapping (reuse, not a new table).** A `proposed_fail` verdict on a step emits a `TEST_FAILED` event (per the TRD orchestrator event contract), which the Node core persists entirely with existing tables plus the pointer above:
 
 1. A `findings` (NCR) row is created — `project_id`/`system_id`/`gate_id` from the checklist, title/severity proposed by the copilot, disposed through the existing findings lifecycle — and referenced back from `cx_step_results.finding_id`.
 2. The affected gate's `gates.status` is set to the existing `'blocked'` value; the finding's `gate_id` links it to the gate (the same blocking pattern findings already use).
@@ -595,29 +605,149 @@ New table for the Supply Chain Visibility & Risk Agent. One row per single-leg (
 
 The equipment link is stored via `edges` (`shipment` `TRACKS` `asset`), not an in-row FK, and the schedule task(s) a delay threatens are linked via `edges` (`shipment` `AFFECTS` `schedule_task`) — the delta detector resolves affected tasks through these edges when a `shipment_delayed`/`shipment_recovered` event arrives, the same typed-graph pattern used by `schedule_tasks` cross-links.
 
-**Durable vs. agent-local (Supply Chain).** Durable in D1: the `shipments` row (configuration, current status/ETA, last-known-position summary, dedup state) and every emitted status transition as a `schedule_events` row. Agent-local only (never authoritative, deliberately not modeled as D1 tables): the ~30s **position/tracking snapshots** (lat/lng, speed, heading, timestamp, live-vs-simulated flag), the **weather snapshots** at origin/current position/destination (wind/precipitation/storm, computed delay factor, timestamp), and the **great-circle route cache** (interpolated route coordinates) — re-derivable poll-time working data held in the agent-service (per the TRD's accepted stack override) and served live through the proxied shipment read APIs. Losing them loses no authoritative state: the durable row plus the event trail fully reconstructs every decision the platform acted on.
+**Durable vs. agent-local (Supply Chain).** Durable in Postgres: the `shipments` row (configuration, current status/ETA, last-known-position summary, dedup state) and every emitted status transition as a `schedule_events` row. Agent-local only (never authoritative, deliberately not modeled as Postgres tables): the ~30s **position/tracking snapshots** (lat/lng, speed, heading, timestamp, live-vs-simulated flag), the **weather snapshots** at origin/current position/destination (wind/precipitation/storm, computed delay factor, timestamp), and the **great-circle route cache** (interpolated route coordinates) — re-derivable poll-time working data held in the agent-service (per the TRD's accepted stack override) and served live through the proxied shipment read APIs. Losing them loses no authoritative state: the durable row plus the event trail fully reconstructs every decision the platform acted on.
+
+#### compliance_checks
+
+New table for the Specification & Quality Compliance Agent (`services/compliance-check`, native to the committed local stack). One row per comparison of an accepted `requirement` against a submittal/PO/shop-drawing line, with the modality-routed verdict, groundedness state (for equivalence/substitution claims), and the proposed finding. Advisory only: a check never closes or accepts itself — human acceptance through the review API creates/accepts the `findings` row.
+
+| Column | Type | Constraints | Business Meaning |
+|---|---|---|---|
+| id | UUID | PK, NOT NULL | Compliance-check identifier |
+| tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
+| project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
+| requirement_id | UUID | FK -> requirements.id, NOT NULL | The accepted requirement being checked against |
+| target_type | VARCHAR(20) | NOT NULL, CHECK IN ('submittal','po','shop_drawing') | Compared target document category (shop-drawing = extracted text callouts only, no geometry) |
+| target_document_version_id | UUID | FK -> document_versions.id, NOT NULL | Compared target revision |
+| requirement_source_region_id | UUID | FK -> source_regions.id, NOT NULL | Exact cited requirement clause |
+| target_source_region_id | UUID | FK -> source_regions.id, NOT NULL | Exact cited submittal/PO/drawing line |
+| modality | VARCHAR(20) | NOT NULL, CHECK IN ('numeric','categorical','boolean','narrative') | Evaluation tier routed from `requirements.modality`; numeric/categorical/boolean are deterministic, narrative is human-review-only |
+| verdict | VARCHAR(30) | NOT NULL, CHECK IN ('deterministic_deviation','possible_mismatch','grounded_equivalent','needs_engineering_judgment','conform') | Comparison outcome; `possible_mismatch` (narrative) and `needs_engineering_judgment` (ungrounded equivalence) always route to mandatory human review, never auto-flagged |
+| groundedness_state | VARCHAR(30) | NULL, CHECK IN ('grounded','no_precedent_found') | For equivalence/substitution claims: whether `lookup_standard_clause`/`check_precedent`/`compare_spec_values` grounded the claim before a flag was proposed (`no_precedent_found` downgrades to needs-engineering-judgment, never shown as a flag) |
+| confidence | DECIMAL(5,4) | NULL, CHECK BETWEEN 0 AND 1 | Model proposal confidence for the flag |
+| proposed_finding_id | UUID | FK -> findings.id, NULL | The `findings` (NCR) row proposed for a detected deviation; set only when a flag is proposed, disposed through the existing findings lifecycle |
+| review_state | VARCHAR(20) | NOT NULL, DEFAULT 'proposed', CHECK IN ('proposed','accepted','rejected') | Human authority state; acceptance/rejection is a human action through the review API |
+| reviewed_by | UUID | FK -> users.id, NULL | Reviewer who accepted/rejected the proposed flag |
+| reviewed_at | TIMESTAMPTZ | NULL | Review action time |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Check creation time |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last verdict/review change |
+
+Every deterministic (numeric/categorical/boolean) verdict is produced by value/unit/tolerance or presence comparison with zero LLM involvement; narrative comparisons produce only an LLM "possible mismatch" suggestion routed to human review. When a client spec and a referenced standard conflict, both are surfaced (via their `source_regions`) with document hierarchy/date rather than one being silently chosen — no compliance value is stored as an auto-resolved authoritative column.
+
+#### schedule_risks
+
+New table for the Predictive Schedule Risk Engine (a single periodic-poll worker native to the committed local stack). One row per flagged forward-risk, keyed by (task + risk-type) for dedup; tracks the estimated delay/probability, source signal, mitigation-option proposals, and the emitted `predicted_risk_delay` event. Advisory only: the engine never reschedules or applies a mitigation option; the re-solve is executed only by the deterministic CP-SAT solver (given a selected option as a constraint change) or a human.
+
+| Column | Type | Constraints | Business Meaning |
+|---|---|---|---|
+| id | UUID | PK, NOT NULL | Risk identifier |
+| tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
+| project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
+| schedule_task_id | UUID | FK -> schedule_tasks.id, NOT NULL | Affected task the risk threatens (fan-out: one risk row per affected task) |
+| risk_type | VARCHAR(30) | NOT NULL, CHECK IN ('procurement','lead_time','workforce','weather_forecast') | Forward-risk signal category driving the dedup key |
+| estimated_delay_days | DECIMAL(10,2) | NULL, CHECK >= 0 | Estimated delay magnitude when material |
+| probability | DECIMAL(5,4) | NULL, CHECK BETWEEN 0 AND 1 | Estimated probability of the risk materializing |
+| source_signal | TEXT | NOT NULL | Human-readable description of the polled signal that crossed the materiality threshold |
+| mitigation_options_json | TEXT | NOT NULL | JSON-encoded ≥1 mitigation-option proposals (proposals only; never applied by the engine) |
+| schedule_event_id | UUID | FK -> schedule_events.id, NULL | The emitted `predicted_risk_delay` `schedule_events` row (`NULL` until emission) |
+| state | VARCHAR(20) | NOT NULL, DEFAULT 'flagged', CHECK IN ('flagged','resolved') | Flagged-risk state; a self-resolved risk moves to `resolved` rather than latching a stale risk in the "Delays/Risks" view |
+| flagged_at | TIMESTAMPTZ | NOT NULL | Time the risk was first flagged as material |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Record creation time |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last material-change/resolution update |
+
+Unique constraint: `(project_id, schedule_task_id, risk_type)` — the task + risk-type dedup key: a risk crossing the threshold repeatedly across poll cycles without material change updates this row in place rather than re-emitting; a material change updates it and emits a new `predicted_risk_delay` event. The affected task(s) are also cross-linked via `edges` (`schedule_risk` `AFFECTS` `schedule_task`) for the delta detector's fan-out resolution.
+
+#### risk_signal_readings
+
+New table for the Predictive Schedule Risk Engine's "Live Events" surface. One row per per-poll external forward-risk signal observation, including explicit data-unavailable states. Working/observational data — a signal reading never itself mutates schedule state; only a material risk (recorded in `schedule_risks` and emitted as a `schedule_events` row) enters the pipeline.
+
+| Column | Type | Constraints | Business Meaning |
+|---|---|---|---|
+| id | UUID | PK, NOT NULL | Signal-reading identifier |
+| tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
+| project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
+| signal_type | VARCHAR(30) | NOT NULL, CHECK IN ('procurement','lead_time','workforce','weather_forecast') | Polled signal category |
+| schedule_task_id | UUID | FK -> schedule_tasks.id, NULL | Task the signal is evaluated against (`NULL` for project-wide signals) |
+| observed_at | TIMESTAMPTZ | NOT NULL | Poll observation time |
+| value | TEXT | NULL | JSON/text observed value (`NULL` when `data_available = false`) |
+| data_available | BOOLEAN | NOT NULL, DEFAULT true | Explicit data-unavailable state for a feed unavailable during the cycle; the engine never fabricates a risk from a missing signal |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Persistence time |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Persistence metadata |
+
+#### knowledge_chunks
+
+New table backing the Project Knowledge & RFI Intelligence Agent's **user-facing** scoped semantic search (and the platform's internal extraction/classification matching). One row per retrieval chunk: the retrieval representation (summary/chunk text) plus its pgvector embedding, carrying the mandatory metadata-filter columns applied deterministically **before** any vector search so retrieval is always scoped to the filtered+routed subset, never global. The pointer to the full original doc and exact page/bbox for citation is the `source_region_id`.
+
+| Column | Type | Constraints | Business Meaning |
+|---|---|---|---|
+| id | UUID | PK, NOT NULL | Chunk identifier |
+| tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope (mandatory metadata-filter predicate) |
+| project_id | UUID | FK -> projects.id, NOT NULL | Project scope (mandatory metadata-filter predicate) |
+| source_region_id | UUID | FK -> source_regions.id, NOT NULL | Citation pointer to the exact page/bbox of the original doc |
+| document_version_id | UUID | FK -> document_versions.id, NOT NULL | Cited revision (carried into every answer claim) |
+| doc_type | VARCHAR(40) | NOT NULL, CHECK IN ('spec','submittal','test_record','rfi','change_order','standard','procedure','other') | Logical routing index (no single mega-index); the RFI-similarity path is scoped to `doc_type = 'rfi'` |
+| system_id | UUID | FK -> systems.id, NULL | Optional system metadata-filter predicate |
+| asset_id | UUID | FK -> assets.id, NULL | Optional asset metadata-filter predicate |
+| gate_id | UUID | FK -> gates.id, NULL | Optional gate metadata-filter predicate |
+| revision | VARCHAR(80) | NULL | Optional revision metadata-filter predicate |
+| effective_date | TIMESTAMPTZ | NULL | Optional date metadata-filter predicate |
+| content_hash | CHAR(64) | NOT NULL | Hash of the chunk content (carried into every answer claim) |
+| chunk_text | TEXT | NOT NULL | Retrieval representation (summary/chunk), separate from the full-original pointer |
+| embedding | VECTOR(768) | NOT NULL | pgvector embedding used for scoped, metadata-filtered similarity (dimension configurable to the embedding model) |
+| usage | VARCHAR(20) | NOT NULL, DEFAULT 'both', CHECK IN ('internal','user_facing','both') | Whether the chunk serves internal extraction/classification matching, user-facing RFI search, or both |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Embedding time |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Re-embedding time |
+
+The user-facing RFI path applies the mandatory-first deterministic metadata filter (tenant/project/system/asset/gate/doc_type/date/revision) as SQL predicates on these columns before the pgvector similarity operator runs, so semantic retrieval can never cross a tenant/project boundary or go global. Graph traversal of a retrieved chunk's linked entities reuses the existing `edges` table — no fresh embedding step and no parallel datastore.
+
+#### alerts
+
+New minimal table for the Command Center (per PRD US-31). One row per active alert, cross-linking a triggering event to its downstream impact. Read/cross-link surface only: an alert never itself changes gate readiness, closes a finding, or alters a schedule date. Alerts are **deduplicated on status change** (one alert per genuine status transition; an unchanged status across poll cycles produces zero new alerts), and a `SHIPMENT_RECOVERED` event **clears** the corresponding stale `SHIPMENT_DELAYED` alert (moving it to `cleared`, remaining available in history).
+
+| Column | Type | Constraints | Business Meaning |
+|---|---|---|---|
+| id | UUID | PK, NOT NULL | Alert identifier |
+| tenant_id | UUID | FK -> tenants.id, NOT NULL | Tenant scope |
+| project_id | UUID | FK -> projects.id, NOT NULL | Project scope |
+| alert_type | VARCHAR(30) | NOT NULL, CHECK IN ('TEST_FAILED','SHIPMENT_DELAYED','SHIPMENT_RECOVERED','predicted_risk_delay') | Triggering event type (the four-value orchestrator event contract) |
+| source_schedule_event_id | UUID | FK -> schedule_events.id, NULL | Triggering `schedule_events` row for shipment/predicted-risk alerts |
+| source_finding_id | UUID | FK -> findings.id, NULL | For `TEST_FAILED`: the created `findings` (NCR) row |
+| impacted_gate_id | UUID | FK -> gates.id, NULL | Downstream gate impact (e.g., the gate set `BLOCKED` by a `TEST_FAILED`) |
+| impacted_schedule_task_id | UUID | FK -> schedule_tasks.id, NULL | Downstream affected schedule task for shipment/predicted-risk alerts |
+| impacted_schedule_version_id | UUID | FK -> schedule_versions.id, NULL | Resulting `schedule_version` when a re-solve occurred |
+| dedup_key | VARCHAR(200) | NOT NULL | Deterministic dedup key (e.g., `shipment_id`/`schedule_task_id + risk_type`/`finding+gate`); enforces one active alert per genuine transition |
+| status | VARCHAR(20) | NOT NULL, DEFAULT 'active', CHECK IN ('active','cleared') | Active in the Command Center view, or cleared (recovery/resolution) and retained in history |
+| cleared_by_event_id | UUID | FK -> schedule_events.id, NULL | The `shipment_recovered` (or resolving) event that cleared this alert |
+| cleared_at | TIMESTAMPTZ | NULL | Clear time |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Alert creation time |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last status/cross-link change |
+
+Partial unique constraint: `(project_id, dedup_key)` WHERE `status = 'active'` — guarantees at most one active alert per genuine transition. The alert derives entirely from records the agents already write (`schedule_events`, `findings`, `edges`, `audit_events`); it is a denormalized cross-link/dedup surface, never an independent system of record.
 
 ## Relationships
 
 - `tenants` 1:N `projects`.
 - `tenants` 1:N `audit_events`.
 - `tenants` 1:N `schedule_tasks`, `resources`, `schedule_versions`, `scheduled_tasks`, and `schedule_events` (tenant predicate mirrors every other project-scoped table).
-- `tenants` 1:N `cx_checklists`, `cx_test_records`, and `shipments` — the new agent parent tables carry the same tenant predicate; their child tables (`cx_checklist_steps`, `cx_clause_citations`, `cx_step_results`) are scoped through the parent FK, mirroring `test_steps` under `test_procedures`.
+- `tenants` 1:N `cx_checklists`, `cx_test_records`, `shipments`, `compliance_checks`, `schedule_risks`, `risk_signal_readings`, `knowledge_chunks`, and `alerts` — the new agent parent tables carry the same tenant predicate; their child tables (`cx_checklist_steps`, `cx_clause_citations`, `cx_step_results`) are scoped through the parent FK, mirroring `test_steps` under `test_procedures`.
 - `projects` M:N `users` through `project_members`.
 - `projects` 1:N `documents`, `systems`, `assets`, `gates`, `requirements`, `evidence`, `test_procedures`, `findings`, and `edges`.
 - `projects` 1:N `schedule_tasks`, `resources`, `schedule_versions`, and `schedule_events` — every schedule row carries the same `(tenant_id, project_id)` predicate pair as evidence-side tables.
-- `projects` 1:N `cx_checklists`, `cx_test_records`, and `shipments` — same `(tenant_id, project_id)` predicate pair.
+- `projects` 1:N `cx_checklists`, `cx_test_records`, `shipments`, `compliance_checks`, `schedule_risks`, `risk_signal_readings`, `knowledge_chunks`, and `alerts` — same `(tenant_id, project_id)` predicate pair.
 - `documents` 1:N `document_versions`; `document_versions` 1:N `source_regions`.
-- `source_regions` 1:N `requirements` (existing) and 1:N `schedule_tasks`/`resources` (new) — the same citation table backs both proposal pipelines; a `source_region` row is never duplicated per module. The Commissioning agent's ingested standards/procedures follow the same discipline: `source_regions` 1:N `cx_clause_citations` (a verified citation resolves to exactly one ingested clause region).
+- `source_regions` 1:N `requirements` (existing) and 1:N `schedule_tasks`/`resources` (new) — the same citation table backs both proposal pipelines; a `source_region` row is never duplicated per module. The Commissioning agent's ingested standards/procedures follow the same discipline: `source_regions` 1:N `cx_clause_citations` (a verified citation resolves to exactly one ingested clause region). The Specification agent cites both the requirement clause and the target line as `source_regions` rows on each `compliance_checks` row, and the RFI agent's `knowledge_chunks` each point at exactly one `source_regions` citation.
+- `requirements` 1:N `compliance_checks` (one accepted requirement can be checked against many targets); `document_versions` 1:N `compliance_checks` (through `target_document_version_id`); a proposed compliance deviation optionally references its `findings` row via `compliance_checks.proposed_finding_id` (reuse of the existing `findings` table — no parallel compliance-NCR structure).
 - `systems` 1:N `assets`, `gates`, `test_procedures`, and `evidence`; `systems` 1:N `findings` optionally; `systems` 1:N `cx_checklists`.
-- `gates` 1:N `test_runs` and `decisions`; `gates` 1:N `findings` optionally; `gates` 1:N `cx_checklists` and `cx_test_records`.
+- `gates` 1:N `test_runs` and `decisions`; `gates` 1:N `findings` optionally; `gates` 1:N `cx_checklists` and `cx_test_records`; `gates` 1:N `alerts` optionally (downstream gate impact).
 - `assets` 1:N `cx_checklists` (checklist equipment) and optionally 1:N `cx_checklist_steps` (step-specific equipment); a `shipment`'s equipment link is an `edges` row (`TRACKS`), not an in-row FK.
 - `test_procedures` 1:N `test_steps` and `test_runs`.
 - `cx_checklists` 1:N `cx_checklist_steps`, `cx_clause_citations`, and `cx_test_records`; `cx_test_records` 1:N `cx_step_results`; each `cx_step_results` row references exactly one `cx_checklist_steps` row and is unique per test record, so execution is resumable without duplicate step results.
 - `cx_test_records` optionally references the `evidence` row it becomes on approval (`evidence_id`, set only when the report is approved); `cx_step_results` optionally references the `findings` row its `TEST_FAILED` created (`finding_id`). Both are reuse of existing tables — no parallel agent evidence/NCR structure exists. Cascade: none — an approved `evidence` row or created `findings` row is never deleted by removing its originating `cx_*` record; the `cx_*` rows are working records retained under the same project retention policy.
-- `shipments` 1:N `schedule_events` through the new nullable `schedule_events.shipment_id` FK (each genuine status transition durably persists as one event row); `shipments` link to their `asset` via `edges` `TRACKS` and to threatened `schedule_task`s via `edges` `AFFECTS`.
-- `users` 1:N `documents`, `document_versions`, `evidence`, `test_runs`, `findings`, `decisions`, and `edges` through actor/owner foreign keys; `users` 1:N `schedule_tasks`/`resources` through `reviewed_by` and 1:N `schedule_events` through `reported_by`; `users` 1:N `cx_checklists` (creator/reviewer), `cx_test_records` (executor/approver), `cx_step_results` (reading entry / human review), and `shipments` (registering member).
-- `edges` provides controlled typed relationships among requirements, systems, assets, gates, evidence, tests, findings, documents, decisions, and — new — `schedule_task`/`resource`/`scheduled_task` entities; polymorphic IDs are constrained by application validation and project scope. Dependency edges between two `schedule_task` rows use `relationship_type = 'PRECEDES'` and form the DAG the solver consumes; cross-links from a `schedule_task` to a `gate`/`system`/`asset` use `AFFECTS`/`REQUIRES` and are surfaced only as read-only context, never as readiness input (join strategy: application resolves `edges.to_id`/`to_type` against the relevant table per request, same as existing evidence-side edges — no polymorphic database-level FK). The two agents extend the same vocabulary rather than adding a parallel structure: `shipment` `TRACKS` `asset` and `shipment` `AFFECTS` `schedule_task`; `cx_checklist` `REQUIRES` `document` (standard set); `cx_test_record` `PROVES` `requirement` and `AFFECTS` `gate`. `TRACKS` is the only new `relationship_type` value.
+- `shipments` 1:N `schedule_events` through the nullable `schedule_events.shipment_id` FK (each genuine status transition durably persists as one event row); `shipments` link to their `asset` via `edges` `TRACKS` and to threatened `schedule_task`s via `edges` `AFFECTS`.
+- `schedule_risks` 1:N `schedule_events` through the nullable `schedule_events.schedule_risk_id` FK (each genuine material change durably persists as one fan-out set of event rows); `schedule_risks` reference their affected `schedule_task` by FK and cross-link the same task via `edges` `AFFECTS`; `(project_id, schedule_task_id, risk_type)` is unique for dedup. `schedule_tasks` 1:N `risk_signal_readings` optionally (a polled signal evaluated against a task).
+- `alerts` reference their triggering `schedule_events`/`findings` and downstream `gates`/`schedule_tasks`/`schedule_versions` by nullable FK; a `shipment_recovered` event clears the stale delay alert via `cleared_by_event_id`. Cascade: none — alerts are a derived cross-link/dedup surface retained in history, never a system of record.
+- `users` 1:N `documents`, `document_versions`, `evidence`, `test_runs`, `findings`, `decisions`, and `edges` through actor/owner foreign keys; `users` 1:N `schedule_tasks`/`resources` through `reviewed_by` and 1:N `schedule_events` through `reported_by`; `users` 1:N `cx_checklists` (creator/reviewer), `cx_test_records` (executor/approver), `cx_step_results` (reading entry / human review), `shipments` (registering member), and `compliance_checks` (reviewer).
+- `edges` provides controlled typed relationships among requirements, systems, assets, gates, evidence, tests, findings, documents, decisions, and — new — `schedule_task`/`resource`/`scheduled_task` entities; polymorphic IDs are constrained by application validation and project scope. Dependency edges between two `schedule_task` rows use `relationship_type = 'PRECEDES'` and form the DAG the solver consumes; cross-links from a `schedule_task` to a `gate`/`system`/`asset` use `AFFECTS`/`REQUIRES` and are surfaced only as read-only context, never as readiness input (join strategy: application resolves `edges.to_id`/`to_type` against the relevant table per request, same as existing evidence-side edges — no polymorphic database-level FK). The agents extend the same vocabulary rather than adding a parallel structure: `shipment` `TRACKS` `asset` and `shipment` `AFFECTS` `schedule_task`; `cx_checklist` `REQUIRES` `document` (standard set); `cx_test_record` `PROVES` `requirement` and `AFFECTS` `gate`; `schedule_risk` `AFFECTS` `schedule_task`; and the Specification agent's `check_precedent` reads approved-equal history through existing `edges`/`decisions`. `TRACKS` is the only new `relationship_type` value.
 - `schedule_tasks` 1:N `scheduled_tasks` (one computed-state row per version the task appears in); `schedule_tasks` 1:N `schedule_events` (a task can accumulate multiple reported events over time). Cascade: deleting/retention-purging a `schedule_task` project cascades to its `scheduled_tasks` and `schedule_events` rows (mirrors project-deletion cascade for evidence-side child tables); a `schedule_task` itself is never hard-deleted once referenced by a `scheduled_tasks` row in a persisted `schedule_version` — only soft-rejected via `review_state`.
 - `schedule_versions` 1:N `scheduled_tasks` (the version's full task-date/critical-path snapshot). Cascade: none — `scheduled_tasks` rows are immutable children of their `schedule_version` and are only ever inserted, never deleted independently of a full project purge.
 - `schedule_versions` self-references via `previous_version_id`, forming a hash-linked, strictly append-only chain (no cascade; a version is never deleted while a later version references it as predecessor).
@@ -628,11 +758,19 @@ The equipment link is stored via `edges` (`shipment` `TRACKS` `asset`), not an i
 
 The tenant owns projects and audit history. A project contains source documents and revisions, whose source regions anchor requirements and procedures — and, for the schedule module, anchor proposed task and resource-capacity records extracted from vendor contracts, timelines, POs, and approval documents. Systems contain assets and gates. Accepted requirements are connected to systems, assets, gates, evidence, and test procedures through typed edges. Test runs and evidence support gate readiness; findings can block a system or gate. Authorized users create decisions against a hashed evidence baseline. Every material mutation is represented in the tenant's append-only audit chain.
 
-For the schedule module, a human reviewer accepts, edits, or rejects proposed `schedule_task` and `resource` records; only accepted tasks and their `PRECEDES` edges are assembled into a dependency DAG and passed to the CP-SAT solver. Each solve — the initial baseline and every subsequent re-solve — produces one immutable `schedule_version`, which owns a full snapshot of every task's computed start/end dates and critical-path flag in its child `scheduled_tasks` rows. Reported real-world events (shipment, approval, or weather-delay) are logged as `schedule_events` against a specific task; the delta detector reads the current version's critical path to decide whether the event merely updates that task's actual status or requires a new, warm-started re-solve, in which case the new `schedule_version` links back to both its predecessor version and its triggering event. After any re-solve, the Gemini explainer agent narrates the before/after diff into `schedule_versions.explanation_summary`, never altering a date itself. Schedule tasks cross-link to gates/systems/assets through the same typed-edges table used elsewhere, so schedule and critical-path status can be surfaced as read-only context on a gate without ever feeding the deterministic readiness computation.
+For the schedule module, a human reviewer accepts, edits, or rejects proposed `schedule_task` and `resource` records; only accepted tasks and their `PRECEDES` edges are assembled into a dependency DAG and passed to the CP-SAT solver. Each solve — the initial baseline and every subsequent re-solve — produces one immutable `schedule_version`, which owns a full snapshot of every task's computed start/end dates and critical-path flag in its child `scheduled_tasks` rows. Reported real-world events (shipment, approval, weather-delay, or predicted risk) are logged as `schedule_events` against a specific task; the delta detector reads the current version's critical path to decide whether the event merely updates that task's actual status or requires a new, warm-started re-solve, in which case the new `schedule_version` links back to both its predecessor version and its triggering event. After any re-solve, the Gemini explainer agent narrates the before/after diff into `schedule_versions.explanation_summary`, never altering a date itself. Schedule tasks cross-link to gates/systems/assets through the same typed-edges table used elsewhere, so schedule and critical-path status can be surfaced as read-only context on a gate without ever feeding the deterministic readiness computation.
 
-For the Commissioning QA Copilot, ingested standards excerpts and procedures enter through the same `documents`/`document_versions`/`source_regions` pipeline, so every cited clause resolves to a region and hash. The copilot generates a draft `cx_checklists` row — anchored to a system, gate, and equipment asset by direct FK, and to its standard documents via `REQUIRES` edges — with modality-typed `cx_checklist_steps` and post-verified `cx_clause_citations`. An engineer executes the checklist as a `cx_test_records` row, entering readings into `cx_step_results`, where numeric/boolean verdicts are deterministic and narrative steps always await a human verdict. A `proposed_fail` maps onto existing tables — a `findings` NCR, the gate's existing `blocked` status, and hash-chained `audit_events` — while an approved all-pass test record materializes as an `evidence` row (report artifact in R2, hash-referenced), sets its gate to the existing `in_review` value (the copilot's `PENDING_REVIEW`), and joins the turnover pack; only an authorized approver moves the gate further.
+For the Commissioning QA Copilot, ingested standards excerpts and procedures enter through the same `documents`/`document_versions`/`source_regions` pipeline, so every cited clause resolves to a region and hash. The copilot generates a draft `cx_checklists` row — anchored to a system, gate, and equipment asset by direct FK, and to its standard documents via `REQUIRES` edges — with modality-typed `cx_checklist_steps` and post-verified `cx_clause_citations`. An engineer executes the checklist as a `cx_test_records` row, entering readings into `cx_step_results`, where numeric/boolean verdicts are deterministic and narrative steps always await a human verdict. A `proposed_fail` maps onto existing tables — a `findings` NCR, the gate's existing `blocked` status, and hash-chained `audit_events` — while an approved all-pass test record materializes as an `evidence` row (report artifact in the local object store, hash-referenced), sets its gate to the existing `in_review` value (the copilot's `PENDING_REVIEW`), and joins the turnover pack; only an authorized approver moves the gate further.
 
-For the Supply Chain agent, a durable `shipments` row holds each single-leg tracked delivery — linked to its equipment via a `TRACKS` edge and to threatened schedule tasks via `AFFECTS` edges — with deterministic R/A/G status, weather-adjusted ETA, and a last-known-position summary refreshed from the agent-local track. Per-poll position, weather, and route data stay agent-local; the durable trail is the shipment row plus one `schedule_events` row per genuine status transition (`shipment_delayed` on entering at-risk/delayed, the new `shipment_recovered` on returning to on-time), deduplicated by `last_notified_status` and flowing through the unchanged delta-detector → CP-SAT re-solve pipeline.
+For the Supply Chain agent, a durable `shipments` row holds each single-leg tracked delivery — linked to its equipment via a `TRACKS` edge and to threatened schedule tasks via `AFFECTS` edges — with deterministic R/A/G status, weather-adjusted ETA, and a last-known-position summary refreshed from the agent-local track. Per-poll position, weather, and route data stay agent-local; the durable trail is the shipment row plus one `schedule_events` row per genuine status transition (`shipment_delayed` on entering at-risk/delayed, `shipment_recovered` on returning to on-time), deduplicated by `last_notified_status` and flowing through the unchanged delta-detector → CP-SAT re-solve pipeline.
+
+For the Specification & Quality Compliance agent, submittals, POs, and shop-drawing text callouts enter through the same `documents`/`document_versions`/`source_regions` pipeline as a `doc_type`; a `compliance_checks` row records each comparison of an accepted `requirement` against a target line, routed by `requirements.modality` — numeric/categorical/boolean deterministically, narrative to mandatory human review — with equivalence/substitution claims groundedness-gated via `lookup_standard_clause`/`check_precedent`/`compare_spec_values` before any flag. An accepted deviation reuses the existing `findings` NCR row (referenced by `proposed_finding_id`) and writes an `audit_events` entry; no flag closes or accepts itself.
+
+For the Predictive Schedule Risk Engine, a single periodic-poll worker reads the latest `schedule_version`/critical path and records each polled signal (or explicit data-unavailable state) as a `risk_signal_readings` row; a material forward-risk crossing the threshold is recorded as a `schedule_risks` row (deduplicated by task + risk-type, cross-linked to its affected task via `AFFECTS` edges) and emitted as a `predicted_risk_delay` `schedule_events` row that flows through the unchanged delta-detector → CP-SAT re-solve pipeline. Mitigation options are proposals only; the engine never reschedules or applies one.
+
+For the Project Knowledge & RFI Intelligence agent, `knowledge_chunks` carry each retrieval chunk's pgvector embedding plus the mandatory metadata-filter columns (tenant/project/system/asset/gate/doc_type/date/revision); a user query applies the deterministic metadata filter as SQL predicates before the scoped pgvector similarity search, synthesizes an answer through the `ModelProvider` from filtered, cited chunks only (each claim resolving to a `source_region_id` + `document_version` + content hash), surfaces prior resolved RFIs from the `doc_type = 'rfi'` subset (project-scoped, never cross-project), and expands linked entities via the existing `edges` + `audit_events` tables for the interactive graph/timeline — no parallel datastore.
+
+The Command Center reads the `schedule_events`, `findings`, `edges`, and `audit_events` the agents already write and denormalizes each triggering event's downstream impact into an `alerts` row, deduplicated on status change and cleared on `shipment_recovered` — a read/cross-link surface only, never itself changing gate readiness, closing a finding, or altering a schedule date.
 
 ## Indexing Notes
 
@@ -651,7 +789,7 @@ For the Supply Chain agent, a durable `shipments` row holds each single-leg trac
 | `test_runs(gate_id, status, executed_at DESC)` | Find current test outcomes for readiness. |
 | `findings(project_id, status, severity)` | Find open blockers and prioritize high-severity work. |
 | `edges(project_id, from_type, from_id)` | Traverse outgoing evidence and dependency relationships, including `schedule_task` → `schedule_task` `PRECEDES` DAG edges (the primary path used to assemble a task's dependency graph before a solve). |
-| `edges(project_id, to_type, to_id)` | Find blockers, proofs, and affected records pointing at an entity, including which gate/system a `schedule_task` cross-links to via `AFFECTS`/`REQUIRES`, and which `shipment` `TRACKS` a given asset or `AFFECTS` a given schedule task. |
+| `edges(project_id, to_type, to_id)` | Find blockers, proofs, and affected records pointing at an entity, including which gate/system a `schedule_task` cross-links to via `AFFECTS`/`REQUIRES`, which `shipment` `TRACKS` a given asset or `AFFECTS` a given schedule task, and which `schedule_risk` `AFFECTS` a given schedule task. |
 | `decisions(gate_id, decided_at DESC)` | Retrieve the latest decision and compare its evidence baseline. |
 | `audit_events(project_id, occurred_at DESC)` | Render project audit timelines and export history. |
 | `schedule_tasks(project_id, review_state)` | Drive the task review queue and select `accepted` tasks for DAG assembly, mirroring `requirements(project_id, review_state)`. |
@@ -664,6 +802,7 @@ For the Supply Chain agent, a durable `shipments` row holds each single-leg trac
 | `schedule_events(project_id, schedule_task_id, occurred_at DESC)` | Serialize concurrent events against the same task in arrival order and find a task's event history. |
 | `schedule_events(project_id, triggered_resolve, solve_status)` | Find pending/failed solves for retry and monitoring. |
 | `schedule_events(shipment_id, occurred_at DESC)` | Trace one shipment's delay/recovery event trail into the schedule pipeline (delay → recovery alert clearing). |
+| `schedule_events(schedule_risk_id, occurred_at DESC)` | Trace one predicted-risk's emitted-event trail into the schedule pipeline. |
 | `cx_checklists(project_id, gate_id, status)` | List draft/accepted checklists for a gate's commissioning view; low cardinality per gate in the bounded pilot (one system, one gate). |
 | `cx_checklist_steps(cx_checklist_id, sequence_number)` UNIQUE | Render ordered step execution and prevent duplicate step numbering. |
 | `cx_clause_citations(cx_checklist_id, verification_status)` | Surface flagged (possible-hallucination) citations on a draft without scanning all citations. |
@@ -672,18 +811,29 @@ For the Supply Chain agent, a durable `shipments` row holds each single-leg trac
 | `cx_step_results(cx_test_record_id, verdict)` | List `proposed_fail`/`needs_human_review` steps for review queues and report drafting. |
 | `shipments(project_id, status)` | Render the R/A/G navigator table and filter at-risk/delayed deliveries; expected tens of shipments per project, so the index mainly serves sorted status grouping. |
 | `shipments(project_id, mmsi)` | Match incoming AIS position frames to the tracked shipment during the ~30s poll. |
+| `compliance_checks(project_id, review_state, verdict)` | Drive the compliance review queue and surface proposed deviations vs. human-review-only mismatches. |
+| `compliance_checks(requirement_id, target_document_version_id)` | Find prior checks of a requirement against a target and avoid duplicate comparison. |
+| `schedule_risks(project_id, schedule_task_id, risk_type)` UNIQUE | Enforce the task + risk-type dedup key and back the "Delays/Risks" surface without re-emitting per poll cycle. |
+| `schedule_risks(project_id, state, flagged_at DESC)` | List active (flagged) vs. resolved risks in the "Delays/Risks" view. |
+| `risk_signal_readings(project_id, signal_type, observed_at DESC)` | Back the "Live Events" surface with the latest polled signal observations per type. |
+| `knowledge_chunks(tenant_id, project_id, doc_type, system_id, asset_id, gate_id)` | Apply the mandatory-first deterministic metadata filter as SQL predicates before any vector search; scopes the candidate set to the filtered+routed subset. |
+| `knowledge_chunks USING ivfflat (embedding vector_cosine_ops)` (or HNSW) | pgvector approximate-nearest-neighbour index for scoped semantic similarity, run only within the metadata-filtered subset, never globally. |
+| `alerts(project_id, status, created_at DESC)` | Render the active Command Center view and its history. |
+| `alerts(project_id, dedup_key)` UNIQUE WHERE `status = 'active'` | Enforce one active alert per genuine status transition (dedup on status change; recovery clears the stale alert). |
 
 ## Data Storage Notes
 
-All entities, including the schedule module's new tables, are stored relationally in Cloudflare D1 with foreign keys, `CHECK` enums, and tenant/project predicates enforced at the database layer — no separate document/graph store is introduced. `schedule_versions` and `scheduled_tasks` are the one deliberate exception to normal mutability: once a version is solved, its `scheduled_tasks` rows and the version's own solve-outcome fields are treated as write-once (only the later `explanation_*` fields and `schedule_events.actual_status`-driven fields on `scheduled_tasks` are appended after the fact), matching the existing "no authoritative value stored as an unversioned mutable flag" rule already applied to gate readiness. R2, FTS5, and Vectorize usage are unchanged by this addition; FTS5 additionally indexes `schedule_tasks.name`/`vendor` for citation-style lookup, and Vectorize is used only internally for extraction-time task-to-system/asset matching, never as user-facing search.
+All entities, including the schedule module's tables and the five agents' durable tables, are stored relationally in **local Postgres (via Drizzle ORM)** with foreign keys, `CHECK` enums, and tenant/project predicates enforced at the database layer — no separate document/graph store is introduced. `schedule_versions` and `scheduled_tasks` are the one deliberate exception to normal mutability: once a version is solved, its `scheduled_tasks` rows and the version's own solve-outcome fields are treated as write-once (only the later `explanation_*` fields and `schedule_events.actual_status`-driven fields on `scheduled_tasks` are appended after the fact), matching the existing "no authoritative value stored as an unversioned mutable flag" rule already applied to gate readiness. Local object store (MinIO/filesystem), Postgres full-text search (tsvector), and pgvector usage extend to the new tables: Postgres full-text search additionally indexes `schedule_tasks.name`/`vendor` for citation-style lookup, and pgvector serves internal extraction-time task-to-system/asset and clause/precedent matching **and is now additionally user-facing** for the Project Knowledge & RFI Intelligence Agent's scoped semantic search over `knowledge_chunks` — always applied after the mandatory-first deterministic metadata filter and scoped to the filtered+routed subset, never a global query.
 
-The two agent-services (Commissioning QA Copilot, Supply Chain Visibility & Risk) do not change this posture. Per the TRD's accepted stack override, each agent runs **agent-local working stores** that are never authoritative and are deliberately **not modeled as durable tables here**:
+The two Python agent-services (Commissioning QA Copilot, Supply Chain Visibility & Risk) do not change this posture. Per the TRD's accepted stack override, each runs **agent-local working stores** that are never authoritative and are deliberately **not modeled as durable tables here**:
 
-- **Chroma** — the Commissioning agent's RAG vectors over synthetic standards/procedure excerpts (clause/section metadata + embeddings). Agent-local only; separate from, and never feeding, the platform's FTS5/Vectorize. The authoritative clause text and citations live in `documents`/`document_versions`/`source_regions`.
-- **Neo4j/NetworkX** — each agent's internal working graph (test↔gate↔equipment derivations; shipment/route working state). Agent-local only; the D1 `edges` table remains the single authoritative provenance graph.
+- **Chroma** — the Commissioning agent's RAG vectors over synthetic standards/procedure excerpts (clause/section metadata + embeddings). Agent-local only; separate from, and never feeding, the platform's Postgres full-text search / pgvector. The authoritative clause text and citations live in `documents`/`document_versions`/`source_regions`.
+- **Neo4j/NetworkX** — each agent's internal working graph (test↔gate↔equipment derivations; shipment/route working state). Agent-local only; the Postgres `edges` table remains the single authoritative provenance graph.
 - **Supply Chain time series** — per-poll position snapshots (lat/lng, speed, heading, timestamp, live-vs-simulated), weather snapshots (wind/precipitation/storm, delay factor, timestamp), and the great-circle route cache. Agent-local, re-derivable working data served live through the proxied shipment read APIs; the durable summary lands on the `shipments` row and in `schedule_events`.
 
-The **durable** agent data model is exactly what this schema defines: the `cx_*` and `shipments` tables in D1; approved test records reusing `evidence` and `TEST_FAILED` NCRs reusing `findings`; shipment status transitions reusing `schedule_events`; report artifacts as immutable, hash-referenced R2 objects; cross-entity links reusing `edges`; and every state change in the append-only `audit_events` chain. All agent writes land through the Workers core — the agent-services never write D1/R2 directly.
+The three native agents (Specification & Quality Compliance, Predictive Schedule Risk Engine, Project Knowledge & RFI Intelligence) carry **no** agent-local override: they read and write these same Postgres tables directly — compliance comparisons in `compliance_checks` (findings reusing `findings`/`edges`/`audit_events`), predicted risks in `schedule_risks`/`risk_signal_readings` (emitting `schedule_events`), and RFI retrieval over `knowledge_chunks` (pgvector) plus the existing `edges` + `audit_events` graph/timeline.
+
+The **durable** agent data model is exactly what this schema defines: the `cx_*`, `shipments`, `compliance_checks`, `schedule_risks`, `risk_signal_readings`, `knowledge_chunks`, and `alerts` tables in Postgres; approved test records reusing `evidence` and `TEST_FAILED`/compliance NCRs reusing `findings`; shipment and predicted-risk status transitions reusing `schedule_events`; report artifacts as immutable, hash-referenced local object-store objects; cross-entity links reusing `edges`; and every state change in the append-only `audit_events` chain. All agent writes land through the local Node core — the agent-services never write Postgres/the object store directly.
 
 ## Schema Rules
 
@@ -694,8 +844,12 @@ The **durable** agent data model is exactly what this schema defines: the `cx_*`
 - Readiness is derived from accepted records and decisions; it is not a manually editable source-of-truth column.
 - Schedule dates, critical-path flags, and feasibility are derived only from a CP-SAT solver call and stored only in `schedule_versions`/`scheduled_tasks`; they are never a manually editable source-of-truth column and never feed the deterministic readiness computation.
 - Every schedule table includes both `tenant_id` and `project_id` and every read/write predicate includes both, identical to existing evidence-side tables.
-- The agent parent tables (`cx_checklists`, `cx_test_records`, `shipments`) include both `tenant_id` and `project_id` with the same predicate rule; their child tables are scoped through the parent FK, mirroring `test_steps` under `test_procedures`.
-- Commissioning acceptance verdicts (`cx_step_results.verdict`) for numeric/boolean steps and all shipment ETA/R-A-G values (`shipments.eta_weather_adjusted`, `shipments.status`) are deterministic computations; no LLM-produced value is ever stored in a verdict, ETA, or status column, and narrative steps store only `needs_human_review` until a human verdict resolves them.
+- The agent parent tables (`cx_checklists`, `cx_test_records`, `shipments`, `compliance_checks`, `schedule_risks`, `risk_signal_readings`, `knowledge_chunks`, `alerts`) include both `tenant_id` and `project_id` with the same predicate rule; their child tables are scoped through the parent FK, mirroring `test_steps` under `test_procedures`.
+- Commissioning acceptance verdicts (`cx_step_results.verdict`) for numeric/boolean steps, Specification compliance verdicts (`compliance_checks.verdict`) for numeric/categorical/boolean tiers, and all shipment ETA/R-A-G values (`shipments.eta_weather_adjusted`, `shipments.status`) are deterministic computations; no LLM-produced value is ever stored in a verdict, ETA, or status column, and narrative steps/comparisons store only `needs_human_review`/`possible_mismatch` until a human resolves them.
 - Draft checklists and draft reports never affect readiness: only the engineer-approved test record's `evidence` row and human-disposed `findings` rows enter the readiness computation, and no new gate status value exists — the copilot's `PENDING_REVIEW` and `BLOCKED` outcomes map to the existing `gates.status` values `'in_review'` and `'blocked'`.
-- `shipments.last_notified_status` is the single dedup source of truth: a `schedule_events` row of type `shipment_delayed`/`shipment_recovered` may be inserted only when the newly computed status differs from it, guaranteeing one event per genuine transition rather than one per ~30s poll cycle.
-- Agent-local stores (Chroma, Neo4j/NetworkX, position/weather/route time series) are never authoritative and hold no state that cannot be reconstructed or safely lost; the D1 tables in this schema, hash-referenced R2 artifacts, and the `audit_events` chain are the only systems of record for agent outputs.
+- Every equivalence/substitution claim in `compliance_checks` is groundedness-gated (`lookup_standard_clause`/`check_precedent`/`compare_spec_values`) before a flag is proposed; an ungrounded claim is stored as `verdict = 'needs_engineering_judgment'`/`groundedness_state = 'no_precedent_found'` and never shown as a flag, and conflicting client-spec-vs-standard sources are surfaced with document hierarchy/date, never silently resolved into an authoritative column.
+- The Predictive Schedule Risk Engine emits into `schedule_events.event_type = 'predicted_risk_delay'` as a producer of an existing pipeline event; mitigation options in `schedule_risks.mitigation_options_json` are proposals only — the engine never reschedules or applies one, and the re-solve is executed only by the deterministic CP-SAT solver or a human. `schedule_risks` `(project_id, schedule_task_id, risk_type)` uniqueness is the single task+risk-type dedup source of truth: a `predicted_risk_delay` event is emitted only on a genuine material change, never per poll cycle.
+- The RFI agent's user-facing pgvector search over `knowledge_chunks` always applies the mandatory-first deterministic metadata filter (tenant/project/system/asset/gate/doc_type/date/revision) as SQL predicates **before** any vector operator, scoped to the filtered+routed subset and never global; every surfaced answer claim resolves to a `source_region_id` + `document_version` + content hash, and similar-RFI retrieval is scoped to `doc_type = 'rfi'` and project-scoped, never cross-project.
+- `shipments.last_notified_status` is the single dedup source of truth for shipment events, and `alerts (project_id, dedup_key) WHERE status = 'active'` is the single dedup source of truth for Command Center alerts: a `schedule_events` row of type `shipment_delayed`/`shipment_recovered` or a new active `alerts` row may be inserted only on a genuine status transition, guaranteeing one per transition rather than one per ~30s poll cycle; a `shipment_recovered` event clears the stale `SHIPMENT_DELAYED` alert (`alerts.status = 'cleared'`) rather than leaving it latched.
+- Alerts and `risk_signal_readings` are read/cross-link and observational surfaces only — they never set gate readiness, close a finding, or alter a schedule date; the systems of record remain the underlying `schedule_events`/`findings`/`edges`/`schedule_versions` rows.
+- Agent-local stores (Chroma, Neo4j/NetworkX, position/weather/route time series) are never authoritative and hold no state that cannot be reconstructed or safely lost; the Postgres tables in this schema, hash-referenced local object-store artifacts, and the `audit_events` chain are the only systems of record for agent outputs.
