@@ -2,6 +2,7 @@
 
 | File | Status | Notes |
 |---|---|---|
+| CanonicalBuildPlan.md | ✅ Approved implementation baseline | Reconciles all planning documents, including Bhavik's Cx and Supply Chain specifications. It is the single build contract for scope, authority boundaries, architecture, schema interpretation, feature sequence, and contradictions. |
 | StructuredPlan.md | ✅ Approved | 2 remaining agents integrated (Commissioning QA Copilot + Supply Chain Visibility & Risk); stack override + Divergence Note added; supply-chain exclusion flipped to single-leg committed; orchestrator event contract recorded as emerging. Approved by user. Minor consistency edit: kind→event_type terminology (2 spots). |
 | PRD.md | ✅ Approved | Approved by user incl. Agent Suite section, US-01–US-31, all 5 agents' features/constraints/edge cases. |
 | TRD.md | ✅ Approved | Approved by user. Local (no-Cloudflare) stack + 3 propagated agents + 4-event contract + Command Center US-31. |
