@@ -25,7 +25,7 @@ async function main() {
   assert.notEqual(ciphertext, totp.secret.base32);
   assert.equal(decryptSecret(ciphertext), totp.secret.base32);
 
-  const event = scheduleEventSchema.parse({ eventId: randomUUID(), projectId: "10000000-0000-4000-8000-000000000003", occurredAt: new Date().toISOString(), transitionId: "transition-1", eventType: "SHIPMENT_DELAYED", payload: { shipmentId: randomUUID(), status: "amber", affectedTaskIds: [], estimate: true } });
+  const event = scheduleEventSchema.parse({ eventId: randomUUID(), projectId: "10000000-0000-4000-8000-000000000003", occurredAt: new Date().toISOString(), transitionId: "transition-1", eventType: "SHIPMENT_DELAYED", payload: { shipmentId: randomUUID(), status: "amber", availableAt: new Date(Date.now() + 3_600_000).toISOString(), affectedTaskIds: [], estimate: true } });
   assert.match(eventDedupKey(event), /^SHIPMENT_DELAYED:/);
   assert.equal(scheduleEventSchema.safeParse({ ...event, payload: { ...event.payload, estimate: false } }).success, false);
 

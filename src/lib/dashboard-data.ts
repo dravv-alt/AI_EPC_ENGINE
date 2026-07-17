@@ -22,7 +22,7 @@ function stateTone(readiness: GateReadiness["state"]): ReadinessTone {
 }
 
 function readinessDetail(item: GateReadiness) {
-  if (item.state === "blocked") return `${item.blockingFindings} blocking finding${item.blockingFindings === 1 ? "" : "s"}`;
+  if (item.state === "blocked") return item.blockingFindings ? `${item.blockingFindings} blocking finding${item.blockingFindings === 1 ? "" : "s"}` : item.unmetPrerequisites ? `${item.unmetPrerequisites} prerequisite gate${item.unmetPrerequisites === 1 ? "" : "s"} incomplete` : `${item.failedEvidence} failed proof record${item.failedEvidence === 1 ? "" : "s"}`;
   if (item.state === "unknown") return "No accepted requirements mapped";
   if (item.state === "in_review") return `${item.acceptedEvidence} / ${item.requiredEvidence} accepted evidence`;
   return `${item.acceptedEvidence} accepted evidence records`;
@@ -58,6 +58,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   const ownerById = new Map(people.map((person) => [person.id, person.displayName]));
   const regionsById = new Map(projectRegions.map(({ source_regions, document_versions, documents }) => [source_regions.id, { source_regions, document_versions, documents }]));
   const proposal = projectRequirements.find((requirement) => requirement.reviewState === "proposed");
+  const actionableFindings = projectFindings.filter((finding) => ["open", "in_progress"].includes(finding.status));
 
   return {
     projectId,
@@ -66,10 +67,10 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
     metrics: [
       { label: "Gate readiness", value: `${readinessPercent}%`, detail: blockers ? `${blockers} blocker${blockers === 1 ? "" : "s"} remain` : `${readyGateCount} gate${readyGateCount === 1 ? "" : "s"} ready`, tone: "primary" },
       { label: "Accepted evidence", value: `${acceptedEvidence} / ${requiredEvidence}`, detail: staleEvidence ? `${staleEvidence} stale record${staleEvidence === 1 ? "" : "s"}` : "No stale records", tone: "secondary" },
-      { label: "Open actions", value: String(projectFindings.filter((finding) => finding.status !== "closed").length), detail: `${projectFindings.filter((finding) => ["high", "critical"].includes(finding.severity) && finding.status !== "closed").length} high-priority`, tone: "tertiary" }
+      { label: "Open actions", value: String(actionableFindings.length), detail: `${actionableFindings.filter((finding) => ["high", "critical"].includes(finding.severity)).length} high-priority`, tone: "tertiary" }
     ],
     readiness: projectGates.slice().sort((a, b) => Number(a.sequenceNumber) - Number(b.sequenceNumber)).map((gate) => {
-      const state = readinessByGate.get(gate.id) ?? { state: "unknown", acceptedEvidence: 0, requiredEvidence: 0, staleEvidence: 0, failedEvidence: 0, blockingFindings: 0, acceptedRequirements: 0, gateId: gate.id };
+      const state = readinessByGate.get(gate.id) ?? { state: "unknown", acceptedEvidence: 0, requiredEvidence: 0, missingEvidence: 0, unapprovedEvidence: 0, staleEvidence: 0, failedEvidence: 0, blockingFindings: 0, unmetPrerequisites: 0, acceptedRequirements: 0, gateId: gate.id, proofDetails: [], blockingFindingDetails: [], prerequisiteDetails: [], evaluatedAt: new Date(), ruleVersion: "readiness-v2.1" };
       return { gateId: gate.id, gate: gate.name, system: systemById.get(gate.systemId) ?? "Unassigned system", state: stateTone(state.state), detail: readinessDetail(state) };
     }),
     sources: projectVersions.slice().sort((a, b) => b.document_versions.createdAt.getTime() - a.document_versions.createdAt.getTime()).slice(0, 5).map(({ document_versions, documents }) => ({
@@ -78,7 +79,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
       status: document_versions.extractionStatus === "completed" ? "Processed" : document_versions.extractionStatus === "failed" ? "Needs attention" : "Processing",
       detail: `${regionCountByVersion.get(document_versions.id) ?? 0} cited region${(regionCountByVersion.get(document_versions.id) ?? 0) === 1 ? "" : "s"}`
     })),
-    actions: projectFindings.filter((finding) => finding.status !== "closed").slice(0, 5).map((finding) => ({ title: finding.title, owner: finding.ownerId ? ownerById.get(finding.ownerId) ?? "Unassigned" : "Unassigned", due: finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(finding.dueAt) : "Unscheduled", severity: finding.severity })),
+    actions: actionableFindings.slice(0, 5).map((finding) => ({ title: finding.title, owner: finding.ownerId ? ownerById.get(finding.ownerId) ?? "Unassigned" : "Unassigned", due: finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(finding.dueAt) : "Unscheduled", severity: finding.severity })),
     proposal: proposal ? { id: proposal.id, statement: proposal.statement, citation: (() => { const region = regionsById.get(proposal.sourceRegionId); return region ? `${region.documents.title} · p. ${region.source_regions.pageNumber}` : "Controlled source unavailable"; })() } : null
   };
 }

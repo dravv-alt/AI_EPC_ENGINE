@@ -12,6 +12,8 @@ export type ProjectRole = (typeof projectRoles)[number];
 
 export type Permission =
   | "project:manage"
+  | "configuration:manage"
+  | "graph:manage"
   | "source:upload"
   | "requirement:review"
   | "evidence:capture"
@@ -21,9 +23,9 @@ export type Permission =
   | "audit:view";
 
 const grants: Record<ProjectRole, readonly Permission[]> = {
-  admin: ["project:manage", "source:upload", "requirement:review", "evidence:capture", "finding:manage", "gate:approve", "schedule:manage", "audit:view"],
-  commissioning_manager: ["source:upload", "requirement:review", "evidence:capture", "finding:manage", "schedule:manage", "audit:view"],
-  reviewer: ["requirement:review", "audit:view"],
+  admin: ["project:manage", "configuration:manage", "graph:manage", "source:upload", "requirement:review", "evidence:capture", "finding:manage", "gate:approve", "schedule:manage", "audit:view"],
+  commissioning_manager: ["configuration:manage", "graph:manage", "source:upload", "requirement:review", "evidence:capture", "finding:manage", "schedule:manage", "audit:view"],
+  reviewer: ["graph:manage", "requirement:review", "audit:view"],
   field_engineer: ["evidence:capture"],
   approver: ["gate:approve", "audit:view"],
   viewer: ["audit:view"],

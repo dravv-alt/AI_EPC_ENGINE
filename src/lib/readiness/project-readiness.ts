@@ -1,55 +1,92 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { edges, evidence, findings, gates, requirements } from "@/lib/db/schema";
 import { computeReadiness, type ReadinessState } from "@/lib/readiness/compute";
 
+type ProofState = "accepted" | "missing" | "stale" | "failed" | "unapproved";
+export interface RequirementProofDetail { requirementId: string; statement: string; state: ProofState; evidenceIds: string[] }
 export interface GateReadiness {
   gateId: string;
   state: ReadinessState;
   acceptedRequirements: number;
   requiredEvidence: number;
   acceptedEvidence: number;
+  missingEvidence: number;
+  unapprovedEvidence: number;
   staleEvidence: number;
   failedEvidence: number;
   blockingFindings: number;
+  unmetPrerequisites: number;
+  proofDetails: RequirementProofDetail[];
+  blockingFindingDetails: Array<{ id: string; title: string; severity: string; ownerId: string | null; dueAt: Date | null }>;
+  prerequisiteDetails: Array<{ id: string; name: string; status: string }>;
+  evaluatedAt: Date;
+  ruleVersion: string;
 }
 
-export async function getProjectGateReadiness(projectId: string): Promise<GateReadiness[]> {
-  const projectGates = await db.select().from(gates).where(eq(gates.projectId, projectId));
-  const projectRequirements = await db.select().from(requirements).where(eq(requirements.projectId, projectId));
-  const requirementIds = projectRequirements.map((item) => item.id);
-  const allEdges = await db.select().from(edges).where(eq(edges.projectId, projectId));
-  const projectEvidence = await db.select().from(evidence).where(eq(evidence.projectId, projectId));
-  const projectFindings = await db.select().from(findings).where(eq(findings.projectId, projectId));
+const ruleVersion = "readiness-v2.1";
+
+function proofState(records: Array<typeof evidence.$inferSelect>): ProofState {
+  if (records.some((item) => item.validityState === "failed")) return "failed";
+  if (records.some((item) => item.validityState === "accepted")) return "accepted";
+  if (records.some((item) => item.validityState === "stale")) return "stale";
+  if (records.some((item) => item.validityState === "pending")) return "unapproved";
+  return "missing";
+}
+
+async function evaluateProject(projectId: string): Promise<GateReadiness[]> {
+  const [projectGates, projectRequirements, allEdges, projectEvidence, projectFindings] = await Promise.all([
+    db.select().from(gates).where(eq(gates.projectId, projectId)),
+    db.select().from(requirements).where(eq(requirements.projectId, projectId)),
+    db.select().from(edges).where(eq(edges.projectId, projectId)),
+    db.select().from(evidence).where(eq(evidence.projectId, projectId)),
+    db.select().from(findings).where(eq(findings.projectId, projectId))
+  ]);
+  const requirementById = new Map(projectRequirements.map((item) => [item.id, item]));
+  const evidenceById = new Map(projectEvidence.map((item) => [item.id, item]));
+  const evaluatedAt = new Date();
 
   return projectGates.map((gate) => {
-    const gateRequirementIds = new Set(
-      allEdges
-        .filter((edge) => edge.fromType === "requirement" && edge.toType === "gate" && edge.toId === gate.id && requirementIds.includes(edge.fromId))
-        .map((edge) => edge.fromId)
-    );
-    const acceptedRequirementIds = new Set(
-      projectRequirements.filter((requirement) => gateRequirementIds.has(requirement.id) && requirement.reviewState === "accepted").map((requirement) => requirement.id)
-    );
-    const proofEdges = allEdges.filter((edge) => edge.fromType === "evidence" && edge.toType === "requirement" && acceptedRequirementIds.has(edge.toId));
-    const evidenceIds = new Set(proofEdges.map((edge) => edge.fromId));
-    const relevantEvidence = projectEvidence.filter((item) => evidenceIds.has(item.id));
-    const blockingFindings = projectFindings.filter((finding) => finding.gateId === gate.id && finding.status !== "closed" && ["high", "critical"].includes(finding.severity)).length;
+    const acceptedRequirements = allEdges
+      .filter((edge) => edge.fromType === "requirement" && edge.relationshipType === "AFFECTS" && edge.toType === "gate" && edge.toId === gate.id)
+      .map((edge) => requirementById.get(edge.fromId))
+      .filter((item): item is typeof requirements.$inferSelect => item?.reviewState === "accepted");
+    const proofDetails = acceptedRequirements.map((requirement) => {
+      const evidenceIds = allEdges.filter((edge) => edge.fromType === "evidence" && edge.relationshipType === "PROVES" && edge.toType === "requirement" && edge.toId === requirement.id).map((edge) => edge.fromId);
+      const records = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is typeof evidence.$inferSelect => Boolean(item));
+      return { requirementId: requirement.id, statement: requirement.statement, state: proofState(records), evidenceIds: records.map((item) => item.id) } satisfies RequirementProofDetail;
+    });
+    const blockingFindingDetails = projectFindings.filter((finding) => finding.gateId === gate.id && ["open", "in_progress"].includes(finding.status) && ["high", "critical"].includes(finding.severity)).map((finding) => ({ id: finding.id, title: finding.title, severity: finding.severity, ownerId: finding.ownerId, dueAt: finding.dueAt }));
+    const prerequisiteDetails = projectGates.filter((candidate) => candidate.systemId === gate.systemId && Number(candidate.sequenceNumber) < Number(gate.sequenceNumber) && candidate.status !== "approved").map((candidate) => ({ id: candidate.id, name: candidate.name, status: candidate.status }));
     const input = {
-      acceptedRequirements: acceptedRequirementIds.size,
-      requiredEvidence: acceptedRequirementIds.size,
-      acceptedEvidence: relevantEvidence.filter((item) => item.validityState === "accepted").length,
-      staleEvidence: relevantEvidence.filter((item) => item.validityState === "stale").length,
-      failedEvidence: relevantEvidence.filter((item) => item.validityState === "failed").length,
-      blockingFindings
+      acceptedRequirements: acceptedRequirements.length,
+      requiredEvidence: acceptedRequirements.length,
+      acceptedEvidence: proofDetails.filter((item) => item.state === "accepted").length,
+      missingEvidence: proofDetails.filter((item) => item.state === "missing").length,
+      unapprovedEvidence: proofDetails.filter((item) => item.state === "unapproved").length,
+      staleEvidence: proofDetails.filter((item) => item.state === "stale").length,
+      failedEvidence: proofDetails.filter((item) => item.state === "failed").length,
+      blockingFindings: blockingFindingDetails.length,
+      unmetPrerequisites: prerequisiteDetails.length
     };
-
-    return { gateId: gate.id, state: computeReadiness(input), ...input };
+    return { gateId: gate.id, state: computeReadiness(input), ...input, proofDetails, blockingFindingDetails, prerequisiteDetails, evaluatedAt, ruleVersion };
   });
 }
 
+export async function getProjectGateReadiness(projectId: string) { return evaluateProject(projectId); }
+
+export async function getGateReadinessDetail(projectId: string, gateId: string) {
+  return (await evaluateProject(projectId)).find((item) => item.gateId === gateId) ?? null;
+}
+
 export async function persistProjectGateReadiness(projectId: string) {
-  const readiness = await getProjectGateReadiness(projectId);
-  await Promise.all(readiness.map(({ gateId, state }) => db.update(gates).set({ status: state === "unknown" ? "not_started" : state }).where(and(eq(gates.projectId, projectId), eq(gates.id, gateId)))));
+  const readiness = await evaluateProject(projectId);
+  const currentGates = await db.select().from(gates).where(eq(gates.projectId, projectId));
+  const currentById = new Map(currentGates.map((gate) => [gate.id, gate]));
+  await Promise.all(readiness.map(({ gateId, state }) => {
+    const current = currentById.get(gateId);
+    if (current?.status === "approved" && state === "ready") return Promise.resolve();
+    return db.update(gates).set({ status: state === "unknown" ? "not_started" : state, updatedAt: new Date() }).where(and(eq(gates.projectId, projectId), eq(gates.id, gateId)));
+  }));
   return readiness;
 }

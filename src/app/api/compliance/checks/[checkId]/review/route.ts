@@ -1,0 +1,67 @@
+import { and, eq, sql } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { writeAuditEvent } from "@/lib/audit/write-event";
+import { db } from "@/lib/db/client";
+import { complianceChecks, edges, findings } from "@/lib/db/schema";
+import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
+
+const schema = z.object({
+  action: z.enum(["accept", "edit", "reject"]),
+  expectedVersion: z.number().int().positive(),
+  note: z.string().trim().min(10).max(5000),
+  finalVerdict: z.enum(["conforms", "deterministic_flag", "possible_mismatch"]).optional()
+}).superRefine((value, context) => {
+  if (value.action === "edit" && !value.finalVerdict) context.addIssue({ code: "custom", message: "An edited check requires the engineer's final verdict.", path: ["finalVerdict"] });
+});
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ checkId: string }> }) {
+  const { checkId } = await params;
+  const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Compliance review is invalid.", issues: parsed.error.flatten() }, { status: 400 });
+  const existing = await db.query.complianceChecks.findFirst({ where: eq(complianceChecks.id, checkId) });
+  if (!existing) return NextResponse.json({ error: "Compliance check not found." }, { status: 404 });
+  try {
+    const actor = await requireProjectPermission(existing.projectId, "requirement:review");
+    if (existing.reviewState !== "proposed") return NextResponse.json({ error: "This compliance proposal has already received a final human disposition." }, { status: 409 });
+    const finalVerdict = parsed.data.action === "edit" ? parsed.data.finalVerdict! : existing.verdict;
+    if (parsed.data.action === "accept" && existing.verdict === "needs_engineering_judgment") return NextResponse.json({ error: "Needs-engineering-judgment cannot be accepted unchanged. Edit it to an explicit disposition or reject it." }, { status: 409 });
+    const acceptedDeviation = parsed.data.action !== "reject" && ["deterministic_flag", "possible_mismatch"].includes(finalVerdict);
+
+    const outcome = await db.transaction(async (tx) => {
+      let finding = existing.proposedFindingId ? await tx.query.findings.findFirst({ where: eq(findings.id, existing.proposedFindingId) }) : undefined;
+      if (acceptedDeviation && !finding) {
+        const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, existing.projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, existing.requirementId), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
+        [finding] = await tx.insert(findings).values({ projectId: existing.projectId, gateId: gateEdge?.toId ?? null, title: `Accepted compliance ${finalVerdict.replaceAll("_", " ")}`, description: `${existing.reason}\n\nEngineer disposition: ${parsed.data.note}`, severity: finalVerdict === "deterministic_flag" ? "high" : "medium", status: "open" }).returning();
+      } else if (finding) {
+        [finding] = await tx.update(findings).set({
+          status: acceptedDeviation ? "open" : "dismissed",
+          title: acceptedDeviation ? `Accepted compliance ${finalVerdict.replaceAll("_", " ")}` : finding.title,
+          description: `${finding.description ?? existing.reason}\n\nEngineer disposition: ${parsed.data.note}`,
+          version: sql`${findings.version} + 1`,
+          updatedAt: new Date()
+        }).where(eq(findings.id, finding.id)).returning();
+      }
+      const [check] = await tx.update(complianceChecks).set({
+        verdict: finalVerdict,
+        reviewState: parsed.data.action === "reject" ? "rejected" : parsed.data.action === "edit" ? "edited" : "accepted",
+        reviewedBy: actor.userId,
+        reviewedAt: new Date(),
+        reviewNote: parsed.data.note,
+        proposedFindingId: finding?.id ?? existing.proposedFindingId,
+        findingDisposition: finding ? acceptedDeviation ? "accepted_open" : "dismissed" : "not_applicable",
+        version: sql`${complianceChecks.version} + 1`,
+        updatedAt: new Date()
+      }).where(and(eq(complianceChecks.id, checkId), eq(complianceChecks.version, parsed.data.expectedVersion), eq(complianceChecks.reviewState, "proposed"))).returning();
+      if (!check) throw new Error("CONFLICT");
+      return { check, finding };
+    });
+    await writeAuditEvent({ projectId: existing.projectId, actorId: actor.userId, action: `compliance.check.${parsed.data.action === "reject" ? "rejected" : parsed.data.action === "edit" ? "edited" : "accepted"}`, entityType: "compliance_check", entityId: existing.id, before: existing, after: { check: outcome.check, finding: outcome.finding } });
+    if (outcome.finding) await persistProjectGateReadiness(existing.projectId);
+    return NextResponse.json(outcome);
+  } catch (error) {
+    if (error instanceof Error && error.message === "CONFLICT") return NextResponse.json({ error: "This compliance check changed after you opened it. Reload before reviewing." }, { status: 409 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to review compliance check." }, { status: error instanceof AccessError ? error.status : 500 });
+  }
+}

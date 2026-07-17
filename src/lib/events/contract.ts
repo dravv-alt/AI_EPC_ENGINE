@@ -9,9 +9,18 @@ const base = z.object({
 
 export const scheduleEventSchema = z.discriminatedUnion("eventType", [
   base.extend({ eventType: z.literal("TEST_FAILED"), payload: z.object({ testRecordId: z.string().uuid(), stepId: z.string().uuid(), findingId: z.string().uuid(), gateId: z.string().uuid() }) }),
-  base.extend({ eventType: z.literal("SHIPMENT_DELAYED"), payload: z.object({ shipmentId: z.string().uuid(), status: z.enum(["amber", "red"]), affectedTaskIds: z.array(z.string().uuid()).default([]), estimate: z.literal(true) }) }),
-  base.extend({ eventType: z.literal("SHIPMENT_RECOVERED"), payload: z.object({ shipmentId: z.string().uuid(), affectedTaskIds: z.array(z.string().uuid()).default([]), estimate: z.literal(true) }) }),
-  base.extend({ eventType: z.literal("predicted_risk_delay"), payload: z.object({ riskId: z.string().uuid(), probability: z.number().min(0).max(1), delayDays: z.number().nonnegative(), affectedTaskIds: z.array(z.string().uuid()).min(1), materialitySignature: z.string().min(8).max(200) }) })
+  base.extend({ eventType: z.literal("SHIPMENT_DELAYED"), payload: z.object({ shipmentId: z.string().uuid(), status: z.enum(["amber", "red"]), availableAt: z.string().datetime(), previousAvailableAt: z.string().datetime().optional(), affectedTaskIds: z.array(z.string().uuid()).default([]), estimate: z.literal(true) }) }),
+  base.extend({ eventType: z.literal("SHIPMENT_RECOVERED"), payload: z.object({ shipmentId: z.string().uuid(), availableAt: z.string().datetime(), previousAvailableAt: z.string().datetime().optional(), affectedTaskIds: z.array(z.string().uuid()).default([]), estimate: z.literal(true) }) }),
+  base.extend({ eventType: z.literal("predicted_risk_delay"), payload: z.object({
+    riskId: z.string().uuid(),
+    riskType: z.string().min(3).max(80),
+    sourceSignalId: z.string().uuid(),
+    probability: z.number().min(0).max(1),
+    delayDays: z.number().nonnegative(),
+    affectedTaskIds: z.array(z.string().uuid()).min(1),
+    mitigationOptions: z.array(z.object({ id: z.string().min(1).max(80), label: z.string().min(3).max(200), description: z.string().min(10).max(1000) })).min(1).max(10),
+    materialitySignature: z.string().min(8).max(200)
+  }) })
 ]);
 
 export type ScheduleEvent = z.infer<typeof scheduleEventSchema>;

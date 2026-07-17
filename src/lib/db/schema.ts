@@ -67,6 +67,7 @@ export const projects = pgTable("projects", {
   name: varchar("name", { length: 200 }).notNull(),
   code: varchar("code", { length: 80 }).notNull(),
   timezone: varchar("timezone", { length: 64 }).notNull(),
+  retentionDays: integer("retention_days").notNull().default(365),
   status: varchar("status", { length: 20 }).notNull().default("active"),
   ...timestamps
 }, (table) => [uniqueIndex("projects_tenant_code_unique").on(table.tenantId, table.code)]);
@@ -79,10 +80,23 @@ export const projectMembers = pgTable("project_members", {
   ...timestamps
 }, (table) => [uniqueIndex("project_members_project_user_unique").on(table.projectId, table.userId)]);
 
+export const storageObjects = pgTable("storage_objects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  objectKey: varchar("object_key", { length: 500 }).notNull().unique(),
+  mediaType: varchar("media_type", { length: 120 }).notNull(),
+  byteSize: integer("byte_size").notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  ...timestamps
+}, (table) => [index("storage_objects_project_idx").on(table.projectId, table.createdAt)]);
+
 export const documents = pgTable("documents", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
   documentType: varchar("document_type", { length: 40 }).notNull(),
+  standardSet: varchar("standard_set", { length: 120 }),
   title: varchar("title", { length: 300 }).notNull(),
   ...timestamps
 }, (table) => [index("documents_project_idx").on(table.projectId)]);
@@ -162,22 +176,31 @@ export const evidence = pgTable("evidence", {
   systemId: uuid("system_id").notNull().references(() => systems.id),
   assetId: uuid("asset_id").references(() => assets.id),
   sourceRegionId: uuid("source_region_id").references(() => sourceRegions.id),
+  storageObjectId: uuid("storage_object_id").references(() => storageObjects.id),
   evidenceType: varchar("evidence_type", { length: 40 }).notNull(),
   validityState: evidenceState("validity_state").notNull().default("pending"),
   contentHash: varchar("content_hash", { length: 64 }),
+  clientCaptureId: varchar("client_capture_id", { length: 120 }),
+  notes: text("notes"),
+  capturedBy: uuid("captured_by").references(() => users.id),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
   ...timestamps
-});
+}, (table) => [uniqueIndex("evidence_project_client_capture_unique").on(table.projectId, table.clientCaptureId)]);
 
 export const findings = pgTable("findings", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
   gateId: uuid("gate_id").references(() => gates.id),
   title: varchar("title", { length: 250 }).notNull(),
+  description: text("description"),
   severity: varchar("severity", { length: 20 }).notNull(),
   status: varchar("status", { length: 20 }).notNull().default("open"),
   ownerId: uuid("owner_id").references(() => users.id),
   dueAt: timestamp("due_at", { withTimezone: true }),
+  resolutionNote: text("resolution_note"),
+  resolvedBy: uuid("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
   ...timestamps
 });
 
@@ -220,52 +243,78 @@ export const auditEvents = pgTable("audit_events", {
 });
 
 export const cxChecklists = pgTable("cx_checklists", {
-  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), systemId: uuid("system_id").notNull().references(() => systems.id), gateId: uuid("gate_id").notNull().references(() => gates.id), assetId: uuid("asset_id").notNull().references(() => assets.id), title: varchar("title", { length: 250 }).notNull(), status: checklistStatus("status").notNull().default("draft"), generationModelVersion: varchar("generation_model_version", { length: 80 }).notNull().default("deterministic-demo-v1"), createdBy: uuid("created_by").notNull().references(() => users.id), reviewedBy: uuid("reviewed_by").references(() => users.id), reviewedAt: timestamp("reviewed_at", { withTimezone: true }), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), systemId: uuid("system_id").notNull().references(() => systems.id), gateId: uuid("gate_id").notNull().references(() => gates.id), assetId: uuid("asset_id").notNull().references(() => assets.id), title: varchar("title", { length: 250 }).notNull(), status: checklistStatus("status").notNull().default("draft"), standardVersionIds: jsonb("standard_version_ids").notNull().default([]), generationStatus: varchar("generation_status", { length: 24 }).notNull().default("queued"), generationJobId: uuid("generation_job_id"), generationError: text("generation_error"), generationModelVersion: varchar("generation_model_version", { length: 80 }).notNull().default("pending"), createdBy: uuid("created_by").notNull().references(() => users.id), reviewedBy: uuid("reviewed_by").references(() => users.id), reviewedAt: timestamp("reviewed_at", { withTimezone: true }), reviewNote: text("review_note"), ...timestamps
 }, (table) => [index("cx_checklists_project_gate_idx").on(table.projectId, table.gateId, table.status)]);
 
 export const cxChecklistSteps = pgTable("cx_checklist_steps", {
-  id: uuid("id").primaryKey().defaultRandom(), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), sequenceNumber: numeric("sequence_number", { precision: 8, scale: 0 }).notNull(), instruction: text("instruction").notNull(), modality: varchar("modality", { length: 20 }).notNull(), parameter: varchar("parameter", { length: 200 }), nominalValue: numeric("nominal_value", { precision: 20, scale: 8 }), unit: varchar("unit", { length: 40 }), tolerance: numeric("tolerance", { precision: 20, scale: 8 }), expectedBoolean: boolean("expected_boolean"), narrativeCriterion: text("narrative_criterion"), required: boolean("required").notNull().default(true), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), sequenceNumber: numeric("sequence_number", { precision: 8, scale: 0 }).notNull(), instruction: text("instruction").notNull(), modality: varchar("modality", { length: 20 }).notNull(), parameter: varchar("parameter", { length: 200 }), nominalValue: numeric("nominal_value", { precision: 20, scale: 8 }), unit: varchar("unit", { length: 40 }), tolerance: numeric("tolerance", { precision: 20, scale: 8 }), expectedBoolean: boolean("expected_boolean"), narrativeCriterion: text("narrative_criterion"), required: boolean("required").notNull().default(true), reviewState: reviewState("review_state").notNull().default("proposed"), reviewNote: text("review_note"), ...timestamps
 }, (table) => [uniqueIndex("cx_steps_checklist_sequence_unique").on(table.checklistId, table.sequenceNumber)]);
 
 export const cxClauseCitations = pgTable("cx_clause_citations", {
-  id: uuid("id").primaryKey().defaultRandom(), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), stepId: uuid("step_id").references(() => cxChecklistSteps.id), clauseReference: varchar("clause_reference", { length: 200 }).notNull(), sourceRegionId: uuid("source_region_id").references(() => sourceRegions.id), verificationStatus: varchar("verification_status", { length: 20 }).notNull().default("pending"), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), stepId: uuid("step_id").references(() => cxChecklistSteps.id), clauseReference: varchar("clause_reference", { length: 200 }).notNull(), sourceRegionId: uuid("source_region_id").references(() => sourceRegions.id), verificationStatus: varchar("verification_status", { length: 20 }).notNull().default("pending"), verificationReason: text("verification_reason"), ...timestamps
 });
 
 export const cxTestRecords = pgTable("cx_test_records", {
-  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), gateId: uuid("gate_id").notNull().references(() => gates.id), executedBy: uuid("executed_by").notNull().references(() => users.id), overallStatus: cxVerdict("overall_status").notNull().default("needs_human_review"), reportStatus: reportStatus("report_status").notNull().default("draft"), reportContentHash: varchar("report_content_hash", { length: 64 }), evidenceId: uuid("evidence_id").references(() => evidence.id), approvedBy: uuid("approved_by").references(() => users.id), approvedAt: timestamp("approved_at", { withTimezone: true }), ...timestamps
-});
+  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), checklistId: uuid("checklist_id").notNull().references(() => cxChecklists.id), gateId: uuid("gate_id").notNull().references(() => gates.id), executedBy: uuid("executed_by").notNull().references(() => users.id), overallStatus: cxVerdict("overall_status").notNull().default("needs_human_review"), reportStatus: reportStatus("report_status").notNull().default("draft"), reportGenerationStatus: varchar("report_generation_status", { length: 24 }).notNull().default("not_started"), reportGenerationJobId: uuid("report_generation_job_id"), reportGenerationError: text("report_generation_error"), reportModelVersion: varchar("report_model_version", { length: 80 }), reportContent: jsonb("report_content"), reportContentHash: varchar("report_content_hash", { length: 64 }), reportArtifactObjectId: uuid("report_artifact_object_id").references(() => storageObjects.id), evidenceId: uuid("evidence_id").references(() => evidence.id), approvedBy: uuid("approved_by").references(() => users.id), approvedAt: timestamp("approved_at", { withTimezone: true }), reportReviewNote: text("report_review_note"), ...timestamps
+}, (table) => [uniqueIndex("cx_test_records_checklist_executor_unique").on(table.checklistId, table.executedBy)]);
 
 export const cxStepResults = pgTable("cx_step_results", {
   id: uuid("id").primaryKey().defaultRandom(), testRecordId: uuid("test_record_id").notNull().references(() => cxTestRecords.id), stepId: uuid("step_id").notNull().references(() => cxChecklistSteps.id), readingValue: numeric("reading_value", { precision: 20, scale: 8 }), readingBoolean: boolean("reading_boolean"), readingText: text("reading_text"), enteredBy: uuid("entered_by").notNull().references(() => users.id), enteredAt: timestamp("entered_at", { withTimezone: true }).notNull(), verdict: cxVerdict("verdict").notNull(), findingId: uuid("finding_id").references(() => findings.id), ...timestamps
 }, (table) => [uniqueIndex("cx_results_record_step_unique").on(table.testRecordId, table.stepId)]);
 
+export const compliancePrecedents = pgTable("compliance_precedents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  requirementId: uuid("requirement_id").notNull().references(() => requirements.id),
+  targetSourceRegionId: uuid("target_source_region_id").notNull().references(() => sourceRegions.id),
+  targetContentHash: varchar("target_content_hash", { length: 64 }).notNull(),
+  sourceCheckId: uuid("source_check_id").notNull(),
+  title: varchar("title", { length: 250 }).notNull(),
+  rationale: text("rationale").notNull(),
+  reviewState: reviewState("review_state").notNull().default("proposed"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  ...timestamps
+}, (table) => [
+  index("compliance_precedents_project_review_idx").on(table.projectId, table.reviewState),
+  index("compliance_precedents_match_idx").on(table.projectId, table.requirementId, table.targetContentHash)
+]);
+
 export const complianceChecks = pgTable("compliance_checks", {
-  id: uuid("id").primaryKey().defaultRandom(), projectId: uuid("project_id").notNull().references(() => projects.id), requirementId: uuid("requirement_id").notNull().references(() => requirements.id), targetSourceRegionId: uuid("target_source_region_id").notNull().references(() => sourceRegions.id), verdict: varchar("verdict", { length: 40 }).notNull(), reviewState: reviewState("review_state").notNull().default("proposed"), confidence: numeric("confidence", { precision: 5, scale: 4 }).notNull(), reason: text("reason").notNull(), proposedFindingId: uuid("proposed_finding_id").references(() => findings.id), ...timestamps
-});
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  requirementId: uuid("requirement_id").notNull().references(() => requirements.id),
+  targetSourceRegionId: uuid("target_source_region_id").notNull().references(() => sourceRegions.id),
+  comparisonType: varchar("comparison_type", { length: 30 }).notNull().default("qualitative"),
+  requirementSnapshot: jsonb("requirement_snapshot").notNull().default({}),
+  targetSnapshot: jsonb("target_snapshot").notNull().default({}),
+  verdict: varchar("verdict", { length: 40 }).notNull(),
+  reviewState: reviewState("review_state").notNull().default("proposed"),
+  confidence: numeric("confidence", { precision: 5, scale: 4 }).notNull(),
+  reason: text("reason").notNull(),
+  precedentId: uuid("precedent_id").references(() => compliancePrecedents.id),
+  proposedFindingId: uuid("proposed_finding_id").references(() => findings.id),
+  findingDisposition: varchar("finding_disposition", { length: 30 }).notNull().default("not_applicable"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  version: integer("version").notNull().default(1),
+  ...timestamps
+}, (table) => [index("compliance_checks_project_review_idx").on(table.projectId, table.reviewState, table.createdAt)]);
 
 export const knowledgeChunks = pgTable("knowledge_chunks", {
   id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), sourceRegionId: uuid("source_region_id").notNull().references(() => sourceRegions.id), documentType: varchar("document_type", { length: 40 }).notNull(), content: text("content").notNull(), contentHash: varchar("content_hash", { length: 64 }).notNull(), ...timestamps
 }, (table) => [index("knowledge_chunks_scope_idx").on(table.tenantId, table.projectId, table.documentType)]);
 
 export const shipments = pgTable("shipments", {
-  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), name: varchar("name", { length: 200 }).notNull(), plannedEta: timestamp("planned_eta", { withTimezone: true }).notNull(), weatherAdjustedEta: timestamp("weather_adjusted_eta", { withTimezone: true }), requiredOnSite: timestamp("required_on_site", { withTimezone: true }).notNull(), portCongestion: boolean("port_congestion").notNull().default(false), status: varchar("status", { length: 10 }).notNull().default("green"), lastNotifiedStatus: varchar("last_notified_status", { length: 10 }), createdBy: uuid("created_by").notNull().references(() => users.id), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), equipmentId: uuid("equipment_id").references(() => assets.id), name: varchar("name", { length: 200 }).notNull(), originName: varchar("origin_name", { length: 200 }), originLat: numeric("origin_lat", { precision: 9, scale: 6 }), originLng: numeric("origin_lng", { precision: 9, scale: 6 }), destinationName: varchar("destination_name", { length: 200 }), destinationLat: numeric("destination_lat", { precision: 9, scale: 6 }), destinationLng: numeric("destination_lng", { precision: 9, scale: 6 }), currentLat: numeric("current_lat", { precision: 9, scale: 6 }), currentLng: numeric("current_lng", { precision: 9, scale: 6 }), positionSource: varchar("position_source", { length: 20 }).notNull().default("simulated"), mmsi: varchar("mmsi", { length: 20 }), plannedEta: timestamp("planned_eta", { withTimezone: true }).notNull(), weatherAdjustedEta: timestamp("weather_adjusted_eta", { withTimezone: true }), weatherDelayFactor: numeric("weather_delay_factor", { precision: 8, scale: 5 }).notNull().default("0"), telemetryReason: text("telemetry_reason"), lastPolledAt: timestamp("last_polled_at", { withTimezone: true }), requiredOnSite: timestamp("required_on_site", { withTimezone: true }).notNull(), portCongestion: boolean("port_congestion").notNull().default(false), status: varchar("status", { length: 10 }).notNull().default("green"), lastNotifiedStatus: varchar("last_notified_status", { length: 10 }), createdBy: uuid("created_by").notNull().references(() => users.id), ...timestamps
 }, (table) => [index("shipments_project_status_idx").on(table.projectId, table.status)]);
 
 export const alerts = pgTable("alerts", {
   id: uuid("id").primaryKey().defaultRandom(), projectId: uuid("project_id").notNull().references(() => projects.id), eventType: varchar("event_type", { length: 40 }).notNull(), dedupKey: varchar("dedup_key", { length: 300 }).notNull(), status: alertStatus("status").notNull().default("active"), title: varchar("title", { length: 300 }).notNull(), payload: jsonb("payload").notNull(), ...timestamps
 }, (table) => [index("alerts_project_status_idx").on(table.projectId, table.status)]);
-
-export const storageObjects = pgTable("storage_objects", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
-  objectKey: varchar("object_key", { length: 500 }).notNull().unique(),
-  mediaType: varchar("media_type", { length: 120 }).notNull(),
-  byteSize: integer("byte_size").notNull(),
-  sha256: varchar("sha256", { length: 64 }).notNull(),
-  createdBy: uuid("created_by").notNull().references(() => users.id),
-  ...timestamps
-}, (table) => [index("storage_objects_project_idx").on(table.projectId, table.createdAt)]);
 
 export const durableJobs = pgTable("durable_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -303,6 +352,10 @@ export const scheduleEvents = pgTable("schedule_events", {
   dedupKey: varchar("dedup_key", { length: 300 }).notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   payload: jsonb("payload").notNull(),
+  processingStatus: varchar("processing_status", { length: 30 }).notNull().default("queued"),
+  durableJobId: uuid("durable_job_id").references(() => durableJobs.id),
+  resultVersionId: uuid("result_version_id"),
+  processingError: text("processing_error"),
   processedAt: timestamp("processed_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [
@@ -334,18 +387,29 @@ export const scheduleTasks = pgTable("schedule_tasks", {
   fixedStart: timestamp("fixed_start", { withTimezone: true }),
   vendor: varchar("vendor", { length: 200 }),
   leadTimeDays: integer("lead_time_days"),
+  deadlineType: varchar("deadline_type", { length: 20 }),
+  confidence: numeric("confidence", { precision: 5, scale: 4 }),
+  validationIssues: jsonb("validation_issues").notNull().default([]),
   reviewState: reviewState("review_state").notNull().default("proposed"),
   reviewedBy: uuid("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
   ...timestamps
 }, (table) => [index("schedule_tasks_project_review_idx").on(table.projectId, table.reviewState)]);
 
 export const scheduleResources = pgTable("schedule_resources", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
+  sourceRegionId: uuid("source_region_id").references(() => sourceRegions.id),
   name: varchar("name", { length: 200 }).notNull(),
   capacity: integer("capacity").notNull(),
   unit: varchar("unit", { length: 60 }).notNull().default("crew"),
+  confidence: numeric("confidence", { precision: 5, scale: 4 }),
+  validationIssues: jsonb("validation_issues").notNull().default([]),
+  reviewState: reviewState("review_state").notNull().default("proposed"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
   ...timestamps
 }, (table) => [uniqueIndex("schedule_resources_project_name_unique").on(table.projectId, table.name)]);
 
@@ -369,13 +433,19 @@ export const scheduleVersions = pgTable("schedule_versions", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id").notNull().references(() => projects.id),
   parentVersionId: uuid("parent_version_id"),
+  triggerEventId: uuid("trigger_event_id").references(() => scheduleEvents.id),
   versionNumber: integer("version_number").notNull(),
   reason: text("reason").notNull(),
   solverStatus: varchar("solver_status", { length: 30 }).notNull(),
+  solverVersion: varchar("solver_version", { length: 80 }).notNull().default("ortools-cp-sat-v1"),
   inputHash: varchar("input_hash", { length: 64 }).notNull(),
   objectiveHours: integer("objective_hours"),
   criticalTaskIds: jsonb("critical_task_ids").notNull().default([]),
+  bottlenecks: jsonb("bottlenecks").notNull().default([]),
+  overrunHours: integer("overrun_hours").notNull().default(0),
   explanation: text("explanation"),
+  explanationModelVersion: varchar("explanation_model_version", { length: 100 }),
+  explanationGeneratedAt: timestamp("explanation_generated_at", { withTimezone: true }),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   ...timestamps
 }, (table) => [uniqueIndex("schedule_versions_project_number_unique").on(table.projectId, table.versionNumber)]);
@@ -389,3 +459,41 @@ export const scheduleAssignments = pgTable("schedule_assignments", {
   isCritical: boolean("is_critical").notNull().default(false),
   ...timestamps
 }, (table) => [uniqueIndex("schedule_assignment_version_task_unique").on(table.versionId, table.taskId)]);
+
+export const riskSignals = pgTable("risk_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  taskId: uuid("task_id").notNull().references(() => scheduleTasks.id),
+  pollCycleId: uuid("poll_cycle_id").notNull(),
+  signalType: varchar("signal_type", { length: 60 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  dataAvailable: boolean("data_available").notNull().default(true),
+  source: varchar("source", { length: 120 }).notNull(),
+  value: jsonb("value"),
+  unavailableReason: text("unavailable_reason"),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  ...timestamps
+}, (table) => [index("risk_signals_project_observed_idx").on(table.projectId, table.observedAt), index("risk_signals_poll_task_idx").on(table.pollCycleId, table.taskId)]);
+
+export const scheduleRisks = pgTable("schedule_risks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  taskId: uuid("task_id").notNull().references(() => scheduleTasks.id),
+  sourceSignalId: uuid("source_signal_id").references(() => riskSignals.id),
+  riskType: varchar("risk_type", { length: 80 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  probability: numeric("probability", { precision: 5, scale: 4 }).notNull(),
+  estimatedDelayHours: integer("estimated_delay_hours").notNull(),
+  mitigationOptions: jsonb("mitigation_options").notNull().default([]),
+  materialityHash: varchar("materiality_hash", { length: 64 }).notNull(),
+  scheduleEventId: uuid("schedule_event_id").references(() => scheduleEvents.id),
+  reviewState: reviewState("review_state").notNull().default("proposed"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewNote: text("review_note"),
+  mitigationDisposition: varchar("mitigation_disposition", { length: 30 }).notNull().default("unreviewed"),
+  version: integer("version").notNull().default(1),
+  observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+  clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  ...timestamps
+}, (table) => [uniqueIndex("schedule_risks_project_task_type_unique").on(table.projectId, table.taskId, table.riskType)]);

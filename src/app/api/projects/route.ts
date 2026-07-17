@@ -4,12 +4,13 @@ import { z } from "zod";
 import { getCurrentIdentity } from "@/lib/auth/provider";
 import { db } from "@/lib/db/client";
 import { projectMembers, projects, users } from "@/lib/db/schema";
+import { getActiveProjectId } from "@/lib/projects/current";
 
 const schema = z.object({ name: z.string().trim().min(2).max(200), code: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9_-]+$/), timezone: z.string().trim().min(3).max(64) });
 async function currentUser() { const identity = await getCurrentIdentity(); const user = await db.query.users.findFirst({ where: identity.provider === "credentials" ? eq(users.id, identity.userId) : eq(users.email, identity.email) }); if (!user) throw new Error("Authenticated user is not provisioned."); return { identity, user }; }
 
 export async function GET() {
-  try { const { identity, user } = await currentUser(); const rows = await db.select({ id: projects.id, name: projects.name, code: projects.code, status: projects.status, timezone: projects.timezone, role: projectMembers.role }).from(projectMembers).innerJoin(projects, eq(projectMembers.projectId, projects.id)).where(eq(projectMembers.userId, user.id)); return NextResponse.json({ projects: rows, identity, dataSource: "postgres" }); }
+  try { const { identity, user } = await currentUser(); const rows = await db.select({ id: projects.id, name: projects.name, code: projects.code, status: projects.status, timezone: projects.timezone, role: projectMembers.role }).from(projectMembers).innerJoin(projects, eq(projectMembers.projectId, projects.id)).where(eq(projectMembers.userId, user.id)); return NextResponse.json({ projects: rows, activeProjectId: await getActiveProjectId(), identity, dataSource: "postgres" }); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load projects." }, { status: 401 }); }
 }
 

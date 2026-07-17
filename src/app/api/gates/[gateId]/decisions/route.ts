@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
@@ -23,11 +23,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ gat
     const gateEdges = await db.select().from(edges).where(and(eq(edges.projectId, gate.projectId), eq(edges.toType, "gate"), eq(edges.toId, gate.id)));
     const requirementIds = gateEdges.filter((edge) => edge.fromType === "requirement" && edge.relationshipType === "AFFECTS").map((edge) => edge.fromId);
     const acceptedRequirements = requirementIds.length ? await db.select().from(requirements).where(and(inArray(requirements.id, requirementIds), eq(requirements.reviewState, "accepted"))) : [];
-    const evidenceRows = await db.select().from(evidence).where(eq(evidence.projectId, gate.projectId)); const openFindings = await db.select().from(findings).where(and(eq(findings.gateId, gate.id), eq(findings.status, "open")));
+    const evidenceRows = await db.select().from(evidence).where(eq(evidence.projectId, gate.projectId)); const openFindings = await db.select().from(findings).where(and(eq(findings.gateId, gate.id), ne(findings.status, "closed")));
     const baseline = { gateId: gate.id, readiness, requirements: acceptedRequirements.map((item) => ({ id: item.id, sourceRegionId: item.sourceRegionId, updatedAt: item.updatedAt.toISOString() })).sort((a, b) => a.id.localeCompare(b.id)), evidence: evidenceRows.filter((item) => item.validityState === "accepted").map((item) => ({ id: item.id, contentHash: item.contentHash, updatedAt: item.updatedAt.toISOString() })).sort((a, b) => a.id.localeCompare(b.id)), openFindingIds: openFindings.map((item) => item.id).sort() };
     const evidenceBaselineHash = stableHash(baseline); const nextStatus = parsed.data.decision === "reject" ? "blocked" : "approved";
     const [decision] = await db.transaction(async (tx) => { const [decision] = await tx.insert(decisions).values({ projectId: gate.projectId, gateId: gate.id, decidedBy: actor.userId, decision: parsed.data.decision, reason: parsed.data.reason, evidenceBaselineHash, decidedAt: new Date() }).returning(); await tx.update(gates).set({ status: nextStatus, updatedAt: new Date() }).where(eq(gates.id, gate.id)); return [decision]; });
     await writeAuditEvent({ projectId: gate.projectId, actorId: actor.userId, action: `gate.${parsed.data.decision}`, entityType: "decision", entityId: decision.id, before: { gateStatus: gate.status }, after: { gateStatus: nextStatus, evidenceBaselineHash, reason: parsed.data.reason } });
     return NextResponse.json({ decision, gateStatus: nextStatus, baseline, mfaFreshnessMinutes: 10 }, { status: 201 });
-  } catch (error) { const status = error instanceof AccessError ? error.status : error instanceof Error && error.message.includes("fresh") || error instanceof Error && error.message.includes("TOTP") ? 428 : 500; return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to record gate decision." }, { status }); }
+  } catch (error) { const status = error instanceof AccessError ? error.status : error instanceof Error && (error.message.includes("fresh") || error.message.includes("TOTP")) ? 428 : 500; return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to record gate decision." }, { status }); }
 }

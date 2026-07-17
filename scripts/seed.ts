@@ -25,7 +25,7 @@ async function seed() {
   await db.insert(users).values({ id: ids.user, email: "manager@pramana.local", displayName: "Aarav Mehta" }).onConflictDoNothing();
   await db.insert(projects).values({ id: ids.project, tenantId: ids.tenant, name: "Mumbai DC-07", code: "MDC-07", timezone: "Asia/Kolkata" }).onConflictDoNothing();
   await db.insert(projects).values({ id: isolationIds.project, tenantId: isolationIds.tenant, name: "Isolated DC-01", code: "IDC-01", timezone: "Asia/Kolkata" }).onConflictDoNothing();
-  await db.insert(projectMembers).values({ projectId: ids.project, userId: ids.user, role: "commissioning_manager" }).onConflictDoNothing();
+  await db.insert(projectMembers).values({ projectId: ids.project, userId: ids.user, role: "admin" }).onConflictDoUpdate({ target: [projectMembers.projectId, projectMembers.userId], set: { role: "admin", updatedAt: new Date() } });
   await db.insert(systems).values({ id: ids.system, projectId: ids.project, name: "Chilled Water", systemType: "cooling" }).onConflictDoNothing();
   await db.insert(assets).values({ id: ids.asset, projectId: ids.project, systemId: ids.system, tag: "CHWP-02", assetType: "Chilled-water pump", vendor: "AquaFlow" }).onConflictDoNothing();
   await db.insert(gates).values({ id: ids.gate, projectId: ids.project, systemId: ids.system, name: "L4 Integrated Systems Test", sequenceNumber: "4", status: "in_review" }).onConflictDoNothing();
@@ -34,13 +34,14 @@ async function seed() {
   await db.update(documentVersions).set({ extractionStatus: "completed" }).where(eq(documentVersions.id, ids.version));
   await db.insert(sourceRegions).values({ id: ids.region, documentVersionId: ids.version, pageNumber: "14", bbox: [72, 162, 530, 240], extractedText: "Primary and standby chilled-water pumps shall maintain design flow during the L4 integrated test.", contentHash: "b".repeat(64) }).onConflictDoNothing();
   await db.insert(requirements).values({ id: ids.requirement, projectId: ids.project, sourceRegionId: ids.region, statement: "Primary and standby chilled-water pumps shall maintain design flow during the L4 integrated test.", modality: "shall", reviewState: "proposed", confidence: "0.9400" }).onConflictDoNothing();
-  await db.insert(evidence).values({ id: ids.evidence, projectId: ids.project, systemId: ids.system, assetId: ids.asset, evidenceType: "inspection", validityState: "accepted", capturedAt: new Date(), contentHash: "c".repeat(64) }).onConflictDoNothing();
+  await db.insert(evidence).values({ id: ids.evidence, projectId: ids.project, systemId: ids.system, assetId: ids.asset, evidenceType: "inspection", validityState: "accepted", capturedBy: ids.user, capturedAt: new Date(), contentHash: "c".repeat(64) }).onConflictDoNothing();
   await db.insert(findings).values({ id: ids.finding, projectId: ids.project, gateId: ids.gate, title: "Witness signature for CHWP-02 flow test", severity: "high", status: "open", ownerId: ids.user }).onConflictDoNothing();
   await db.insert(edges).values([
     { projectId: ids.project, fromType: "requirement", fromId: ids.requirement, relationshipType: "AFFECTS", toType: "gate", toId: ids.gate },
     { projectId: ids.project, fromType: "evidence", fromId: ids.evidence, relationshipType: "PROVES", toType: "requirement", toId: ids.requirement }
   ]).onConflictDoNothing();
   console.log(`Seeded ${ids.project}`);
+  process.exit(0);
 }
 
 seed().catch((error) => { console.error(error); process.exit(1); });

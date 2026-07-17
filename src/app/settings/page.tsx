@@ -1,3 +1,27 @@
-import { eq } from "drizzle-orm"; import { FeatureShell } from "@/components/feature-shell"; import { db } from "@/lib/db/client"; import { projectMembers, users } from "@/lib/db/schema"; import { getActiveProjectId } from "@/lib/projects/current"; import { getDashboardData } from "@/lib/dashboard-data";
+import { eq } from "drizzle-orm";
+import { FeatureShell } from "@/components/feature-shell";
+import { ProjectSettingsPanel } from "@/components/project-settings-panel";
+import { verifyAuditChain } from "@/lib/audit/verify-chain";
+import { can } from "@/lib/auth/roles";
+import { getDashboardData } from "@/lib/dashboard-data";
+import { db } from "@/lib/db/client";
+import { projectMembers, projects, users } from "@/lib/db/schema";
+import { requireProjectPermission } from "@/lib/projects/access";
+import { getActiveProjectId } from "@/lib/projects/current";
+
 export const dynamic = "force-dynamic";
-export default async function SettingsPage() { const data = await getDashboardData(await getActiveProjectId()); if (!data) throw new Error("Project not found"); const members = await db.select().from(projectMembers).innerJoin(users, eq(projectMembers.userId, users.id)).where(eq(projectMembers.projectId, await getActiveProjectId())); return <FeatureShell projectName={data.project} eyebrow="Project controls" title="Settings" description="Project membership and authorization are persisted in PostgreSQL."><div className="workflow-stack">{members.map(({ project_members, users }) => <article className="surface workflow-card" key={project_members.id}><h2>{users.displayName}</h2><p>{users.email}</p><span className="source-status processed">{project_members.role.replaceAll("_", " ")}</span></article>)}</div></FeatureShell>; }
+
+export default async function SettingsPage() {
+  const projectId = await getActiveProjectId();
+  const actor = await requireProjectPermission(projectId, "audit:view");
+  const [data, project, members, verification] = await Promise.all([
+    getDashboardData(projectId),
+    db.query.projects.findFirst({ where: eq(projects.id, projectId) }),
+    db.select({ id: projectMembers.id, userId: users.id, displayName: users.displayName, email: users.email, role: projectMembers.role, createdAt: projectMembers.createdAt }).from(projectMembers).innerJoin(users, eq(projectMembers.userId, users.id)).where(eq(projectMembers.projectId, projectId)),
+    verifyAuditChain(projectId)
+  ]);
+  if (!data || !project) throw new Error("Project not found");
+  return <FeatureShell projectName={data.project} eyebrow="Project controls" title="Settings & audit" description="Manage project policy and membership through enforced RBAC, then independently verify the append-only audit chain.">
+    <ProjectSettingsPanel project={project} members={members} canManage={can(actor.role, "project:manage")} verification={verification} />
+  </FeatureShell>;
+}

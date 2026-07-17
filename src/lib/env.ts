@@ -22,6 +22,14 @@ const environmentSchema = z.object({
   MODEL_PROVIDER: z.enum(["mock", "gemini"]).default("mock"),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+  SHIPMENT_STATUS_BUFFER_HOURS: z.coerce.number().min(0).max(720).default(72),
+  RISK_POLL_MODE: z.enum(["synthetic", "http"]).default("synthetic"),
+  RISK_PROBABILITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
+  RISK_DELAY_HOURS_THRESHOLD: z.coerce.number().int().min(1).max(2160).default(8),
+  RISK_PROCUREMENT_URL: z.string().url().optional(),
+  RISK_LEAD_TIME_URL: z.string().url().optional(),
+  RISK_WORKFORCE_URL: z.string().url().optional(),
+  RISK_WEATHER_URL: z.string().url().optional(),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional()
 });
@@ -48,6 +56,14 @@ export const env = environmentSchema.parse({
   MODEL_PROVIDER: process.env.MODEL_PROVIDER,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
+  SHIPMENT_STATUS_BUFFER_HOURS: process.env.SHIPMENT_STATUS_BUFFER_HOURS,
+  RISK_POLL_MODE: process.env.RISK_POLL_MODE,
+  RISK_PROBABILITY_THRESHOLD: process.env.RISK_PROBABILITY_THRESHOLD,
+  RISK_DELAY_HOURS_THRESHOLD: process.env.RISK_DELAY_HOURS_THRESHOLD,
+  RISK_PROCUREMENT_URL: process.env.RISK_PROCUREMENT_URL,
+  RISK_LEAD_TIME_URL: process.env.RISK_LEAD_TIME_URL,
+  RISK_WORKFORCE_URL: process.env.RISK_WORKFORCE_URL,
+  RISK_WEATHER_URL: process.env.RISK_WEATHER_URL,
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY
 });

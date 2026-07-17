@@ -24,7 +24,7 @@ export async function createSession(userId: string, request: Request, mfaVerifie
   cookieStore.set(env.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: env.APP_BASE_URL.startsWith("https://"),
     path: "/",
     expires: expiresAt
   });

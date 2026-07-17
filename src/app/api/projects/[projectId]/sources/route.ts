@@ -8,6 +8,7 @@ import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { extractDocument } from "@/lib/jobs/worker";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { objectStorage } from "@/lib/storage/service";
+import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 
 export const runtime = "nodejs";
 
@@ -38,12 +39,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       await tx.insert(storageObjects).values({ tenantId: project.tenantId, projectId, objectKey: stored.objectKey, mediaType: stored.mediaType, byteSize: stored.byteSize, sha256: stored.sha256, createdBy: actor.userId });
       return { document, version };
     });
-    const queued = await enqueueDurableJob({ queue: "core", name: "document.extract", tenantId: project.tenantId, projectId, idempotencyKey: `document-extract:${version.id}:${stored.sha256}`, payload: { documentVersionId: version.id, objectKey: stored.objectKey } });
+    const queued = await enqueueDurableJob({ queue: "core", name: "document.extract", tenantId: project.tenantId, projectId, idempotencyKey: `document-extract:${version.id}:${stored.sha256}`, payload: { documentVersionId: version.id, objectKey: stored.objectKey, actorId: actor.userId, tenantId: project.tenantId, projectId } });
     await writeAuditEvent({ projectId, actorId: actor.userId, action: "source.stored", entityType: "document_version", entityId: version.id, after: { sha256: stored.sha256, objectKey: stored.objectKey, jobId: queued.job.id } });
     if (queued.queuedInRedis) return NextResponse.json({ document, version, jobId: queued.job.id, extractionStatus: "processing" }, { status: 202 });
     try {
       const result = await extractDocument({ documentVersionId: version.id, objectKey: stored.objectKey });
-      return NextResponse.json({ document, version: { ...version, extractionStatus: "completed" }, jobId: queued.job.id, ...result, infrastructure: "inline-degraded" }, { status: 201 });
+      const proposals = await proposeDocumentRecords(version.id, actor.userId);
+      return NextResponse.json({ document, version: { ...version, extractionStatus: "completed" }, jobId: queued.job.id, ...result, proposals, infrastructure: "inline-degraded" }, { status: 201 });
     } catch (error) {
       await db.update(documentVersions).set({ extractionStatus: "failed", extractionError: error instanceof Error ? error.message : "Unknown parsing error", updatedAt: new Date() }).where(eq(documentVersions.id, version.id));
       return NextResponse.json({ error: "Source is controlled but extraction failed and can be retried.", documentVersionId: version.id, jobId: queued.job.id }, { status: 502 });

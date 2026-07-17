@@ -20,6 +20,7 @@ import { RequirementReviewActions } from "@/components/requirement-review-action
 import { SourceUploadForm } from "@/components/source-upload-form";
 import Link from "next/link";
 import { WorkspaceNavigation } from "@/components/workspace-navigation";
+import { MobileRouteMenu } from "@/components/mobile-route-menu";
 
 const navigation = [
   [Grid2X2, "Overview"],
@@ -44,8 +45,8 @@ export function DashboardShell({ data }: { data: DashboardData }) {
 
       <section className="workspace">
         <header className="topbar">
-          <button className="icon-button mobile-only" aria-label="Open navigation"><Menu size={20} /></button>
-          <label className="search-box"><Search size={18} /><input aria-label="Search this project" placeholder="Search sources, assets, findings…" /></label>
+          <MobileRouteMenu />
+          <form className="search-box" action="/knowledge"><Search size={18} /><input name="q" aria-label="Search this project" placeholder="Search sources, assets, findings…" /></form>
           <div className="topbar-actions"><button className="icon-button" aria-label="Notifications"><Bell size={19} /><span className="notification-dot" /></button><button className="help-button">?</button><span className="sync-state"><span />Synced</span></div>
         </header>
 
@@ -85,7 +86,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
 
             <article className="surface review-card" id="requirements">
               <div className="section-heading"><div><p className="eyebrow">Requirement review</p><h2>{data.proposal ? "One proposal needs you" : "Review queue clear"}</h2></div><span className="review-count">{data.proposal ? "01" : "00"}</span></div>
-              {data.proposal ? <><div className="requirement"><span className="mono clause">Proposed</span><p>{data.proposal.statement}</p><div className="citation"><BookOpen size={15} /> {data.proposal.citation}</div></div><RequirementReviewActions requirementId={data.proposal.id} /></> : <p className="empty-copy">All extracted requirements have been reviewed.</p>}
+              {data.proposal ? <><div className="requirement"><span className="mono clause">Proposed</span><p>{data.proposal.statement}</p><div className="citation"><BookOpen size={15} /> {data.proposal.citation}</div></div><RequirementReviewActions requirement={{ id: data.proposal.id, statement: data.proposal.statement, numericValue: null, unit: null, tolerance: null }} acceptedTargets={[]} /></> : <p className="empty-copy">All extracted requirements have been reviewed.</p>}
             </article>
           </section>
         </div>

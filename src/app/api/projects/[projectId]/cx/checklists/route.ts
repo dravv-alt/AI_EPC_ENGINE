@@ -1,33 +1,44 @@
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
+import { generateChecklistDraft } from "@/lib/cx/generation";
 import { db } from "@/lib/db/client";
-import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, documentVersions, documents, gates, sourceRegions, systems, projects } from "@/lib/db/schema";
+import { assets, cxChecklists, documentVersions, documents, gates, projects, sourceRegions, systems } from "@/lib/db/schema";
+import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 
-const schema = z.object({ systemId: z.string().uuid(), gateId: z.string().uuid(), assetId: z.string().uuid(), title: z.string().min(3).max(250) });
+const schema = z.object({ systemId: z.string().uuid(), gateId: z.string().uuid(), assetId: z.string().uuid(), title: z.string().trim().min(3).max(250), standardVersionIds: z.array(z.string().uuid()).min(1).max(20) });
+
+export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  try { await requireProjectPermission(projectId, "audit:view"); return NextResponse.json({ items: await db.select().from(cxChecklists).where(eq(cxChecklists.projectId, projectId)).orderBy(desc(cxChecklists.createdAt)) }); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load Cx checklists." }, { status: error instanceof AccessError ? error.status : 500 }); }
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid checklist request", details: parsed.error.flatten() }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Checklist scope and at least one completed standard are required.", details: parsed.error.flatten() }, { status: 400 });
   try {
     const actor = await requireProjectPermission(projectId, "evidence:capture");
-    const [system, gate, asset, region] = await Promise.all([
-      db.query.systems.findFirst({ where: eq(systems.id, parsed.data.systemId) }), db.query.gates.findFirst({ where: eq(gates.id, parsed.data.gateId) }), db.query.assets.findFirst({ where: eq(assets.id, parsed.data.assetId) }), db.select({ region: sourceRegions }).from(sourceRegions).innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id)).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)).limit(1).then((rows) => rows[0]?.region)
+    const [system, gate, asset, project, standardRows] = await Promise.all([
+      db.query.systems.findFirst({ where: and(eq(systems.id, parsed.data.systemId), eq(systems.projectId, projectId)) }),
+      db.query.gates.findFirst({ where: and(eq(gates.id, parsed.data.gateId), eq(gates.projectId, projectId)) }),
+      db.query.assets.findFirst({ where: and(eq(assets.id, parsed.data.assetId), eq(assets.projectId, projectId)) }),
+      db.query.projects.findFirst({ where: eq(projects.id, projectId) }),
+      db.select({ version: documentVersions, document: documents }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(and(eq(documents.projectId, projectId), inArray(documents.documentType, ["standard", "procedure"]), inArray(documentVersions.id, parsed.data.standardVersionIds), eq(documentVersions.extractionStatus, "completed")))
     ]);
-    if (!system || !gate || !asset || system.projectId !== projectId || gate.projectId !== projectId || asset.projectId !== projectId) return NextResponse.json({ error: "Checklist references must belong to this project." }, { status: 422 });
-    const project = await db.query.projects.findFirst({ where: (projects, { eq }) => eq(projects.id, projectId) });
-    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    const [checklist] = await db.insert(cxChecklists).values({ tenantId: project.tenantId, projectId, systemId: system.id, gateId: gate.id, assetId: asset.id, title: parsed.data.title, createdBy: actor.userId }).returning();
-    const [numeric, booleanStep, narrative] = await db.insert(cxChecklistSteps).values([
-      { checklistId: checklist.id, sequenceNumber: "1", instruction: "Measure design flow at the tested asset.", modality: "numeric", parameter: "Flow", nominalValue: "100", unit: "L/s", tolerance: "5" },
-      { checklistId: checklist.id, sequenceNumber: "2", instruction: "Verify the standby interlock is present.", modality: "boolean", expectedBoolean: true },
-      { checklistId: checklist.id, sequenceNumber: "3", instruction: "Record observed workmanship and operational observations.", modality: "narrative", narrativeCriterion: "No abnormal vibration, leakage, or unsafe condition." }
-    ]).returning();
-    if (region) await db.insert(cxClauseCitations).values({ checklistId: checklist.id, stepId: numeric.id, clauseReference: "Controlled source region", sourceRegionId: region.id, verificationStatus: "verified" });
-    await writeAuditEvent({ projectId, actorId: actor.userId, action: "cx.checklist.created", entityType: "cx_checklist", entityId: checklist.id, after: { checklistId: checklist.id } });
-    return NextResponse.json({ checklist, steps: [numeric, booleanStep, narrative], citationVerified: Boolean(region) }, { status: 201 });
-  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to create checklist" }, { status: error instanceof AccessError ? error.status : 500 }); }
+    if (!system || !gate || !asset || !project) return NextResponse.json({ error: "Checklist scope must belong to this project." }, { status: 422 });
+    if (standardRows.length !== new Set(parsed.data.standardVersionIds).size) return NextResponse.json({ error: "Every selected standard must be project-scoped and fully extracted." }, { status: 409 });
+    const regions = await db.select({ id: sourceRegions.id }).from(sourceRegions).where(inArray(sourceRegions.documentVersionId, parsed.data.standardVersionIds));
+    if (!regions.length) return NextResponse.json({ error: "Selected standards do not yet contain extracted citation regions." }, { status: 409 });
+    const [checklist] = await db.insert(cxChecklists).values({ tenantId: project.tenantId, projectId, systemId: system.id, gateId: gate.id, assetId: asset.id, title: parsed.data.title, standardVersionIds: parsed.data.standardVersionIds, generationStatus: "queued", generationModelVersion: "pending", createdBy: actor.userId }).returning();
+    const queued = await enqueueDurableJob({ queue: "core", name: "cx.checklist.generate", tenantId: project.tenantId, projectId, idempotencyKey: `cx-checklist-generate:${checklist.id}`, payload: { checklistId: checklist.id, actorId: actor.userId } });
+    await db.update(cxChecklists).set({ generationJobId: queued.job.id, generationStatus: queued.queuedInRedis ? "queued" : "running", updatedAt: new Date() }).where(eq(cxChecklists.id, checklist.id));
+    await writeAuditEvent({ projectId, actorId: actor.userId, action: "cx.checklist.generation_requested", entityType: "cx_checklist", entityId: checklist.id, after: { jobId: queued.job.id, standardVersionIds: parsed.data.standardVersionIds, advisory: true } });
+    if (queued.queuedInRedis) return NextResponse.json({ checklist: { ...checklist, generationJobId: queued.job.id }, checklistJobId: queued.job.id, status: "queued" }, { status: 202 });
+    const result = await generateChecklistDraft(checklist.id, actor.userId);
+    return NextResponse.json({ checklist: { ...checklist, generationJobId: queued.job.id, generationStatus: "completed" }, checklistJobId: queued.job.id, result, infrastructure: "inline-degraded" }, { status: 201 });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to request checklist generation." }, { status: error instanceof AccessError ? error.status : 500 }); }
 }

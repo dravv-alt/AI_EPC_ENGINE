@@ -1,0 +1,10 @@
+{
+  "name": "Pramana Cx",
+  "short_name": "Pramana",
+  "description": "Evidence-backed commissioning field capture and readiness.",
+  "start_url": "/field-capture",
+  "display": "standalone",
+  "background_color": "#efede8",
+  "theme_color": "#2d463e",
+  "icons": []
+}

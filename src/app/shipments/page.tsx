@@ -1,3 +1,15 @@
-import { desc, eq } from "drizzle-orm"; import { FeatureShell } from "@/components/feature-shell"; import { ShipmentForm } from "@/components/shipment-form"; import { db } from "@/lib/db/client"; import { shipments } from "@/lib/db/schema"; import { getActiveProjectId } from "@/lib/projects/current"; import { getDashboardData } from "@/lib/dashboard-data";
+import { desc, eq } from "drizzle-orm";
+import { FeatureShell } from "@/components/feature-shell";
+import { ShipmentWorkbench } from "@/components/shipment-workbench";
+import { getDashboardData } from "@/lib/dashboard-data";
+import { db } from "@/lib/db/client";
+import { assets, shipments } from "@/lib/db/schema";
+import { getActiveProjectId } from "@/lib/projects/current";
+
 export const dynamic = "force-dynamic";
-export default async function ShipmentsPage() { const [data, items] = await Promise.all([getDashboardData(await getActiveProjectId()), db.select().from(shipments).where(eq(shipments.projectId, await getActiveProjectId())).orderBy(desc(shipments.createdAt))]); if (!data) throw new Error("Project not found"); return <FeatureShell projectName={data.project} eyebrow="Supply visibility" title="Shipments" description="Single-leg delivery status is a deterministic estimate; simulated positions are never presented as live AIS."><ShipmentForm projectId={await getActiveProjectId()} /><section className="workflow-grid">{items.map((item) => <article className="surface workflow-card" key={item.id}><span className={`shipment-status ${item.status}`}>{item.status}</span><h2>{item.name}</h2><p>Estimated ETA: {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(item.weatherAdjustedEta ?? item.plannedEta)}</p><small>Required on site: {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(item.requiredOnSite)} · {item.portCongestion ? "Manual port-congestion factor applied" : "No port-congestion factor"}</small></article>)}</section></FeatureShell>; }
+export default async function ShipmentsPage() {
+  const projectId = await getActiveProjectId();
+  const [data, items, assetRows] = await Promise.all([getDashboardData(projectId), db.select().from(shipments).where(eq(shipments.projectId, projectId)).orderBy(desc(shipments.createdAt)), db.select({ id: assets.id, tag: assets.tag, assetType: assets.assetType }).from(assets).where(eq(assets.projectId, projectId))]);
+  if (!data) throw new Error("Project not found");
+  return <FeatureShell projectName={data.project} eyebrow="Supply visibility" title="Shipments" description="Track single-leg equipment movement with deterministic ETA/status, antimeridian-safe routes, explicit data provenance, and server-side schedule transitions."><ShipmentWorkbench projectId={projectId} initialShipments={items} assets={assetRows} /></FeatureShell>;
+}
