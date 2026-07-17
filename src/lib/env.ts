@@ -1,0 +1,55 @@
+import { z } from "zod";
+
+const environmentSchema = z.object({
+  DATABASE_URL: z.string().url().or(z.string().startsWith("postgresql://")).default("postgresql://pramana:pramana@localhost:5432/pramana"),
+  AUTH_MODE: z.enum(["development", "credentials", "clerk"]).default("development"),
+  AUTH_ENCRYPTION_KEY: z.string().min(32).optional(),
+  SESSION_COOKIE_NAME: z.string().min(1).default("pramana_session"),
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(24),
+  APP_BASE_URL: z.string().url().default("http://localhost:4173"),
+  INGESTION_SERVICE_URL: z.string().url().default("http://localhost:8001"),
+  SOLVER_SERVICE_URL: z.string().url().default("http://localhost:8002"),
+  LOCAL_UPLOAD_DIR: z.string().min(1).default("./data/uploads"),
+  OBJECT_STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+  S3_ENDPOINT: z.string().url().default("http://localhost:9000"),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_ACCESS_KEY: z.string().min(1).default("minioadmin"),
+  S3_SECRET_KEY: z.string().min(1).default("minioadmin"),
+  S3_BUCKET: z.string().min(3).default("pramana-local"),
+  REDIS_URL: z.string().url().default("redis://localhost:6379"),
+  REDIS_PREFIX: z.string().min(1).default("pramana"),
+  INFRA_ALLOW_DEGRADED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+  MODEL_PROVIDER: z.enum(["mock", "gemini"]).default("mock"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
+  CLERK_SECRET_KEY: z.string().optional()
+});
+
+export const env = environmentSchema.parse({
+  DATABASE_URL: process.env.DATABASE_URL,
+  AUTH_MODE: process.env.AUTH_MODE,
+  AUTH_ENCRYPTION_KEY: process.env.AUTH_ENCRYPTION_KEY,
+  SESSION_COOKIE_NAME: process.env.SESSION_COOKIE_NAME,
+  SESSION_TTL_HOURS: process.env.SESSION_TTL_HOURS,
+  APP_BASE_URL: process.env.APP_BASE_URL,
+  INGESTION_SERVICE_URL: process.env.INGESTION_SERVICE_URL,
+  SOLVER_SERVICE_URL: process.env.SOLVER_SERVICE_URL,
+  LOCAL_UPLOAD_DIR: process.env.LOCAL_UPLOAD_DIR,
+  OBJECT_STORAGE_DRIVER: process.env.OBJECT_STORAGE_DRIVER,
+  S3_ENDPOINT: process.env.S3_ENDPOINT,
+  S3_REGION: process.env.S3_REGION,
+  S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
+  S3_SECRET_KEY: process.env.S3_SECRET_KEY,
+  S3_BUCKET: process.env.S3_BUCKET,
+  REDIS_URL: process.env.REDIS_URL,
+  REDIS_PREFIX: process.env.REDIS_PREFIX,
+  INFRA_ALLOW_DEGRADED: process.env.INFRA_ALLOW_DEGRADED,
+  MODEL_PROVIDER: process.env.MODEL_PROVIDER,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GEMINI_MODEL: process.env.GEMINI_MODEL,
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+  CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY
+});
+
+export const clerkIsConfigured = env.AUTH_MODE === "clerk" && Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);

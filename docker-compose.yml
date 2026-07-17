@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: pramana
+      POSTGRES_USER: pramana
+      POSTGRES_PASSWORD: pramana
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pramana -d pramana"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+  ingestion:
+    build: ./services/ingestion
+    environment:
+      UPLOAD_ROOT: /data/uploads
+    ports: ["8001:8001"]
+    volumes:
+      - ./data/uploads:/data/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  solver:
+    build: ./services/solver
+    ports: ["8002:8002"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  core-api:
+    build: .
+    command: sh -c "npm run db:migrate && npm run start -- -p 4173"
+    environment: &core_environment
+      DATABASE_URL: postgresql://pramana:pramana@postgres:5432/pramana
+      AUTH_MODE: ${AUTH_MODE:-development}
+      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:-local-compose-key-change-before-production-0001}
+      APP_BASE_URL: http://localhost:4173
+      REDIS_URL: redis://redis:6379
+      INFRA_ALLOW_DEGRADED: "false"
+      OBJECT_STORAGE_DRIVER: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-pramana-local}
+      INGESTION_SERVICE_URL: http://ingestion:8001
+      SOLVER_SERVICE_URL: http://solver:8002
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports: ["4173:4173"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      minio: { condition: service_started }
+      ingestion: { condition: service_healthy }
+      solver: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4173/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  worker:
+    build: .
+    command: npm run worker
+    environment: *core_environment
+    depends_on:
+      core-api: { condition: service_healthy }
+volumes:
+  postgres_data:
+  minio_data:

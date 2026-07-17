@@ -1,0 +1,27 @@
+import { createHash } from "node:crypto";
+import { and, asc, eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { writeAuditEvent } from "@/lib/audit/write-event";
+import { db } from "@/lib/db/client";
+import { auditEvents, decisions, documentVersions, documents, edges, evidence, gates, projects, storageObjects, turnoverPacks } from "@/lib/db/schema";
+import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { objectStorage } from "@/lib/storage/service";
+import { canonicalJson } from "@/lib/crypto/canonical-json";
+const schema = z.object({ gateId: z.string().uuid() });
+
+export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) { const { projectId } = await params; try { await requireProjectPermission(projectId, "audit:view"); return NextResponse.json({ items: await db.select().from(turnoverPacks).where(eq(turnoverPacks.projectId, projectId)) }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load turnover packs." }, { status: error instanceof AccessError ? error.status : 500 }); } }
+
+export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params; const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "A gate is required." }, { status: 400 });
+  try {
+    const actor = await requireProjectPermission(projectId, "gate:approve"); const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) }); const gate = await db.query.gates.findFirst({ where: and(eq(gates.id, parsed.data.gateId), eq(gates.projectId, projectId)) }); if (!project || !gate) return NextResponse.json({ error: "Project or gate not found." }, { status: 404 }); if (gate.status !== "approved") return NextResponse.json({ error: "Only an approved gate can be exported." }, { status: 409 });
+    const decision = await db.query.decisions.findFirst({ where: and(eq(decisions.gateId, gate.id), eq(decisions.projectId, projectId)), orderBy: (table, { desc }) => [desc(table.decidedAt)] }); if (!decision || !["approve", "waive"].includes(decision.decision)) return NextResponse.json({ error: "An approval decision is required." }, { status: 409 });
+    const [evidenceRows, sourceRows, graphEdges, auditRows] = await Promise.all([db.select().from(evidence).where(and(eq(evidence.projectId, projectId), eq(evidence.validityState, "accepted"))), db.select({ id: documentVersions.id, revision: documentVersions.revision, sha256: documentVersions.sha256, documentId: documents.id, title: documents.title }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)), db.select().from(edges).where(eq(edges.projectId, projectId)), db.select().from(auditEvents).where(eq(auditEvents.projectId, projectId)).orderBy(asc(auditEvents.createdAt))]);
+    const manifest = { schemaVersion: "1.0", generatedAt: new Date().toISOString(), project: { id: project.id, code: project.code, name: project.name }, gate: { id: gate.id, name: gate.name }, decision: { id: decision.id, decision: decision.decision, reason: decision.reason, evidenceBaselineHash: decision.evidenceBaselineHash, decidedAt: decision.decidedAt.toISOString() }, sources: sourceRows.sort((a, b) => a.id.localeCompare(b.id)), evidence: evidenceRows.map((item) => ({ id: item.id, type: item.evidenceType, contentHash: item.contentHash, capturedAt: item.capturedAt.toISOString(), validityState: item.validityState })).sort((a, b) => a.id.localeCompare(b.id)), edges: graphEdges.map((item) => ({ fromType: item.fromType, fromId: item.fromId, relationshipType: item.relationshipType, toType: item.toType, toId: item.toId })).sort((a, b) => `${a.fromId}:${a.toId}`.localeCompare(`${b.fromId}:${b.toId}`)), auditChainHead: auditRows.at(-1)?.eventHash ?? null };
+    const bytes = Buffer.from(canonicalJson(manifest)); const manifestHash = createHash("sha256").update(bytes).digest("hex"); const stored = await objectStorage.put({ tenantId: project.tenantId, projectId, bytes, mediaType: "application/json", fileName: `turnover-${gate.id}.json` });
+    const [pack] = await db.transaction(async (tx) => { const [pack] = await tx.insert(turnoverPacks).values({ tenantId: project.tenantId, projectId, gateId: gate.id, decisionId: decision.id, manifest, manifestHash, objectKey: stored.objectKey, createdBy: actor.userId }).returning(); await tx.insert(storageObjects).values({ tenantId: project.tenantId, projectId, objectKey: stored.objectKey, mediaType: stored.mediaType, byteSize: stored.byteSize, sha256: stored.sha256, createdBy: actor.userId }); return [pack]; });
+    await writeAuditEvent({ projectId, actorId: actor.userId, action: "turnover.generated", entityType: "turnover_pack", entityId: pack.id, after: { manifestHash, objectKey: stored.objectKey } });
+    return NextResponse.json({ pack, verified: manifestHash === stored.sha256, downloadUrl: await objectStorage.signedReadUrl(stored.objectKey, 300) }, { status: 201 });
+  } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to generate turnover pack." }, { status: error instanceof AccessError ? error.status : 500 }); }
+}

@@ -1,0 +1,12 @@
+node_modules
+.next
+.env
+.env.local
+coverage
+*.tsbuildinfo
+__pycache__/
+*.pyc
+.venv-*/
+/data/
+/.code-review-graph
+.DS_Store

@@ -1,0 +1,13 @@
+import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { writeAuditEvent } from "@/lib/audit/write-event";
+import { db } from "@/lib/db/client";
+import { cxChecklists, cxTestRecords, edges, evidence, gates } from "@/lib/db/schema";
+import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+
+export async function POST(request: Request, { params }: { params: Promise<{ testRecordId: string }> }) {
+  const { testRecordId } = await params; const record = await db.query.cxTestRecords.findFirst({ where: eq(cxTestRecords.id, testRecordId) });
+  if (!record) return NextResponse.json({ error: "Test record not found" }, { status: 404 });
+  try { const actor = await requireProjectPermission(record.projectId, "requirement:review"); const checklist = await db.query.cxChecklists.findFirst({ where: eq(cxChecklists.id, record.checklistId) }); if (!checklist) throw new Error("Checklist not found"); if (record.overallStatus !== "proposed_pass") return NextResponse.json({ error: "Only an all-proposed-pass record can be approved into evidence." }, { status: 409 }); const [newEvidence] = await db.insert(evidence).values({ projectId: record.projectId, systemId: checklist.systemId, assetId: checklist.assetId, evidenceType: "cx_test_report", validityState: "accepted", contentHash: createHash("sha256").update(`cx-report:${record.id}`).digest("hex"), capturedAt: new Date() }).returning(); await db.insert(edges).values([{ projectId: record.projectId, fromType: "evidence", fromId: newEvidence.id, relationshipType: "AFFECTS", toType: "gate", toId: record.gateId }]); const [updated] = await db.update(cxTestRecords).set({ reportStatus: "approved", evidenceId: newEvidence.id, approvedBy: actor.userId, approvedAt: new Date(), reportContentHash: createHash("sha256").update(`cx-report:${record.id}`).digest("hex"), updatedAt: new Date() }).where(eq(cxTestRecords.id, record.id)).returning(); await db.update(gates).set({ status: "in_review", updatedAt: new Date() }).where(eq(gates.id, record.gateId)); await writeAuditEvent({ projectId: record.projectId, actorId: actor.userId, action: "cx.report.approved", entityType: "cx_test_record", entityId: record.id, after: { evidenceId: newEvidence.id, gateStatus: "in_review" } }); return NextResponse.json({ report: updated, evidenceId: newEvidence.id, gateState: "in_review", label: "DRAFT — PENDING ENGINEER REVIEW resolved by engineer approval" }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to approve report" }, { status: error instanceof AccessError ? error.status : 500 }); }
+}

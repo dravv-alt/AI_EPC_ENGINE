@@ -1,0 +1,9 @@
+import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { writeAuditEvent } from "@/lib/audit/write-event";
+import { db } from "@/lib/db/client";
+import { scheduleTasks } from "@/lib/db/schema";
+import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+const schema = z.object({ decision: z.enum(["accept", "reject"]), note: z.string().trim().min(3).max(2000) });
+export async function POST(request: Request, { params }: { params: Promise<{ taskId: string }> }) { const { taskId } = await params; const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "Review is invalid." }, { status: 400 }); const task = await db.query.scheduleTasks.findFirst({ where: eq(scheduleTasks.id, taskId) }); if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 }); try { const actor = await requireProjectPermission(task.projectId, "schedule:manage"); if (task.reviewState !== "proposed") return NextResponse.json({ error: "Only proposed tasks can be reviewed." }, { status: 409 }); const reviewState = parsed.data.decision === "accept" ? "accepted" : "rejected"; const [updated] = await db.update(scheduleTasks).set({ reviewState, reviewedBy: actor.userId, reviewedAt: new Date(), updatedAt: new Date() }).where(eq(scheduleTasks.id, task.id)).returning(); await writeAuditEvent({ projectId: task.projectId, actorId: actor.userId, action: `schedule.task_${reviewState}`, entityType: "schedule_task", entityId: task.id, before: { reviewState: task.reviewState }, after: { reviewState, note: parsed.data.note } }); return NextResponse.json({ task: updated }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to review task." }, { status: error instanceof AccessError ? error.status : 500 }); } }
