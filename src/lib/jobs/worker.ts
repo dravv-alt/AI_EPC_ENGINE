@@ -1,8 +1,8 @@
 import { Worker, type Job } from "bullmq";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db/client";
-import { documentVersions, durableJobs, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, sourceRegions } from "@/lib/db/schema";
+import { documentVersions, durableJobs, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis/client";
 import { objectStorage } from "@/lib/storage/service";
@@ -11,6 +11,7 @@ import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
+import { getAisClient } from "@/lib/supply/ais-client";
 
 export async function extractDocument(input: { documentVersionId: string; objectKey: string }) {
   const { documentVersionId, objectKey } = input;
@@ -39,6 +40,56 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
       .values({ queue: "core", name: "poll.heartbeat", idempotencyKey: "poll:heartbeat", status: "completed", payload: {}, result: { heartbeatAt: now.toISOString() }, startedAt: now, completedAt: now })
       .onConflictDoUpdate({ target: durableJobs.idempotencyKey, set: { status: "completed", result: { heartbeatAt: now.toISOString() }, completedAt: now, error: null, updatedAt: now } });
     return { heartbeatAt: now.toISOString() };
+  },
+  "risk.poll.all": async () => {
+    const active = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.status, "active"));
+    const enqueued: string[] = [];
+    for (const project of active) {
+      const owner = await db.query.projectMembers.findFirst({ where: eq(projectMembers.projectId, project.id) });
+      if (!owner) continue;
+      const bucket = Math.floor(Date.now() / env.POLL_INTERVAL_MS);
+      try {
+        const queued = await enqueueDurableJob({ queue: "core", name: "risk.poll", tenantId: project.tenantId, projectId: project.id, idempotencyKey: `risk-poll-auto:${project.id}:${bucket}`, payload: { projectId: project.id, actorId: owner.userId } });
+        enqueued.push(queued.job.id);
+      } catch { /* a project without a current baseline cannot be polled yet; skip it */ }
+    }
+    return { activeProjects: active.length, enqueued: enqueued.length };
+  },
+  "supply.poll.all": async () => {
+    const active = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.status, "active"));
+    const bucket = Math.floor(Date.now() / env.POLL_INTERVAL_MS);
+    const enqueued: string[] = [];
+    for (const project of active) {
+      const tracked = await db.select({ id: shipments.id }).from(shipments).where(and(eq(shipments.projectId, project.id), isNotNull(shipments.mmsi))).limit(1);
+      if (!tracked.length) continue;
+      const queued = await enqueueDurableJob({ queue: "core", name: "supply.poll", tenantId: project.tenantId, projectId: project.id, idempotencyKey: `supply-poll-auto:${project.id}:${bucket}`, payload: { projectId: project.id } });
+      enqueued.push(queued.job.id);
+    }
+    return { activeProjects: active.length, enqueued: enqueued.length };
+  },
+  "supply.poll": async (job) => {
+    const projectId = job.data.projectId ? String(job.data.projectId) : null;
+    const now = new Date();
+    const conditions = projectId ? and(eq(shipments.projectId, projectId), isNotNull(shipments.mmsi)) : isNotNull(shipments.mmsi);
+    const tracked = await db.select().from(shipments).where(conditions);
+    const client = getAisClient();
+    let polled = 0;
+    for (const shipment of tracked) {
+      if (shipment.originLat === null || shipment.originLng === null || shipment.destinationLat === null || shipment.destinationLng === null) continue;
+      const observation = await client.poll({
+        mmsi: shipment.mmsi!,
+        originLat: Number(shipment.originLat),
+        originLng: Number(shipment.originLng),
+        destinationLat: Number(shipment.destinationLat),
+        destinationLng: Number(shipment.destinationLng),
+        departedAt: shipment.createdAt,
+        plannedEta: shipment.plannedEta,
+        now
+      });
+      await db.update(shipments).set({ currentLat: String(observation.lat), currentLng: String(observation.lng), positionSource: observation.positionSource, telemetryReason: observation.reason, lastPolledAt: now, updatedAt: now }).where(eq(shipments.id, shipment.id));
+      polled += 1;
+    }
+    return { tracked: tracked.length, polled };
   },
   "document.extract": async (job) => {
     const data = job.data as { documentVersionId: string; objectKey: string; actorId?: string; tenantId?: string; projectId?: string };
