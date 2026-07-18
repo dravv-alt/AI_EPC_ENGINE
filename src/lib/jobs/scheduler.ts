@@ -5,6 +5,7 @@ export const HEARTBEAT_JOB_NAME = "poll.heartbeat";
 export const HEARTBEAT_IDEMPOTENCY_KEY = "poll:heartbeat";
 export const RISK_POLL_ALL_JOB_NAME = "risk.poll.all";
 export const SUPPLY_POLL_ALL_JOB_NAME = "supply.poll.all";
+export const KNOWLEDGE_EMBED_JOB_NAME = "knowledge.embed";
 
 // Registers the recurring poll loop as BullMQ repeatable jobs. Idempotent:
 // re-registering with the same repeat key replaces the existing schedule, so
@@ -17,7 +18,8 @@ export async function registerPollSchedules(queueName = "core") {
   const jobs = [
     { name: HEARTBEAT_JOB_NAME, bootstrapId: "poll-heartbeat-bootstrap" },
     { name: RISK_POLL_ALL_JOB_NAME, bootstrapId: "risk-poll-all-bootstrap" },
-    { name: SUPPLY_POLL_ALL_JOB_NAME, bootstrapId: "supply-poll-all-bootstrap" }
+    { name: SUPPLY_POLL_ALL_JOB_NAME, bootstrapId: "supply-poll-all-bootstrap" },
+    { name: KNOWLEDGE_EMBED_JOB_NAME, bootstrapId: "knowledge-embed-bootstrap" }
   ];
   for (const job of jobs) {
     await queue.add(job.name, {}, { jobId: job.bootstrapId });

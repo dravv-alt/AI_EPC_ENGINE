@@ -71,6 +71,7 @@ async function main() {
   run("HTTP risk signal clients", "npm", ["run", "verify:risk-http-clients"], developmentEnv);
   run("Live AIS position poll", "npm", ["run", "verify:supply-poll-http"], developmentEnv);
   run("Weather status transitions", "npm", ["run", "verify:weather-poll-http"], developmentEnv);
+  run("Knowledge embeddings", "npm", ["run", "verify:knowledge-embed"], developmentEnv);
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
   console.log("\nAll local verification suites passed.");
 }

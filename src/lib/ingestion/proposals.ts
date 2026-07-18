@@ -2,8 +2,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
-import { documents, documentVersions, requirements, scheduleResources, scheduleTasks, sourceRegions } from "@/lib/db/schema";
+import { documents, documentVersions, knowledgeChunks, projects, requirements, scheduleResources, scheduleTasks, sourceRegions } from "@/lib/db/schema";
 import { getModelProvider } from "@/lib/model/provider";
+import { enqueueDurableJob } from "@/lib/jobs/queue";
 
 const requirementProposalSchema = z.object({ proposals: z.array(z.object({ regionId: z.string().uuid(), statement: z.string().min(8).max(10000), modality: z.enum(["shall", "must", "should", "may", "informative"]), numericValue: z.number().finite().nullable(), unit: z.string().max(40).nullable(), tolerance: z.number().nonnegative().nullable(), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(500) });
 const scheduleProposalSchema = z.object({ tasks: z.array(z.object({ regionId: z.string().uuid(), name: z.string().min(3).max(240), durationHours: z.number().int().positive().max(100000), vendor: z.string().max(200).nullable(), leadTimeDays: z.number().int().nonnegative().nullable(), deadlineType: z.enum(["hard", "soft"]).nullable(), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(1000), resources: z.array(z.object({ regionId: z.string().uuid(), name: z.string().min(2).max(200), capacity: z.number().int().positive().max(100000), unit: z.string().min(1).max(60), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(200) });
@@ -15,6 +16,20 @@ function numericFromText(text: string) {
   return match ? { numericValue: Number(match[1]), unit: match[2], tolerance: match[3] ? Number(match[3]) : null } : { numericValue: null, unit: null, tolerance: null };
 }
 
+// Materializes controlled source regions into knowledge_chunks (once per region)
+// and enqueues an embedding backfill so semantic retrieval can index newly
+// ingested content. Idempotent: regions already indexed are skipped.
+async function indexKnowledgeChunks(projectId: string, documentType: string, regions: Array<typeof sourceRegions.$inferSelect>) {
+  const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  if (!project) return;
+  const existing = await db.select({ sourceRegionId: knowledgeChunks.sourceRegionId }).from(knowledgeChunks).where(and(eq(knowledgeChunks.projectId, projectId), inArray(knowledgeChunks.sourceRegionId, regions.map((region) => region.id))));
+  const indexed = new Set(existing.map((row) => row.sourceRegionId));
+  const fresh = regions.filter((region) => !indexed.has(region.id));
+  if (!fresh.length) return;
+  await db.insert(knowledgeChunks).values(fresh.map((region) => ({ tenantId: project.tenantId, projectId, sourceRegionId: region.id, documentType, content: region.extractedText, contentHash: region.contentHash }))).onConflictDoNothing();
+  await enqueueDurableJob({ queue: "core", name: "knowledge.embed", tenantId: project.tenantId, projectId, idempotencyKey: `knowledge-embed:${projectId}`, payload: { projectId } });
+}
+
 export async function proposeDocumentRecords(documentVersionId: string, actorId: string) {
   const versionRows = await db.select({ version: documentVersions, document: documents }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documentVersions.id, documentVersionId)).limit(1);
   const context = versionRows[0]; if (!context) throw new Error("Document version is missing.");
@@ -23,6 +38,8 @@ export async function proposeDocumentRecords(documentVersionId: string, actorId:
   const regionIds = new Set(regions.map((region) => region.id));
   const provider = getModelProvider();
   const sourcePayload = regions.map((region) => ({ regionId: region.id, page: Number(region.pageNumber), text: region.extractedText, contentHash: region.contentHash }));
+
+  await indexKnowledgeChunks(context.document.projectId, context.document.documentType, regions);
 
   if (scheduleDocumentTypes.has(context.document.documentType)) {
     const existing = await db.select({ id: scheduleTasks.id }).from(scheduleTasks).where(and(eq(scheduleTasks.projectId, context.document.projectId), inArray(scheduleTasks.sourceRegionId, regions.map((region) => region.id))));

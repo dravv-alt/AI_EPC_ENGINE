@@ -1,8 +1,8 @@
 import { Worker, type Job } from "bullmq";
-import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { db } from "@/lib/db/client";
-import { documentVersions, durableJobs, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
+import { documentVersions, durableJobs, knowledgeChunks, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis/client";
 import { objectStorage } from "@/lib/storage/service";
@@ -11,6 +11,7 @@ import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
+import { getModelProvider } from "@/lib/model/provider";
 import { getAisClient } from "@/lib/supply/ais-client";
 import { getWeatherClient } from "@/lib/supply/weather-client";
 import { calculateShipmentStatus } from "@/lib/supply/status";
@@ -124,6 +125,20 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
       }
     }
     return { tracked: tracked.length, polled, transitioned };
+  },
+  "knowledge.embed": async (job) => {
+    const projectId = job.data.projectId ? String(job.data.projectId) : null;
+    const conditions = projectId ? and(eq(knowledgeChunks.projectId, projectId), isNull(knowledgeChunks.embedding)) : isNull(knowledgeChunks.embedding);
+    const pending = await db.select({ id: knowledgeChunks.id, content: knowledgeChunks.content }).from(knowledgeChunks).where(conditions);
+    if (!pending.length) return { embedded: 0, scanned: 0 };
+    const provider = getModelProvider();
+    let embedded = 0;
+    for (const chunk of pending) {
+      const vector = await provider.embed(chunk.content);
+      await db.update(knowledgeChunks).set({ embedding: vector, updatedAt: new Date() }).where(eq(knowledgeChunks.id, chunk.id));
+      embedded += 1;
+    }
+    return { embedded, scanned: pending.length };
   },
   "document.extract": async (job) => {
     const data = job.data as { documentVersionId: string; objectKey: string; actorId?: string; tenantId?: string; projectId?: string };
