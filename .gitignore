@@ -10,3 +10,5 @@ __pycache__/
 /data/
 /.code-review-graph
 .DS_Store
+local_dev_guide.md
+Testing_mock.md
