@@ -33,6 +33,13 @@ export async function extractDocument(input: { documentVersionId: string; object
 }
 
 const handlers: Record<string, (job: Job) => Promise<unknown>> = {
+  "poll.heartbeat": async () => {
+    const now = new Date();
+    await db.insert(durableJobs)
+      .values({ queue: "core", name: "poll.heartbeat", idempotencyKey: "poll:heartbeat", status: "completed", payload: {}, result: { heartbeatAt: now.toISOString() }, startedAt: now, completedAt: now })
+      .onConflictDoUpdate({ target: durableJobs.idempotencyKey, set: { status: "completed", result: { heartbeatAt: now.toISOString() }, completedAt: now, error: null, updatedAt: now } });
+    return { heartbeatAt: now.toISOString() };
+  },
   "document.extract": async (job) => {
     const data = job.data as { documentVersionId: string; objectKey: string; actorId?: string; tenantId?: string; projectId?: string };
     const extraction = await extractDocument(data);
@@ -86,16 +93,16 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
 
 export function startWorker(queueName = "core") {
   const worker = new Worker(queueName, async (job) => {
-    const durableJobId = String(job.data.durableJobId);
-    await db.update(durableJobs).set({ status: "running", attempts: job.attemptsMade + 1, startedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+    const durableJobId = job.data.durableJobId ? String(job.data.durableJobId) : null;
+    if (durableJobId) await db.update(durableJobs).set({ status: "running", attempts: job.attemptsMade + 1, startedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
     const handler = handlers[job.name];
     if (!handler) throw new Error(`No worker handler is registered for ${job.name}.`);
     try {
       const result = await handler(job);
-      await db.update(durableJobs).set({ status: "completed", result: result as Record<string, unknown>, completedAt: new Date(), updatedAt: new Date(), error: null }).where(eq(durableJobs.id, durableJobId));
+      if (durableJobId) await db.update(durableJobs).set({ status: "completed", result: result as Record<string, unknown>, completedAt: new Date(), updatedAt: new Date(), error: null }).where(eq(durableJobs.id, durableJobId));
       return result;
     } catch (error) {
-      await db.update(durableJobs).set({ status: "failed", error: error instanceof Error ? error.message : "Worker failed", completedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+      if (durableJobId) await db.update(durableJobs).set({ status: "failed", error: error instanceof Error ? error.message : "Worker failed", completedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
       if (job.name === "schedule.event" && job.data.scheduleEventId) await db.update(scheduleEvents).set({ processingStatus: "solve_failed", processingError: error instanceof Error ? error.message : "Schedule event failed", processedAt: new Date(), updatedAt: new Date() }).where(eq(scheduleEvents.id, String(job.data.scheduleEventId)));
       throw error;
     }

@@ -21,6 +21,7 @@
     "verify:cx-http": "tsx scripts/verify-cx-http.ts",
     "verify:compliance-http": "tsx scripts/verify-compliance-http.ts",
     "verify:risk-http": "tsx scripts/verify-risk-http.ts",
+    "verify:poll-http": "tsx scripts/verify-poll-http.ts",
     "verify:evidence-turnover-http": "tsx scripts/verify-evidence-turnover-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
