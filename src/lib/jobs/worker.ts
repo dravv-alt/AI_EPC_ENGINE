@@ -1,6 +1,6 @@
 import { Worker, type Job } from "bullmq";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { db } from "@/lib/db/client";
 import { documentVersions, durableJobs, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
@@ -12,6 +12,10 @@ import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
 import { getAisClient } from "@/lib/supply/ais-client";
+import { getWeatherClient } from "@/lib/supply/weather-client";
+import { calculateShipmentStatus } from "@/lib/supply/status";
+import { currentMappedTaskIds } from "@/lib/supply/task-mapping";
+import { processScheduleEvent } from "@/lib/events/process";
 
 export async function extractDocument(input: { documentVersionId: string; objectKey: string }) {
   const { documentVersionId, objectKey } = input;
@@ -70,13 +74,16 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
   "supply.poll": async (job) => {
     const projectId = job.data.projectId ? String(job.data.projectId) : null;
     const now = new Date();
+    const cycle = Math.floor(now.getTime() / env.POLL_INTERVAL_MS);
     const conditions = projectId ? and(eq(shipments.projectId, projectId), isNotNull(shipments.mmsi)) : isNotNull(shipments.mmsi);
     const tracked = await db.select().from(shipments).where(conditions);
-    const client = getAisClient();
+    const aisClient = getAisClient();
+    const weatherClient = getWeatherClient();
     let polled = 0;
+    let transitioned = 0;
     for (const shipment of tracked) {
       if (shipment.originLat === null || shipment.originLng === null || shipment.destinationLat === null || shipment.destinationLng === null) continue;
-      const observation = await client.poll({
+      const observation = await aisClient.poll({
         mmsi: shipment.mmsi!,
         originLat: Number(shipment.originLat),
         originLng: Number(shipment.originLng),
@@ -86,10 +93,37 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
         plannedEta: shipment.plannedEta,
         now
       });
-      await db.update(shipments).set({ currentLat: String(observation.lat), currentLng: String(observation.lng), positionSource: observation.positionSource, telemetryReason: observation.reason, lastPolledAt: now, updatedAt: now }).where(eq(shipments.id, shipment.id));
+      const weather = await weatherClient.forecast({ lat: observation.lat, lng: observation.lng, mmsi: shipment.mmsi });
+      const calculated = calculateShipmentStatus({ plannedEta: shipment.plannedEta, requiredOnSite: shipment.requiredOnSite, portCongestion: shipment.portCongestion, weatherDelayFactor: weather.weatherDelayFactor, now });
+      await db.update(shipments).set({
+        currentLat: String(observation.lat),
+        currentLng: String(observation.lng),
+        positionSource: observation.positionSource,
+        telemetryReason: `${observation.reason} ${weather.reason}`,
+        lastPolledAt: now,
+        weatherAdjustedEta: calculated.weatherAdjustedEta,
+        weatherDelayFactor: String(calculated.weatherDelayFactor),
+        status: calculated.status,
+        lastNotifiedStatus: calculated.status,
+        updatedAt: now
+      }).where(eq(shipments.id, shipment.id));
       polled += 1;
+
+      if (calculated.status !== shipment.lastNotifiedStatus) {
+        const affectedTaskIds = shipment.equipmentId ? await currentMappedTaskIds(shipment.projectId, shipment.equipmentId) : [];
+        const transitionId = `poll:${cycle}:${shipment.lastNotifiedStatus ?? "unknown"}-${calculated.status}`;
+        const common = { eventId: randomUUID(), projectId: shipment.projectId, occurredAt: now.toISOString(), transitionId } as const;
+        try {
+          if (calculated.status === "green") {
+            await processScheduleEvent({ ...common, eventType: "SHIPMENT_RECOVERED", payload: { shipmentId: shipment.id, availableAt: calculated.weatherAdjustedEta.toISOString(), previousAvailableAt: shipment.weatherAdjustedEta?.toISOString(), affectedTaskIds, estimate: true } }, shipment.createdBy);
+          } else {
+            await processScheduleEvent({ ...common, eventType: "SHIPMENT_DELAYED", payload: { shipmentId: shipment.id, status: calculated.status, availableAt: calculated.weatherAdjustedEta.toISOString(), previousAvailableAt: shipment.weatherAdjustedEta?.toISOString(), affectedTaskIds, estimate: true } }, shipment.createdBy);
+          }
+          transitioned += 1;
+        } catch { /* a project without a current schedule baseline cannot accept task-linked events yet; status is still persisted */ }
+      }
     }
-    return { tracked: tracked.length, polled };
+    return { tracked: tracked.length, polled, transitioned };
   },
   "document.extract": async (job) => {
     const data = job.data as { documentVersionId: string; objectKey: string; actorId?: string; tenantId?: string; projectId?: string };

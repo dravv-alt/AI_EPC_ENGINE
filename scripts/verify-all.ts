@@ -68,7 +68,9 @@ async function main() {
   run("Predictive risk", "npm", ["run", "verify:risk-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Recurring poll loop", "npm", ["run", "verify:poll-http"], { ...developmentEnv, POLL_TEST_URL: developmentBase });
   run("Risk auto-poll", "npm", ["run", "verify:risk-autopoll-http"], developmentEnv);
+  run("HTTP risk signal clients", "npm", ["run", "verify:risk-http-clients"], developmentEnv);
   run("Live AIS position poll", "npm", ["run", "verify:supply-poll-http"], developmentEnv);
+  run("Weather status transitions", "npm", ["run", "verify:weather-poll-http"], developmentEnv);
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
   console.log("\nAll local verification suites passed.");
 }

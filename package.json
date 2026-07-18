@@ -24,6 +24,8 @@
     "verify:poll-http": "tsx scripts/verify-poll-http.ts",
     "verify:risk-autopoll-http": "tsx scripts/verify-risk-autopoll-http.ts",
     "verify:supply-poll-http": "tsx scripts/verify-supply-poll-http.ts",
+    "verify:weather-poll-http": "tsx scripts/verify-weather-poll-http.ts",
+    "verify:risk-http-clients": "tsx scripts/verify-risk-http-clients.ts",
     "verify:evidence-turnover-http": "tsx scripts/verify-evidence-turnover-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },

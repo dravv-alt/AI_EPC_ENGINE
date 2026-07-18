@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { env } from "@/lib/env";
+import { OpenMeteoWeatherClient } from "@/lib/supply/weather-client";
 
 export const riskSignalTypes = ["procurement_status", "equipment_lead_time", "workforce_availability", "weather_forecast"] as const;
 export type RiskSignalType = (typeof riskSignalTypes)[number];
@@ -33,8 +34,23 @@ class HttpSignalClient implements SignalClient {
   }
 }
 
+// In http mode, the weather risk signal reuses the Open-Meteo marine client
+// rather than a bespoke risk endpoint. The forecast delay factor at the project
+// site is mapped into a probability/estimated-delay observation the risk engine
+// can act on, and the marine endpoint origin is recorded as the signal source.
+class OpenMeteoSignalClient implements SignalClient {
+  readonly type: RiskSignalType = "weather_forecast";
+  private readonly client = new OpenMeteoWeatherClient(env.OPEN_METEO_BASE_URL);
+  async poll(): Promise<SignalObservation> {
+    const forecast = await this.client.forecast({ lat: env.RISK_SITE_LAT, lng: env.RISK_SITE_LNG, mmsi: null });
+    const probability = Math.min(1, forecast.weatherDelayFactor);
+    const estimatedDelayHours = Math.round(forecast.weatherDelayFactor * 24);
+    return { dataAvailable: true, source: new URL(env.OPEN_METEO_BASE_URL).origin, probability, estimatedDelayHours, value: { weatherDelayFactor: forecast.weatherDelayFactor, forecastSource: forecast.source, reason: forecast.reason }, unavailableReason: null };
+  }
+}
+
 export function getRiskSignalClients(): SignalClient[] {
   if (env.RISK_POLL_MODE === "synthetic") return riskSignalTypes.map((type) => new SyntheticSignalClient(type));
   const endpoints: Record<RiskSignalType, string | undefined> = { procurement_status: env.RISK_PROCUREMENT_URL, equipment_lead_time: env.RISK_LEAD_TIME_URL, workforce_availability: env.RISK_WORKFORCE_URL, weather_forecast: env.RISK_WEATHER_URL };
-  return riskSignalTypes.map((type) => new HttpSignalClient(type, endpoints[type]));
+  return riskSignalTypes.map((type) => type === "weather_forecast" ? new OpenMeteoSignalClient() : new HttpSignalClient(type, endpoints[type]));
 }

@@ -27,6 +27,8 @@ const environmentSchema = z.object({
   POLL_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   AIS_MODE: z.enum(["synthetic", "aisstream"]).default("synthetic"),
   AISSTREAM_API_KEY: z.string().optional(),
+  WEATHER_MODE: z.enum(["synthetic", "open-meteo"]).default("synthetic"),
+  OPEN_METEO_BASE_URL: z.string().url().default("https://marine-api.open-meteo.com/v1/marine"),
   RISK_POLL_MODE: z.enum(["synthetic", "http"]).default("synthetic"),
   RISK_PROBABILITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   RISK_DELAY_HOURS_THRESHOLD: z.coerce.number().int().min(1).max(2160).default(8),
@@ -34,6 +36,8 @@ const environmentSchema = z.object({
   RISK_LEAD_TIME_URL: z.string().url().optional(),
   RISK_WORKFORCE_URL: z.string().url().optional(),
   RISK_WEATHER_URL: z.string().url().optional(),
+  RISK_SITE_LAT: z.coerce.number().min(-90).max(90).default(18.9492),
+  RISK_SITE_LNG: z.coerce.number().min(-180).max(180).default(72.9347),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional()
 });
@@ -65,6 +69,8 @@ export const env = environmentSchema.parse({
   POLL_ENABLED: process.env.POLL_ENABLED,
   AIS_MODE: process.env.AIS_MODE,
   AISSTREAM_API_KEY: process.env.AISSTREAM_API_KEY,
+  WEATHER_MODE: process.env.WEATHER_MODE,
+  OPEN_METEO_BASE_URL: process.env.OPEN_METEO_BASE_URL,
   RISK_POLL_MODE: process.env.RISK_POLL_MODE,
   RISK_PROBABILITY_THRESHOLD: process.env.RISK_PROBABILITY_THRESHOLD,
   RISK_DELAY_HOURS_THRESHOLD: process.env.RISK_DELAY_HOURS_THRESHOLD,
@@ -72,6 +78,8 @@ export const env = environmentSchema.parse({
   RISK_LEAD_TIME_URL: process.env.RISK_LEAD_TIME_URL,
   RISK_WORKFORCE_URL: process.env.RISK_WORKFORCE_URL,
   RISK_WEATHER_URL: process.env.RISK_WEATHER_URL,
+  RISK_SITE_LAT: process.env.RISK_SITE_LAT,
+  RISK_SITE_LNG: process.env.RISK_SITE_LNG,
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY
 });
