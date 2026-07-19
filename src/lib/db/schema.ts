@@ -112,6 +112,13 @@ export const documentVersions = pgTable("document_versions", {
   mediaType: varchar("media_type", { length: 120 }).notNull(),
   extractionStatus: extractionState("extraction_status").notNull().default("pending"),
   extractionError: text("extraction_error"),
+  // Provenance of the extraction model call that produced every requirement
+  // proposal for this version (proposeDocumentRecords runs one batched
+  // generateStructured call per document version, so this is the natural
+  // per-batch granularity — not per-requirement). Nullable: unset until that
+  // proposal pass runs.
+  extractionModel: varchar("extraction_model", { length: 80 }),
+  extractionProvider: varchar("extraction_provider", { length: 20 }),
   ...timestamps
 });
 
@@ -163,6 +170,12 @@ export const requirements = pgTable("requirements", {
   numericValue: numeric("numeric_value", { precision: 20, scale: 8 }),
   unit: varchar("unit", { length: 40 }),
   tolerance: numeric("tolerance", { precision: 20, scale: 8 }),
+  // Data-type tag ("numeric" | "boolean" | "categorical" | "narrative") set
+  // once at extraction time, mirroring cxChecklistSteps.modality — distinct
+  // from the `modality` column above, which stores deontic strength
+  // (shall/must/should/may/informative). Nullable: pre-existing rows and any
+  // future direct-insert path fall back to compareCompliance's regex tiering.
+  comparisonModality: varchar("comparison_modality", { length: 20 }),
   reviewState: reviewState("review_state").notNull().default("proposed"),
   reviewedBy: uuid("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),

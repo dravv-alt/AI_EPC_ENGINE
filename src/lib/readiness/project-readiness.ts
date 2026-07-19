@@ -24,7 +24,11 @@ export interface GateReadiness {
   ruleVersion: string;
 }
 
-const ruleVersion = "readiness-v2.1";
+// Fixed, versioned constant — not computed per-record — so it's referenced
+// directly (rather than persisted to a column) anywhere provenance needs it,
+// e.g. the turnover manifest.
+export const READINESS_RULE_VERSION = "readiness-v2.1";
+const ruleVersion = READINESS_RULE_VERSION;
 
 function proofState(records: Array<typeof evidence.$inferSelect>): ProofState {
   if (records.some((item) => item.validityState === "failed")) return "failed";
