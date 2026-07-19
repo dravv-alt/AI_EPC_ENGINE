@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { knowledgeChunks, projects } from "../src/lib/db/schema";
-import { getModelProvider } from "../src/lib/model/provider";
+import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
 
 // Slice 7: the /knowledge query must be *semantic*. The query text is embedded,
 // a mandatory project + documentType SQL metadata filter runs first, then
@@ -38,9 +38,9 @@ async function main() {
     // Seed three chunks directly with populated embeddings so retrieval is
     // exercised without waiting on the backfill worker.
     const seeded = await db.insert(knowledgeChunks).values([
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "procedure", content: matchText, contentHash: `hash-match-${tag}`, embedding: await provider.embed(matchText) },
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "procedure", content: otherText, contentHash: `hash-other-${tag}`, embedding: await provider.embed(otherText) },
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "standard", content: wrongTypeText, contentHash: `hash-wrong-${tag}`, embedding: await provider.embed(wrongTypeText) }
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "procedure", content: matchText, contentHash: `hash-match-${tag}`, embedding: await provider.embed(matchText), embeddingModel: activeEmbeddingModelTag() },
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "procedure", content: otherText, contentHash: `hash-other-${tag}`, embedding: await provider.embed(otherText), embeddingModel: activeEmbeddingModelTag() },
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: (await firstSourceRegion(project.id)), documentType: "standard", content: wrongTypeText, contentHash: `hash-wrong-${tag}`, embedding: await provider.embed(wrongTypeText), embeddingModel: activeEmbeddingModelTag() }
     ]).returning({ id: knowledgeChunks.id });
     chunkIds.push(...seeded.map((row) => row.id));
 

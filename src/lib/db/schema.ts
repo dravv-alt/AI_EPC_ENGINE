@@ -309,7 +309,7 @@ export const complianceChecks = pgTable("compliance_checks", {
 }, (table) => [index("compliance_checks_project_review_idx").on(table.projectId, table.reviewState, table.createdAt)]);
 
 export const knowledgeChunks = pgTable("knowledge_chunks", {
-  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), sourceRegionId: uuid("source_region_id").notNull().references(() => sourceRegions.id), documentType: varchar("document_type", { length: 40 }).notNull(), content: text("content").notNull(), contentHash: varchar("content_hash", { length: 64 }).notNull(), embedding: vector("embedding", { dimensions: 768 }), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), sourceRegionId: uuid("source_region_id").notNull().references(() => sourceRegions.id), documentType: varchar("document_type", { length: 40 }).notNull(), content: text("content").notNull(), contentHash: varchar("content_hash", { length: 64 }).notNull(), embedding: vector("embedding", { dimensions: 768 }), embeddingModel: varchar("embedding_model", { length: 80 }), ...timestamps
 }, (table) => [
   index("knowledge_chunks_scope_idx").on(table.tenantId, table.projectId, table.documentType),
   index("knowledge_chunks_embedding_idx").using("ivfflat", table.embedding.op("vector_cosine_ops")),

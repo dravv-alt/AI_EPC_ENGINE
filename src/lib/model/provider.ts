@@ -178,6 +178,14 @@ export function getEmbeddingProvider(): EmbeddingProvider {
   return env.EMBEDDING_PROVIDER === "service" ? new ServiceEmbeddingProvider() : new MockModelProvider();
 }
 
+// The mixed-embedding-space guard (Slice 1, decision #4): every vector written
+// or queried is tagged with the model that produced it, so a provider switch
+// degrades to "no results" instead of silently ranking incompatible vector
+// spaces against each other with cosine similarity.
+export function activeEmbeddingModelTag(): string {
+  return env.EMBEDDING_PROVIDER === "service" ? "bge-base-en-v1.5" : "deterministic-mock-v1";
+}
+
 // Compatibility shim for existing call sites that expect one object exposing
 // both generateStructured and embed. Each method still resolves against its
 // own independent provider switch.

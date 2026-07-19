@@ -43,6 +43,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+  retrieval:
+    build: ./services/retrieval
+    ports: ["8003:8003"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
   core-api:
     build: .
     command: sh -c "npm run db:migrate && npm run start -- -p 4173"
@@ -61,6 +69,8 @@ services:
       S3_BUCKET: ${S3_BUCKET:-pramana-local}
       INGESTION_SERVICE_URL: http://ingestion:8001
       SOLVER_SERVICE_URL: http://solver:8002
+      RETRIEVAL_SERVICE_URL: http://retrieval:8003
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports: ["4173:4173"]
@@ -70,6 +80,7 @@ services:
       minio: { condition: service_started }
       ingestion: { condition: service_healthy }
       solver: { condition: service_healthy }
+      retrieval: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4173/api/health"]
       interval: 10s
@@ -81,6 +92,7 @@ services:
     environment: *core_environment
     depends_on:
       core-api: { condition: service_healthy }
+      retrieval: { condition: service_healthy }
 volumes:
   postgres_data:
   minio_data:

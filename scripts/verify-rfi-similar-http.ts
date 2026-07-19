@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { knowledgeChunks, documents, documentVersions, sourceRegions, projects } from "../src/lib/db/schema";
-import { getModelProvider } from "../src/lib/model/provider";
+import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
 
 // Slice 8: entering RFI text must surface "previously resolved similar RFI"
 // suggestions via a documentType=rfi-scoped cosine-threshold vector search. We
@@ -35,8 +35,8 @@ async function main() {
     assert.ok(project, "A seeded project is required.");
     const provider = getModelProvider();
     const seeded = await db.insert(knowledgeChunks).values([
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "rfi", content: rfiText, contentHash: `hash-rfi-${tag}`, embedding: await provider.embed(rfiText) },
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "procedure", content: procedureText, contentHash: `hash-proc-${tag}`, embedding: await provider.embed(procedureText) }
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "rfi", content: rfiText, contentHash: `hash-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "procedure", content: procedureText, contentHash: `hash-proc-${tag}`, embedding: await provider.embed(procedureText), embeddingModel: activeEmbeddingModelTag() }
     ]).returning({ id: knowledgeChunks.id });
     chunkIds.push(...seeded.map((row) => row.id));
 

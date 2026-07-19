@@ -45,6 +45,9 @@ async function main() {
   run("Database migrations", "npm", ["run", "db:migrate"]);
   run("TypeScript", "npm", ["run", "typecheck"]);
   run("Model provider foundation", "npm", ["run", "verify:model-provider"]);
+  // Skips cleanly when EMBEDDING_PROVIDER !== "service" (the offline default),
+  // so it never blocks the containerless matrix.
+  run("Retrieval service (embed/rerank)", "npm", ["run", "verify:retrieval-service"]);
   run("Production build", "npm", ["run", "build"]);
   run("Seed prerequisites", "npm", ["run", "db:seed"]);
 
@@ -68,6 +71,7 @@ async function main() {
   run("Governed Cx", "npm", ["run", "verify:cx-http"], { ...developmentEnv, CX_TEST_URL: developmentBase });
   run("Governed compliance", "npm", ["run", "verify:compliance-http"], { ...developmentEnv, COMPLIANCE_TEST_URL: developmentBase });
   run("Predictive risk", "npm", ["run", "verify:risk-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
+  run("Predictive-risk lively signals + mitigations", "npm", ["run", "verify:risk-mitigations-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Recurring poll loop", "npm", ["run", "verify:poll-http"], { ...developmentEnv, POLL_TEST_URL: developmentBase });
   run("Risk auto-poll", "npm", ["run", "verify:risk-autopoll-http"], developmentEnv);
   run("HTTP risk signal clients", "npm", ["run", "verify:risk-http-clients"], developmentEnv);

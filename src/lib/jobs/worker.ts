@@ -11,7 +11,7 @@ import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
-import { getModelProvider } from "@/lib/model/provider";
+import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
 import { getAisClient } from "@/lib/supply/ais-client";
 import { getWeatherClient } from "@/lib/supply/weather-client";
 import { calculateShipmentStatus } from "@/lib/supply/status";
@@ -132,10 +132,16 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
     const pending = await db.select({ id: knowledgeChunks.id, content: knowledgeChunks.content }).from(knowledgeChunks).where(conditions);
     if (!pending.length) return { embedded: 0, scanned: 0 };
     const provider = getModelProvider();
+    const modelTag = activeEmbeddingModelTag();
     let embedded = 0;
+    // Batching the embed calls (up to 32 chunks/request) is deferred: both
+    // MockModelProvider.embed and ServiceEmbeddingProvider.embed take a single
+    // string today, and widening that interface is a larger refactor than this
+    // slice's scope. Correctness (one HTTP round-trip per chunk, but every row
+    // tagged with the active embedding_model) matters more here than batching.
     for (const chunk of pending) {
       const vector = await provider.embed(chunk.content);
-      await db.update(knowledgeChunks).set({ embedding: vector, updatedAt: new Date() }).where(eq(knowledgeChunks.id, chunk.id));
+      await db.update(knowledgeChunks).set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() }).where(eq(knowledgeChunks.id, chunk.id));
       embedded += 1;
     }
     return { embedded, scanned: pending.length };

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, projects, sourceRegions } from "../src/lib/db/schema";
-import { getModelProvider } from "../src/lib/model/provider";
+import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
 
 // Slice 16 end-to-end knowledge verification.
 //
@@ -58,9 +58,9 @@ async function assertSemanticQuery(projectId: string, tenantId: string, regionId
   const wrongDTText = `Standard-scoped E2E ${tag}: motor efficiency shall be at least ninety-two percent at full load.`;
 
   const seeded = await db.insert(knowledgeChunks).values([
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: matchText, contentHash: `e2e-match-${tag}`, embedding: await provider.embed(matchText) },
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: noiseText, contentHash: `e2e-noise-${tag}`, embedding: await provider.embed(noiseText) },
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "standard", content: wrongDTText, contentHash: `e2e-wrongdt-${tag}`, embedding: await provider.embed(wrongDTText) },
+    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: matchText, contentHash: `e2e-match-${tag}`, embedding: await provider.embed(matchText), embeddingModel: activeEmbeddingModelTag() },
+    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: noiseText, contentHash: `e2e-noise-${tag}`, embedding: await provider.embed(noiseText), embeddingModel: activeEmbeddingModelTag() },
+    { tenantId, projectId, sourceRegionId: regionId, documentType: "standard", content: wrongDTText, contentHash: `e2e-wrongdt-${tag}`, embedding: await provider.embed(wrongDTText), embeddingModel: activeEmbeddingModelTag() },
   ]).returning({ id: knowledgeChunks.id });
 
   const chunkIds = seeded.map((r) => r.id);
@@ -102,8 +102,8 @@ async function assertRfiSimilarity(projectId: string, tenantId: string, regionId
   const procText = `Procedure E2E ${tag}: Chilled-water pump flow tolerance acceptance criteria for L4 integrated test.`;
 
   const seeded = await db.insert(knowledgeChunks).values([
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "rfi", content: rfiText, contentHash: `e2e-rfi-${tag}`, embedding: await provider.embed(rfiText) },
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: procText, contentHash: `e2e-proc-${tag}`, embedding: await provider.embed(procText) },
+    { tenantId, projectId, sourceRegionId: regionId, documentType: "rfi", content: rfiText, contentHash: `e2e-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
+    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: procText, contentHash: `e2e-proc-${tag}`, embedding: await provider.embed(procText), embeddingModel: activeEmbeddingModelTag() },
   ]).returning({ id: knowledgeChunks.id });
 
   const chunkIds = seeded.map((r) => r.id);

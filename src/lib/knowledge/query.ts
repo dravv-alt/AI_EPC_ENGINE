@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
-import { getModelProvider } from "@/lib/model/provider";
+import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
 
 export type SemanticCitation = {
   chunkId: string;
@@ -35,7 +35,16 @@ export async function retrieveSemanticCitations(options: {
   const vectorLiteral = `[${embedding.join(",")}]`;
   const similarity = sql<number>`1 - (${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector)`;
 
-  const filters = [eq(knowledgeChunks.projectId, options.projectId), sql`${knowledgeChunks.embedding} is not null`];
+  // Mixed-embedding-space guard: a chunk embedded under a different provider
+  // (e.g. left over after an EMBEDDING_PROVIDER switch, before a reindex) is
+  // excluded rather than ranked, so a provider switch degrades to "fewer
+  // results" instead of silently corrupting cosine similarity across
+  // incompatible vector spaces.
+  const filters = [
+    eq(knowledgeChunks.projectId, options.projectId),
+    sql`${knowledgeChunks.embedding} is not null`,
+    eq(knowledgeChunks.embeddingModel, activeEmbeddingModelTag())
+  ];
   if (options.documentType) filters.push(eq(knowledgeChunks.documentType, options.documentType));
 
   const rows = await db
