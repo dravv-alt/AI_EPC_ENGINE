@@ -27,6 +27,8 @@
     "verify:weather-poll-http": "tsx scripts/verify-weather-poll-http.ts",
     "verify:risk-http-clients": "tsx scripts/verify-risk-http-clients.ts",
     "verify:knowledge-embed": "tsx scripts/verify-knowledge-embed.ts",
+    "verify:knowledge-query-http": "tsx scripts/verify-knowledge-query-http.ts",
+    "verify:rfi-similar-http": "tsx scripts/verify-rfi-similar-http.ts",
     "verify:evidence-turnover-http": "tsx scripts/verify-evidence-turnover-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },

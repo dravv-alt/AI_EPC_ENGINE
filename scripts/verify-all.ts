@@ -72,6 +72,8 @@ async function main() {
   run("Live AIS position poll", "npm", ["run", "verify:supply-poll-http"], developmentEnv);
   run("Weather status transitions", "npm", ["run", "verify:weather-poll-http"], developmentEnv);
   run("Knowledge embeddings", "npm", ["run", "verify:knowledge-embed"], developmentEnv);
+  run("Knowledge semantic query", "npm", ["run", "verify:knowledge-query-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
+  run("RFI similarity retrieval", "npm", ["run", "verify:rfi-similar-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
   console.log("\nAll local verification suites passed.");
 }
