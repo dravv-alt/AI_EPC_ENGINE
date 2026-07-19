@@ -7,7 +7,7 @@ const devPort = 4273;
 const credentialsPort = 4185;
 const redisPrefix = `pramana-verify-${randomUUID()}`;
 const children: ChildProcess[] = [];
-const shared = { ...process.env, AUTH_ENCRYPTION_KEY: "isolated-verification-key-at-least-32-characters", INFRA_ALLOW_DEGRADED: "false", OBJECT_STORAGE_DRIVER: "local", MODEL_PROVIDER: "mock" };
+const shared = { ...process.env, AUTH_ENCRYPTION_KEY: "isolated-verification-key-at-least-32-characters", INFRA_ALLOW_DEGRADED: "false", OBJECT_STORAGE_DRIVER: "local", MODEL_PROVIDER: "mock", EMBEDDING_PROVIDER: "mock" };
 
 function run(label: string, command: string, args: string[], env: NodeJS.ProcessEnv = shared) {
   console.log(`\n=== ${label} ===`);
@@ -44,6 +44,7 @@ async function stopChildren() {
 async function main() {
   run("Database migrations", "npm", ["run", "db:migrate"]);
   run("TypeScript", "npm", ["run", "typecheck"]);
+  run("Model provider foundation", "npm", ["run", "verify:model-provider"]);
   run("Production build", "npm", ["run", "build"]);
   run("Seed prerequisites", "npm", ["run", "db:seed"]);
 

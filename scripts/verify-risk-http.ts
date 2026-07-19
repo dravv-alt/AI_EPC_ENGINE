@@ -118,6 +118,11 @@ async function main() {
     if (riskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.id, riskIds));
     for (const riskId of riskIds) await db.delete(scheduleEvents).where(and(eq(scheduleEvents.projectId, developmentProjectId), like(scheduleEvents.dedupKey, `predicted_risk_delay:${riskId}:%`)));
     if (pollCycleIds.length) await db.delete(riskSignals).where(inArray(riskSignals.pollCycleId, pollCycleIds));
+    // The background recurring risk.poll.all job (registerPollSchedules) can also
+    // observe these same seeded tasks on its own poll cycle, independent of the
+    // cycles this test triggered manually — clear by taskId too, or a later
+    // scheduleTasks delete hits the risk_signals foreign key.
+    if (taskIds.length) await db.delete(riskSignals).where(inArray(riskSignals.taskId, taskIds));
     if (jobIds.length) await db.delete(durableJobs).where(inArray(durableJobs.id, jobIds));
     if (versionIds.length) await db.delete(scheduleAssignments).where(inArray(scheduleAssignments.versionId, versionIds));
     if (versionIds.length) await db.delete(scheduleVersions).where(inArray(scheduleVersions.id, versionIds));
