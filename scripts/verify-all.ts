@@ -81,6 +81,7 @@ async function main() {
   run("Knowledge embeddings", "npm", ["run", "verify:knowledge-embed"], developmentEnv);
   run("Knowledge semantic query", "npm", ["run", "verify:knowledge-query-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Knowledge rerank + graph context", "npm", ["run", "verify:knowledge-rerank"], developmentEnv);
+  run("Knowledge cited-answer synthesis", "npm", ["run", "verify:knowledge-synthesis"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Command center cross-links", "npm", ["run", "verify:command-links-http"], { ...developmentEnv, COMMAND_LINKS_TEST_URL: developmentBase });
   run("RFI similarity retrieval", "npm", ["run", "verify:rfi-similar-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Graph node expansion", "npm", ["run", "verify:graph-expansion-http"], { ...developmentEnv, GRAPH_TEST_URL: developmentBase });
