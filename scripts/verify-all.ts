@@ -79,6 +79,7 @@ async function main() {
   run("RFI similarity retrieval", "npm", ["run", "verify:rfi-similar-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Graph node expansion", "npm", ["run", "verify:graph-expansion-http"], { ...developmentEnv, GRAPH_TEST_URL: developmentBase });
   run("Gate schedule context", "npm", ["run", "verify:gate-context-http"], { ...developmentEnv, GATE_CONTEXT_TEST_URL: developmentBase });
+  run("Change blast radius", "npm", ["run", "verify:change-impact-http"], { ...developmentEnv, CHANGE_IMPACT_TEST_URL: developmentBase });
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
   console.log("\nAll local verification suites passed.");
 }
