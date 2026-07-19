@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { db } from "@/lib/db/client";
 import { documentVersions, durableJobs, knowledgeChunks, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
+import { createComplianceCheck } from "@/lib/compliance/create-check";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis/client";
 import { objectStorage } from "@/lib/storage/service";
@@ -162,6 +163,10 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
   "cx.checklist.generate": (job) => {
     const data = job.data as { checklistId: string; actorId: string };
     return generateChecklistDraft(data.checklistId, data.actorId);
+  },
+  "compliance.check.candidate": (job) => {
+    const data = job.data as { projectId: string; requirementId: string; targetSourceRegionId: string; actorId: string };
+    return createComplianceCheck({ projectId: data.projectId, requirementId: data.requirementId, targetSourceRegionId: data.targetSourceRegionId, actorId: data.actorId });
   },
   "cx.report.generate": (job) => {
     const data = job.data as { testRecordId: string; actorId: string };

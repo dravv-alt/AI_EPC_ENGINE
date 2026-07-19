@@ -70,6 +70,7 @@ async function main() {
   run("Deterministic schedule", "npm", ["run", "verify:schedule-http"], { ...developmentEnv, SCHEDULE_TEST_URL: developmentBase });
   run("Governed Cx", "npm", ["run", "verify:cx-http"], { ...developmentEnv, CX_TEST_URL: developmentBase });
   run("Governed compliance", "npm", ["run", "verify:compliance-http"], { ...developmentEnv, COMPLIANCE_TEST_URL: developmentBase });
+  run("Compliance semantic candidate scan", "npm", ["run", "verify:compliance-scan-http"], { ...developmentEnv, COMPLIANCE_SCAN_TEST_URL: developmentBase });
   run("Predictive risk", "npm", ["run", "verify:risk-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Predictive-risk lively signals + mitigations", "npm", ["run", "verify:risk-mitigations-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Recurring poll loop", "npm", ["run", "verify:poll-http"], { ...developmentEnv, POLL_TEST_URL: developmentBase });

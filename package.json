@@ -43,6 +43,7 @@
     "verify:retrieval-service": "tsx scripts/verify-retrieval-service.ts",
     "verify:knowledge-rerank": "tsx scripts/verify-knowledge-rerank-http.ts",
     "verify:knowledge-synthesis": "tsx scripts/verify-knowledge-synthesis-http.ts",
+    "verify:compliance-scan-http": "tsx scripts/verify-compliance-scan-http.ts",
     "verify:risk-mitigations-http": "tsx scripts/verify-risk-mitigations-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
