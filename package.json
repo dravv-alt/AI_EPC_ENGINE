@@ -33,6 +33,7 @@
     "verify:evidence-turnover-http": "tsx scripts/verify-evidence-turnover-http.ts",
     "verify:graph-expansion-http": "tsx scripts/verify-graph-expansion-http.ts",
     "verify:live-events-http": "tsx scripts/verify-live-events-http.ts",
+    "verify:turnover-cx-http": "tsx scripts/verify-turnover-cx-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {
