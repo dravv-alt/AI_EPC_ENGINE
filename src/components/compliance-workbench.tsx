@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 
 type Requirement = { id: string; statement: string; sourceRegionId: string; numericValue: string | null; unit: string | null; tolerance: string | null };
 type Region = { id: string; text: string; pageNumber: string; contentHash: string; documentTitle: string; documentType: string; revision: string };
-type Check = { id: string; requirementId: string; targetSourceRegionId: string; comparisonType: string; verdict: string; reviewState: string; confidence: string; reason: string; precedentId: string | null; proposedFindingId: string | null; findingDisposition: string; reviewNote: string | null; reviewerName: string | null; version: number; targetSnapshot: unknown; createdAt: Date };
+type SnapshotSource = { documentType: string; documentTitle: string; revision: string | null; hierarchy: number; createdAt: string };
+type DeterministicCrossCheck = { comparisonType: string; verdict: string; confidence: string; reason: string };
+type Check = { id: string; requirementId: string; targetSourceRegionId: string; comparisonType: string; verdict: string; reviewState: string; confidence: string; reason: string; precedentId: string | null; proposedFindingId: string | null; findingDisposition: string; reviewNote: string | null; reviewerName: string | null; version: number; requirementSnapshot: unknown; targetSnapshot: unknown; suggestionSource: string | null; suggestionModelVersion: string | null; createdAt: Date };
 type Precedent = { id: string; requirementId: string; targetSourceRegionId: string; sourceCheckId: string; title: string; rationale: string; reviewState: string; reviewNote: string | null; reviewerName: string | null; createdAt: Date };
 
 function label(value: string) { return value.replaceAll("_", " "); }
@@ -25,6 +27,16 @@ export function ComplianceWorkbench({ projectId, requirements, regions, checks, 
     setMessage(response.ok ? success : body.error ?? "The request failed."); setSaving(false);
     if (response.ok) router.refresh();
     return response.ok;
+  }
+
+  async function scanForDeviations() {
+    setSaving(true); setMessage("Scanning accepted requirements for semantic candidate deviations…");
+    const response = await fetch(`/api/projects/${projectId}/compliance/scan`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    const body = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok) { setMessage(body.error ?? "The scan failed."); return; }
+    setMessage(`Scan complete: ${body.requirementsScanned} requirement${body.requirementsScanned === 1 ? "" : "s"} scanned, ${body.candidatesFound} candidate${body.candidatesFound === 1 ? "" : "s"} found (${body.jobsEnqueued} queued, ${body.jobsInline} ran inline, ${body.jobsDuplicate} already existed).`);
+    router.refresh();
   }
 
   async function runCheck(event: FormEvent<HTMLFormElement>) {
@@ -50,7 +62,9 @@ export function ComplianceWorkbench({ projectId, requirements, regions, checks, 
 
   return <div className="workflow-stack">
     <section className="surface compliance-run-card" aria-labelledby="run-compliance-heading">
-      <div><span className="eyebrow">Deterministic proposal</span><h2 id="run-compliance-heading">Run a cited comparison</h2><p>Numeric values are unit-normalized. Explicit booleans and controlled categories are compared exactly. Everything else is mandatory human review.</p></div>
+      <div><span className="eyebrow">Semantic discovery</span><h2>Scan for deviations</h2><p>Semantically searches every accepted requirement against the project's submittals, POs, shop drawings, and drawings, and proposes a comparison for each candidate found. Nothing is auto-accepted.</p></div>
+      <button type="button" className="button button-secondary" disabled={saving || !requirements.length} onClick={scanForDeviations}>Scan for deviations</button>
+      <div style={{ marginTop: "1.5rem" }}><span className="eyebrow">Deterministic proposal</span><h2 id="run-compliance-heading">Run a cited comparison</h2><p>Numeric values are unit-normalized. Explicit booleans and controlled categories are compared exactly. Everything else is mandatory human review.</p></div>
       <form className="workflow-stack compliance-run-form" onSubmit={runCheck}>
         <label>Accepted requirement<select name="requirementId" required>{requirements.map((item) => <option value={item.id} key={item.id}>{item.statement.slice(0, 110)}</option>)}</select></label>
         <label>Submittal, PO, drawing, or other controlled target line<select name="targetSourceRegionId" required>{regions.map((item) => <option value={item.id} key={item.id}>{item.documentType} · {item.documentTitle} · p.{item.pageNumber} · {item.text.slice(0, 80)}</option>)}</select></label>
@@ -64,11 +78,26 @@ export function ComplianceWorkbench({ projectId, requirements, regions, checks, 
 
     <section className="workflow-stack" aria-labelledby="checks-heading"><div><span className="eyebrow">Review queue</span><h2 id="checks-heading">Compliance proposals</h2></div>
       {checks.map((check) => {
-        const requirement = requirementById.get(check.requirementId); const target = regionById.get(check.targetSourceRegionId); const snapshot = check.targetSnapshot as { sourceConflict?: boolean } | null;
+        const requirement = requirementById.get(check.requirementId); const target = regionById.get(check.targetSourceRegionId);
+        const targetSnapshot = check.targetSnapshot as { sourceConflict?: boolean; deterministicCrossCheck?: DeterministicCrossCheck; source?: SnapshotSource } | null;
+        const requirementSnapshot = check.requirementSnapshot as { source?: SnapshotSource } | null;
+        const isAiSuggested = check.suggestionSource === "model";
+        const crossCheck = targetSnapshot?.deterministicCrossCheck;
         return <article className="surface workflow-card" key={check.id}>
-          <div className="status-row"><span className={`source-status ${check.reviewState === "proposed" ? "pending" : check.reviewState === "rejected" ? "failed" : "ready"}`}>{label(check.reviewState)}</span><span className="source-status pending">{label(check.verdict)}</span><span className="mono-label">{label(check.comparisonType)} · confidence {check.confidence}</span></div>
+          <div className="status-row"><span className={`source-status ${check.reviewState === "proposed" ? "pending" : check.reviewState === "rejected" ? "failed" : "ready"}`}>{label(check.reviewState)}</span><span className="source-status pending">{label(check.verdict)}</span><span className="mono-label">{label(check.comparisonType)} · confidence {check.confidence}</span>{isAiSuggested && <span className="draft-label">AI suggestion — needs human review</span>}</div>
           <h3>{check.reason}</h3>
-          {snapshot?.sourceConflict && <p className="form-message"><strong>Source hierarchy conflict:</strong> the requirement and target come from different document authority levels. Review document type, revision, and date before disposition.</p>}
+          {isAiSuggested && <p className="muted-copy">Model: {check.suggestionModelVersion}</p>}
+          {crossCheck && <p className="muted-copy"><strong>Deterministic cross-check:</strong> {label(crossCheck.verdict)} (confidence {crossCheck.confidence}) — {crossCheck.reason}</p>}
+          {targetSnapshot?.sourceConflict && requirementSnapshot?.source && targetSnapshot?.source && (
+            <div className="surface form-message compliance-conflict-panel">
+              <strong>Source hierarchy conflict — not silently resolved:</strong>
+              <div className="compliance-citations">
+                <div><span className="mono-label">Requirement source</span><p>{requirementSnapshot.source.documentType} · {requirementSnapshot.source.documentTitle}</p><p className="muted-copy">Hierarchy {requirementSnapshot.source.hierarchy} · rev {requirementSnapshot.source.revision ?? "—"} · {new Date(requirementSnapshot.source.createdAt).toLocaleDateString()}</p></div>
+                <div><span className="mono-label">Target source</span><p>{targetSnapshot.source.documentType} · {targetSnapshot.source.documentTitle}</p><p className="muted-copy">Hierarchy {targetSnapshot.source.hierarchy} · rev {targetSnapshot.source.revision ?? "—"} · {new Date(targetSnapshot.source.createdAt).toLocaleDateString()}</p></div>
+              </div>
+              <p>The requirement and target come from different document authority levels. Review both sides before disposition.</p>
+            </div>
+          )}
           <div className="compliance-citations">
             <div><span className="mono-label">Accepted requirement</span><p>{requirement?.statement ?? check.requirementId}</p>{requirement && <Link href={`/sources/regions/${requirement.sourceRegionId}`}>Open exact requirement citation</Link>}</div>
             <div><span className="mono-label">Controlled target line</span><p>{target?.text ?? check.targetSourceRegionId}</p>{target && <><p className="muted-copy">{target.documentType} · {target.documentTitle} · rev {target.revision} · page {target.pageNumber}</p><Link href={`/sources/regions/${target.id}`}>Open exact target citation</Link></>}</div>
