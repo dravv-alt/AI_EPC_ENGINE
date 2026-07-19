@@ -58,6 +58,7 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
         <span className={`severity ${finding.severity}`} /><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>
         <h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p>
         <small>{finding.ownerName ?? "Unassigned"} · Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small>
+        {finding.gateId && <a className="finding-gate-link" href={`/readiness?gate=${finding.gateId}`}>View gate readiness</a>}
         <label className="resolution-field">Resolution note<textarea value={resolutionNotes[finding.id] ?? ""} onChange={(event) => setResolutionNotes((current) => ({ ...current, [finding.id]: event.target.value }))} placeholder="State what changed and where the proof is stored." /></label>
         <div className="review-actions">{finding.status === "open" && <button className="button button-secondary" disabled={saving} onClick={() => update(finding, "in_progress")}>Start work</button>}<button className="button button-primary" disabled={saving} onClick={() => update(finding, "closed")}>Resolve finding</button></div>
       </article>)}
