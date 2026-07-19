@@ -18,5 +18,15 @@ export async function getGateReviewContext(projectId: string, gateId: string) {
     latestVersion ? db.select().from(scheduleAssignments).where(and(eq(scheduleAssignments.versionId, latestVersion.id), inArray(scheduleAssignments.taskId, taskIds))) : Promise.resolve([])
   ]) : [[], []];
   const assignmentByTask = new Map(assignmentRows.map((assignment) => [assignment.taskId, assignment]));
-  return { ...gateRows[0], readiness, decisions: decisionRows, schedule: { version: latestVersion, tasks: taskRows.map((task) => ({ ...task, assignment: assignmentByTask.get(task.id) ?? null })) } };
+  const taskById = new Map(taskRows.map((task) => [task.id, task]));
+  // Read-only schedule context: tasks with an AFFECTS edge to this gate surface so
+  // a reviewer sees schedule impact when deciding the gate. No mutation affordance.
+  const affectingTasks = graphEdges
+    .filter((edge) => edge.relationshipType === "AFFECTS")
+    .map((edge) => (edge.fromType === "schedule_task" ? edge.fromId : edge.toId))
+    .filter((taskId, index, ids) => ids.indexOf(taskId) === index)
+    .map((taskId) => taskById.get(taskId))
+    .filter((task): task is NonNullable<typeof task> => Boolean(task))
+    .map((task) => ({ id: task.id, name: task.name, reviewState: task.reviewState, relationshipType: "AFFECTS" as const }));
+  return { ...gateRows[0], readiness, decisions: decisionRows, affectingTasks, schedule: { version: latestVersion, tasks: taskRows.map((task) => ({ ...task, assignment: assignmentByTask.get(task.id) ?? null })) } };
 }
