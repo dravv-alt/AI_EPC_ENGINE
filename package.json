@@ -46,6 +46,9 @@
     "verify:compliance-scan-http": "tsx scripts/verify-compliance-scan-http.ts",
     "verify:compliance-llm-http": "tsx scripts/verify-compliance-llm-http.ts",
     "verify:risk-mitigations-http": "tsx scripts/verify-risk-mitigations-http.ts",
+    "verify:ingestion-formats-http": "tsx scripts/verify-ingestion-formats-http.ts",
+    "verify:compliance-modality-http": "tsx scripts/verify-compliance-modality-http.ts",
+    "verify:turnover-provenance-http": "tsx scripts/verify-turnover-provenance-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {

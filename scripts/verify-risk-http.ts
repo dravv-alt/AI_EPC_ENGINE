@@ -129,6 +129,15 @@ async function main() {
     if (riskIds.length) await db.delete(alerts).where(inArray(alerts.dedupKey, riskIds.map((id) => `risk:${id}`)));
     if (riskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.id, riskIds));
     for (const riskId of riskIds) await db.delete(scheduleEvents).where(and(eq(scheduleEvents.projectId, developmentProjectId), like(scheduleEvents.dedupKey, `predicted_risk_delay:${riskId}:%`)));
+    // This task lives in developmentProjectId's current schedule version, so
+    // the background recurring risk.poll.all job can independently create a
+    // scheduleRisks row here too (a different riskType than the one this test
+    // tracked in riskIds) -- untracked, but still referencing a risk_signals
+    // row for this taskId via its own foreign key. Clear by taskId (a
+    // superset of riskIds) before deleting risk_signals, same fix already
+    // applied in verify-schedule-http.ts and verify-risk-mitigations-http.ts.
+    if (taskIds.length) await db.delete(alerts).where(inArray(alerts.dedupKey, (await db.select({ id: scheduleRisks.id }).from(scheduleRisks).where(inArray(scheduleRisks.taskId, taskIds))).map((row) => `risk:${row.id}`)));
+    if (taskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.taskId, taskIds));
     // Deliberately scoped by taskId, not by pollCycleId: a single project-wide
     // poll cycle now covers every accepted task (Slice 8 made the synthetic
     // client lively for all of them, not just this test's task), so a blanket

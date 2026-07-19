@@ -67,11 +67,14 @@ async function main() {
   run("Credentials and MFA", "npm", ["run", "verify:credentials-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
   run("Evidence to turnover", "npm", ["run", "verify:evidence-turnover-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
   run("Turnover Cx manifest", "npm", ["run", "verify:turnover-cx-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
+  run("Turnover manifest provenance", "npm", ["run", "verify:turnover-provenance-http"], { ...credentialsEnv, TURNOVER_PROVENANCE_TEST_URL: credentialsBase });
+  run("Ingestion multi-format support", "npm", ["run", "verify:ingestion-formats-http"], { ...developmentEnv, INGESTION_FORMATS_TEST_URL: developmentBase });
   run("Deterministic schedule", "npm", ["run", "verify:schedule-http"], { ...developmentEnv, SCHEDULE_TEST_URL: developmentBase });
   run("Governed Cx", "npm", ["run", "verify:cx-http"], { ...developmentEnv, CX_TEST_URL: developmentBase });
   run("Governed compliance", "npm", ["run", "verify:compliance-http"], { ...developmentEnv, COMPLIANCE_TEST_URL: developmentBase });
   run("Compliance semantic candidate scan", "npm", ["run", "verify:compliance-scan-http"], { ...developmentEnv, COMPLIANCE_SCAN_TEST_URL: developmentBase });
   run("Compliance LLM-owned verdict", "npm", ["run", "verify:compliance-llm-http"], { ...developmentEnv, COMPLIANCE_LLM_TEST_URL: developmentBase });
+  run("Compliance modality tiering", "npm", ["run", "verify:compliance-modality-http"], developmentEnv);
   run("Predictive risk", "npm", ["run", "verify:risk-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Predictive-risk lively signals + mitigations", "npm", ["run", "verify:risk-mitigations-http"], { ...developmentEnv, RISK_TEST_URL: developmentBase });
   run("Recurring poll loop", "npm", ["run", "verify:poll-http"], { ...developmentEnv, POLL_TEST_URL: developmentBase });
