@@ -96,7 +96,7 @@ export async function getShipmentRoute(
 
       const seaSegs = getMarineRoute(
         actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
-        oPort?.seaRouteEntryPoint, dPort?.seaRouteEntryPoint
+        oPort?.seaRouteWaypoints, dPort?.seaRouteWaypoints
       );
       segments.push(...seaSegs.map(coords => ({ mode: "sea" as const, coords })));
 
@@ -122,49 +122,49 @@ export async function getShipmentRoute(
 function getMarineRoute(
   originLat: number, originLng: number, 
   destLat: number, destLng: number,
-  oEntryPoint?: [number, number],
-  dEntryPoint?: [number, number]
+  oWaypoints?: [number, number][],
+  dWaypoints?: [number, number][]
 ): [number, number][][] {
   const origin = [originLng, originLat];
   const dest = [destLng, destLat];
 
+  // The actual points fed into searoute-js
+  const oEntry = oWaypoints && oWaypoints.length > 0 ? oWaypoints[oWaypoints.length - 1] : undefined;
+  const dEntry = dWaypoints && dWaypoints.length > 0 ? dWaypoints[0] : undefined;
+
   let feature;
   try {
-    if (oEntryPoint && dEntryPoint) {
-      const f1 = searoute(origin, [oEntryPoint[1], oEntryPoint[0]]);
-      const f2 = searoute([oEntryPoint[1], oEntryPoint[0]], [dEntryPoint[1], dEntryPoint[0]]);
-      const f3 = searoute([dEntryPoint[1], dEntryPoint[0]], dest);
+    if (oEntry && dEntry) {
+      const f1 = searoute([oEntry[1], oEntry[0]], [dEntry[1], dEntry[0]]);
       feature = {
         geometry: {
           type: "LineString",
           coordinates: [
+            ...oWaypoints!.map(p => [p[1], p[0]]),
             ...(f1?.geometry?.coordinates || []),
-            ...(f2?.geometry?.coordinates || []),
-            ...(f3?.geometry?.coordinates || [])
+            ...dWaypoints!.map(p => [p[1], p[0]])
           ]
         }
       };
-    } else if (oEntryPoint) {
-      const f1 = searoute(origin, [oEntryPoint[1], oEntryPoint[0]]);
-      const f2 = searoute([oEntryPoint[1], oEntryPoint[0]], dest);
+    } else if (oEntry) {
+      const f1 = searoute([oEntry[1], oEntry[0]], dest);
       feature = {
         geometry: {
           type: "LineString",
           coordinates: [
-            ...(f1?.geometry?.coordinates || []),
-            ...(f2?.geometry?.coordinates || [])
+            ...oWaypoints!.map(p => [p[1], p[0]]),
+            ...(f1?.geometry?.coordinates || [])
           ]
         }
       };
-    } else if (dEntryPoint) {
-      const f1 = searoute(origin, [dEntryPoint[1], dEntryPoint[0]]);
-      const f2 = searoute([dEntryPoint[1], dEntryPoint[0]], dest);
+    } else if (dEntry) {
+      const f1 = searoute(origin, [dEntry[1], dEntry[0]]);
       feature = {
         geometry: {
           type: "LineString",
           coordinates: [
             ...(f1?.geometry?.coordinates || []),
-            ...(f2?.geometry?.coordinates || [])
+            ...dWaypoints!.map(p => [p[1], p[0]])
           ]
         }
       };

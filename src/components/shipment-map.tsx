@@ -483,7 +483,7 @@ export default function ShipmentMap({ shipments, selectedId, threatAssessments =
       <div style={{ position: "relative", flex: 1, minHeight: 660, display: viewMode === "weather" ? "flex" : "none", flexDirection: "column", background: '#e5e7eb' }}>
         {viewMode === "weather" && (
           <iframe 
-            style={{ flex: 1, width: "100%", border: "none" }}
+            style={{ flex: 1, width: "100%", height: "100%", minHeight: 660, border: "none" }}
             src={`https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh&zoom=${Math.min(11, mapState.zoom)}&overlay=wind&product=ecmwf&level=surface&lat=${mapState.lat}&lon=${mapState.lng}&detailLat=${mapState.lat}&detailLon=${mapState.lng}&marker=true`} 
             title="Windy Weather Map"
           ></iframe>

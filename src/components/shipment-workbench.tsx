@@ -97,16 +97,12 @@ export function ShipmentWorkbench({ projectId, initialShipments, assets }: { pro
       setThreatAssessments(prev => ({ ...prev, [shipment.id]: assessment }));
       
       if (assessment.totalNewDelayHours > 0) {
-        const newEta = new Date(shipment.plannedEta);
-        newEta.setHours(newEta.getHours() + assessment.totalNewDelayHours);
-        
         const newFingerprints = assessment.newThreats.map((t: any) => t.fingerprint);
 
         const response = await fetch(`/api/shipments/${shipment.id}`, { 
           method: "PATCH", 
           headers: { "content-type": "application/json" }, 
           body: JSON.stringify({ 
-            plannedEta: newEta.toISOString(), 
             weatherDelayFactor: String(Number(shipment.weatherDelayFactor || 0) + assessment.totalNewDelayHours),
             // @ts-ignore
             assessedThreats: [...assessedFingerprints, ...newFingerprints]

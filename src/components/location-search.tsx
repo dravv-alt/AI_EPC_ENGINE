@@ -104,12 +104,11 @@ export function LocationSearch({ placeholder = "Search location...", value = "",
           position: 'relative', 
           display: 'flex', 
           alignItems: 'center',
-          background: 'var(--paper, #ffffff)',
-          border: '1px solid var(--line, #e2e8f0)',
-          borderRadius: '12px',
-          padding: '0 16px',
-          minHeight: '48px',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+          background: '#fffefa',
+          border: '1px solid var(--line)',
+          borderRadius: '5px',
+          padding: '0 10px',
+          minHeight: '40px',
           transition: 'all 0.2s ease',
           cursor: 'text'
         }}
@@ -118,15 +117,13 @@ export function LocationSearch({ placeholder = "Search location...", value = "",
           if (input) input.focus();
         }}
         onFocus={(e) => {
-          e.currentTarget.style.borderColor = 'var(--primary, #2d463e)';
-          e.currentTarget.style.boxShadow = '0 4px 16px rgba(45, 70, 62, 0.15)';
+          e.currentTarget.style.borderColor = 'var(--primary)';
         }}
         onBlur={(e) => {
-          e.currentTarget.style.borderColor = 'var(--line, #e2e8f0)';
-          e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.04)';
+          e.currentTarget.style.borderColor = 'var(--line)';
         }}
       >
-        <Search style={{ width: '18px', height: '18px', color: 'var(--muted, #64748b)', flexShrink: 0, marginRight: '10px' }} />
+        <Search style={{ width: '16px', height: '16px', color: 'var(--muted)', flexShrink: 0, marginRight: '8px' }} />
         <input
           type="text"
           style={{ 
@@ -135,9 +132,8 @@ export function LocationSearch({ placeholder = "Search location...", value = "",
             border: 'none', 
             outline: 'none', 
             background: 'transparent', 
-            fontSize: '14px',
-            color: 'var(--ink, #0f172a)',
-            fontWeight: 500,
+            fontSize: '12px',
+            color: 'var(--ink)',
             padding: '4px 0'
           }}
           placeholder={placeholder}

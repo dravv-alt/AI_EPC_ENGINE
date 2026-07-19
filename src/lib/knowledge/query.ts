@@ -25,7 +25,7 @@ export async function semanticSearch(input: {
   limit?: number;
   documentType?: string;
 }): Promise<Array<{ regionId: string; score: number; text: string; pageNumber: string; documentVersionId: string }>> {
-  const { projectId, query, limit = 10 } = input;
+  const { projectId, query, limit = 10, documentType } = input;
 
   // Check if GEMINI_API_KEY is available for embedding
   if (!env.GEMINI_API_KEY) {
@@ -37,6 +37,7 @@ export async function semanticSearch(input: {
       JOIN documents d ON dv.document_id = d.id
       WHERE d.project_id = ${projectId}
         AND dv.extraction_status = 'completed'
+        ${documentType ? sql`AND d.document_type = ${documentType}` : sql``}
       LIMIT 200
     `;
     return rows
@@ -69,6 +70,7 @@ export async function semanticSearch(input: {
     WHERE d.project_id = ${projectId}
       AND dv.extraction_status = 'completed'
       AND sr.embedding IS NOT NULL
+      ${documentType ? sql`AND d.document_type = ${documentType}` : sql``}
     ORDER BY sr.embedding <=> ${vectorStr}::vector
     LIMIT ${limit}
   `;
