@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
+import { rerankCitations } from "@/lib/knowledge/rerank";
 
 export type SemanticCitation = {
   chunkId: string;
@@ -47,6 +48,11 @@ export async function retrieveSemanticCitations(options: {
   ];
   if (options.documentType) filters.push(eq(knowledgeChunks.documentType, options.documentType));
 
+  // Over-fetch more candidates when reranking is active (EMBEDDING_PROVIDER=
+  // service) so the cross-encoder has a real pool to reorder; rerankCitations
+  // is a no-op passthrough otherwise, so the mock-mode fetch size (limit * 2)
+  // and resulting order stay exactly as before reranking existed.
+  const fetchMultiplier = env.EMBEDDING_PROVIDER === "service" ? 4 : 2;
   const rows = await db
     .select({
       chunkId: knowledgeChunks.id,
@@ -63,11 +69,10 @@ export async function retrieveSemanticCitations(options: {
     .leftJoin(documents, eq(documentVersions.documentId, documents.id))
     .where(and(...filters))
     .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
-    .limit(limit * 2);
+    .limit(limit * fetchMultiplier);
 
-  return rows
+  const candidates: SemanticCitation[] = rows
     .filter((row) => Number(row.similarity) >= threshold)
-    .slice(0, limit)
     .map((row) => ({
       chunkId: row.chunkId,
       content: row.content,
@@ -78,4 +83,6 @@ export async function retrieveSemanticCitations(options: {
       contentHash: row.contentHash,
       similarity: Number(row.similarity)
     }));
+
+  return rerankCitations(options.query, candidates, limit);
 }

@@ -41,6 +41,7 @@
     "verify:knowledge-http": "tsx scripts/verify-knowledge-http.ts",
     "verify:model-provider": "tsx scripts/verify-model-provider.ts",
     "verify:retrieval-service": "tsx scripts/verify-retrieval-service.ts",
+    "verify:knowledge-rerank": "tsx scripts/verify-knowledge-rerank-http.ts",
     "verify:risk-mitigations-http": "tsx scripts/verify-risk-mitigations-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
