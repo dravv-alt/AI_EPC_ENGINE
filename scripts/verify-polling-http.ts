@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { and, desc, eq, inArray, isNotNull, like } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { alerts, durableJobs, projects, riskSignals, scheduleEvents, scheduleTasks, shipments } from "../src/lib/db/schema";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 16 end-to-end polling verification.
 //
@@ -44,13 +45,19 @@ async function assertHeartbeat() {
 async function assertAisPositionUpdate(): Promise<{ shipmentId: string; lat: string; lng: string }> {
   let autoJob: { status: string; result: unknown } | undefined;
   for (let i = 0; i < 120; i += 1) {
+    // Filter for status="completed" directly in SQL rather than checking only
+    // the single most-recent job regardless of status: an unrelated ephemeral
+    // test project can legitimately fail its own auto-poll (e.g. no schedule
+    // baseline yet), and if that happens to be the most-recently-updated row,
+    // the naive "most recent, then check status" query never finds this
+    // project's own successful poll.
     const [row] = await db
       .select({ status: durableJobs.status, result: durableJobs.result })
       .from(durableJobs)
-      .where(and(eq(durableJobs.name, "supply.poll"), like(durableJobs.idempotencyKey, "supply-poll-auto:%")))
+      .where(and(eq(durableJobs.name, "supply.poll"), like(durableJobs.idempotencyKey, "supply-poll-auto:%"), eq(durableJobs.status, "completed")))
       .orderBy(desc(durableJobs.updatedAt))
       .limit(1);
-    if (row && row.status === "completed") { autoJob = row; break; }
+    if (row) { autoJob = row; break; }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   assert.ok(autoJob, "An automatic (non-manual) supply.poll job must complete without an API trigger.");
@@ -103,8 +110,13 @@ async function assertWeatherTransition(): Promise<{ shipmentId: string; eventTyp
 
 // ── Step 4: alert raised from the transition ─────────────────────────────────
 async function assertShipmentAlert(shipmentId: string): Promise<{ alertId: string; projectId: string }> {
-  const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
-  assert.ok(project, "A seeded project is required.");
+  // The seeded development project specifically, not an arbitrary unordered
+  // row from `projects` — many other verify scripts' own throwaway project
+  // fixtures can be present alongside it, and one of those would trivially
+  // satisfy assert.ok(project) while carrying none of the shipments/tasks
+  // the rest of this check depends on.
+  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
+  assert.ok(project, "The seeded development project is required.");
 
   // Poll for a SHIPMENT_DELAYED or SHIPMENT_RECOVERED alert referencing the
   // shipment that crossed a status boundary above.
@@ -154,13 +166,14 @@ async function assertCommandCenterCrossLink(projectId: string) {
 async function assertRiskAutopoll() {
   let autoJob: { id: string; status: string; result: unknown } | undefined;
   for (let i = 0; i < 120; i += 1) {
+    // Same status-filtered-in-SQL fix as assertAisPositionUpdate above.
     const [row] = await db
       .select({ id: durableJobs.id, status: durableJobs.status, result: durableJobs.result })
       .from(durableJobs)
-      .where(and(eq(durableJobs.name, "risk.poll"), like(durableJobs.idempotencyKey, "risk-poll-auto:%")))
+      .where(and(eq(durableJobs.name, "risk.poll"), like(durableJobs.idempotencyKey, "risk-poll-auto:%"), eq(durableJobs.status, "completed")))
       .orderBy(desc(durableJobs.updatedAt))
       .limit(1);
-    if (row && row.status === "completed") { autoJob = row; break; }
+    if (row) { autoJob = row; break; }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   assert.ok(autoJob, "An automatic (non-manual) risk.poll job must complete without an API trigger.");
@@ -179,8 +192,8 @@ async function assertRiskAutopoll() {
 
 // ── Step 7: Live Events feed surfaces AIS + weather + risk observations ───────
 async function assertLiveEventsFeed() {
-  const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
-  assert.ok(project, "A seeded project is required for the live-events feed check.");
+  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
+  assert.ok(project, "The seeded development project is required for the live-events feed check.");
 
   const response = await fetch(`${base}/api/projects/${project.id}/schedule/live-events`);
   assert.equal(response.status, 200, `Live events feed must return 200 (got ${response.status}).`);

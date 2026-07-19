@@ -4,17 +4,13 @@ Pramana Cx is an evidence control plane for mission-critical EPC commissioning. 
 
 The product is **advisory by design**. AI may extract, retrieve, rank, draft, and explain. Deterministic services calculate readiness, schedule feasibility, and test verdicts. Only an authorized human review can accept requirements, evidence, checklists, reports, precedents, or gate decisions.
 
-This README is the global implementation map. Detailed planning remains in [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md), product intent in [PLANNER/PRD.md](PLANNER/PRD.md), technical constraints in [PLANNER/TRD.md](PLANNER/TRD.md), the chronological build ledger in [what I have built.md](what%20I%20have%20built.md), and the approved remediation plan for the retrieval-backed agents in [agentFixingPlan.md](agentFixingPlan.md).
+This README is the global implementation map. Detailed planning remains in [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md), product intent in [PLANNER/PRD.md](PLANNER/PRD.md), technical constraints in [PLANNER/TRD.md](PLANNER/TRD.md), the chronological build ledger in [what I have built.md](what%20I%20have%20built.md), and the completed remediation record for the retrieval-backed agents in [agentFixingPlan.md](agentFixingPlan.md).
 
 ## Current status
 
 The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 deterministic schedule tracer are implemented and locally verified. Governed Cx, compliance, and the predictive-risk pipeline are also verified end to end. The remaining Phase 3–4 depth is listed without treating planned work as shipped.
 
-Three agents are implemented but shallower than their approved designs, and [agentFixingPlan.md](agentFixingPlan.md) is the sequenced plan to close that gap:
-
-- **Specification & Quality Compliance** compares a requirement against a target citation the caller must already know. It performs no retrieval, so it discovers nothing on its own.
-- **Predictive Schedule Risk** polls on a correct recurring schedule, but its default synthetic signal client returns a flat `probability: 0.1, delay: 0h` against thresholds of `0.5`/`8h` — so in the default configuration it cannot raise a risk at all.
-- **Project Knowledge & RFI** performs scoped vector retrieval and returns raw chunk text. There is no query planning, reranking, or synthesised cited answer.
+The three retrieval-backed agents (Specification & Quality Compliance, Predictive Schedule Risk, Project Knowledge & RFI) have completed the remediation sequenced in [agentFixingPlan.md](agentFixingPlan.md): semantic candidate discovery and an LLM-owned verdict for compliance, a lively synthetic signal formula with model-written mitigations for predictive risk, and a two-call plan-then-synthesize pipeline with code-enforced groundedness for knowledge. All three now run in TypeScript inside the core app, generation is swappable between a deterministic mock, Gemini, and NVIDIA NIM, and embeddings/reranking run through a third stateless Python service alongside ingestion and the solver.
 
 | Area | State | What exists now |
 | --- | --- | --- |
@@ -27,9 +23,9 @@ Three agents are implemented but shallower than their approved designs, and [age
 | Offline field capture | Built | IndexedDB queue, device encryption where available, idempotent sync, immutable object storage, PWA shell |
 | Governed Cx workflow | Verified | Standard ingestion, cited checklist generation/review, deterministic readings, human-routed narrative steps, editable draft, approved immutable report |
 | Shipments | Built | Asset-linked legs, estimate provenance, delayed/recovered events, graph-derived schedule mappings, map UI |
-| Compliance | Verified, shallow | Unit-aware numeric, explicit boolean/categorical comparison, qualitative review, proposed findings, exact-citation equality precedents, human disposition, source hierarchy warnings. **Requires a caller-supplied target region — no semantic candidate discovery, and the qualitative branch is a stub with no model reasoning.** |
-| Knowledge and RFI similarity | Partial | Project-scoped metadata-filtered pgvector retrieval and an RFI-similarity endpoint both work. **Query planning, cross-encoder reranking, graph-context expansion, and synthesised claim-level cited answers remain — the query route currently concatenates raw chunk text.** |
-| Predictive risk | Verified, inert by default | Swappable procurement/lead-time/workforce/weather clients, explicit unavailable readings, durable polls, deterministic materiality, task/type deduplication, self-resolution, alerts, project-scoped event validation, APIs, and schedule UI. **Recurring orchestration is built** (BullMQ repeatable `risk.poll.all`). **The default synthetic client emits a constant sub-threshold signal, so no risk can fire without `RISK_POLL_MODE=http`; mitigation options are eight hardcoded strings.** |
+| Compliance | Verified | Metadata-filtered semantic candidate discovery across submittals/POs/shop-drawings/drawings, LLM-owned verdict with the deterministic comparator retained as mock-supplier and recorded cross-check, code-enforced grounding validation, unchanged exact-citation precedent semantics, AI-suggestion labeling, source-hierarchy conflict panel, scan-triggered review queue |
+| Knowledge and RFI similarity | Verified | Metadata-filtered pgvector retrieval, cross-encoder reranking, deterministic graph-context expansion, a two-call plan-then-synthesize pipeline with a code-enforced groundedness filter (fabricated citations are dropped, never trusted from the model), citation-chip UI, explicit "no results in scope" state |
+| Predictive risk | Verified | Swappable procurement/lead-time/workforce/weather clients, a lively hash-seeded synthetic formula that organically crosses materiality thresholds, LLM-generated mitigation proposals with a static fallback on any failure, durable polls, deterministic materiality, task/type deduplication, self-resolution, alerts, recurring BullMQ orchestration, project-scoped event validation, APIs, and schedule UI |
 | Command Center | Partial | Stable event alerts and recovery clearing; richer grouping, ownership, and cross-links remain |
 | Production hardening | Partial | Builds and focused integration tests pass; CI, accessibility, observability, load, and full Compose/MinIO tests remain |
 
@@ -39,15 +35,18 @@ The complete local matrix passed against a newly built production artifact. It a
 
 | Check | Result | Evidence covered |
 | --- | --- | --- |
-| Database and production artifact | Passed | All 12 migrations, TypeScript, and optimized Next.js production build |
+| Database and production artifact | Passed | All 13 migrations, TypeScript, and optimized Next.js production build |
 | Foundation contracts | Passed | Redis rate limit, durable-job idempotency, encrypted TOTP, event validation, model boundary, signed object reads |
 | Credentials and MFA | Passed | Registration, HttpOnly session, scoped profile, TOTP enrollment, MFA challenge, MFA login |
 | Evidence to turnover | Passed | Pending evidence, accepted-only proof, deterministic readiness, fresh-TOTP decision, immutable pack, independent manifest verification |
 | Deterministic schedule | Passed | Reviewed inputs, resource/dependency constraints, CP-SAT optimum, immutable versions, shipment-triggered warm-start re-solve |
 | Governed Cx | Passed | Controlled standard extraction, cited checklist, readings, editable report, immutable approved evidence artifact |
-| Governed compliance | Passed | Unit normalization, non-authoritative proposed finding, human blocker promotion, qualitative review, exact-citation precedent, cross-project rejection |
-| Predictive risk | Passed | Four-source poll, explicit unavailable state, materiality/deduplication, self-resolution, advisory alert, review, solver isolation |
-| Audit integrity | Passed | 198 audit events verified: 196 canonical links and 2 labelled legacy links |
+| Governed compliance | Passed | Unit normalization, semantic candidate discovery, LLM-owned verdict with recorded deterministic cross-check, non-authoritative proposed finding, human blocker promotion, exact-citation precedent, cross-project rejection |
+| Predictive risk | Passed | Four-source poll, lively synthetic signal formula, LLM-generated mitigations with static fallback, explicit unavailable state, materiality/deduplication, self-resolution, advisory alert, review, solver isolation |
+| Knowledge and RFI | Passed | Metadata-filtered retrieval, reranking, graph-context expansion, plan-then-synthesize pipeline, code-enforced groundedness filter, RFI similarity |
+| Model provider foundation | Passed | Mock/Gemini/NIM generation split, mock/service embedding split, JSON-repair retry |
+| Retrieval service | Passed (skips offline) | Embed/rerank contract verified against the live container when `EMBEDDING_PROVIDER=service`; skips cleanly in the default offline matrix |
+| Audit integrity | Passed | Canonical hash-chain verified with no forks and a single head |
 | Browser acceptance | Passed | 19 desktop routes and 11 critical 390×844 mobile routes; no missing page, console warning/error, or document-level horizontal overflow |
 
 Run the same matrix with `npm run verify:all`. The app currently runs locally at [http://localhost:4173](http://localhost:4173) when its supporting services are available.
@@ -83,12 +82,14 @@ flowchart LR
     subgraph Services["Isolated deterministic services"]
         Extractor["PyMuPDF ingestion service on 8001"]
         Solver["OR-Tools CP-SAT solver on 8002"]
+        Retrieval["sentence-transformers embed/rerank service on 8003"]
     end
 
     subgraph Intelligence["Advisory boundaries"]
-        Model["Schema-validated ModelProvider"]
-        Mock["Deterministic mock"]
+        Model["Schema-validated GenerationProvider / EmbeddingProvider"]
+        Mock["Deterministic mock - default"]
         Gemini["Gemini - explicit opt-in"]
+        Nim["NVIDIA NIM - explicit opt-in"]
         RiskClients["Procurement, lead-time, workforce, weather clients"]
     end
 
@@ -130,7 +131,9 @@ flowchart LR
     Domain --> Model
     Worker --> Model
     Model --> Mock
-    Model -. "configured production provider" .-> Gemini
+    Model -. "MODEL_PROVIDER=gemini" .-> Gemini
+    Model -. "MODEL_PROVIDER=nim" .-> Nim
+    Model -. "EMBEDDING_PROVIDER=service" .-> Retrieval
     Worker --> RiskClients
     RiskClients -. "unavailable readings are persisted" .-> Postgres
 ```
@@ -304,14 +307,13 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 
 The verified foundation is usable locally. The following work is still required before representing the full Phase 0–4 product as complete or production-ready:
 
-1. **Retrieval-backed agents (1, 4, 5):** the sequenced remediation in [agentFixingPlan.md](agentFixingPlan.md) — a split generation/embedding provider boundary with NVIDIA NIM alongside Gemini, a stateless `services/retrieval` embedding/rerank service, semantic candidate discovery for compliance, synthesised cited answers for knowledge, and live synthetic risk signals with model-written mitigations.
-2. **Predictive-risk automation:** recurring orchestration is already shipped; what remains is long-running worker restart/recovery and configured external-provider acceptance.
-3. **Command Center:** add grouped active/resolved views, severity/owner filters, deep links to source entities, and consistent acknowledgement/recovery semantics.
-4. **Ingestion coverage:** extend controlled ingestion beyond PDF to the required office/text formats while retaining immutable originals, extraction provenance, limits, and failure states.
-5. **External integrations:** configure real risk-signal and AIS/weather/congestion providers while retaining explicit provenance, timeouts, unavailable states, and deterministic synthetic local behavior.
-6. **Production validation:** run the complete Compose topology including pgvector and MinIO when Docker is available; validate the S3 driver, retries, recovery, backups, and migration-from-empty behavior.
-7. **Quality gates:** turn the current local matrix into CI; add accessibility/axe checks, browser journeys, cross-tenant expansion, load tests, and failure injection.
-8. **Operations:** add structured logs, correlation/job IDs, metrics, traces, queue dashboards, alerting, retention execution, secrets policy, backups, and deployment runbooks.
+1. **Predictive-risk automation:** recurring orchestration is already shipped; what remains is long-running worker restart/recovery and configured external-provider acceptance. Predictive-risk signals are still synthetic-but-lively by default rather than sourced from real procurement/lead-time/workforce systems.
+2. **Command Center:** add grouped active/resolved views, severity/owner filters, deep links to source entities, and consistent acknowledgement/recovery semantics.
+3. **Ingestion coverage:** extend controlled ingestion beyond PDF to the required office/text formats while retaining immutable originals, extraction provenance, limits, and failure states.
+4. **External integrations:** configure real risk-signal and AIS/weather/congestion providers while retaining explicit provenance, timeouts, unavailable states, and deterministic synthetic local behavior.
+5. **Production validation:** run the complete Compose topology including pgvector and MinIO when Docker is available; validate the S3 driver, retries, recovery, backups, and migration-from-empty behavior. The `EMBEDDING_PROVIDER=service`/`MODEL_PROVIDER=gemini|nim` paths are covered by dedicated verify scripts but require the retrieval container and real API keys respectively to exercise beyond the offline mock-mode matrix.
+6. **Quality gates:** turn the current local matrix into CI; add accessibility/axe checks, browser journeys, cross-tenant expansion, load tests, and failure injection.
+7. **Operations:** add structured logs, correlation/job IDs, metrics, traces, queue dashboards, alerting, retention execution, secrets policy, backups, and deployment runbooks.
 
 The items above are intentional gaps, not hidden failures in the passing local matrix. Real external credentials and Docker/MinIO availability are the remaining manual prerequisites for the corresponding production-path tests.
 
@@ -324,8 +326,8 @@ The items above are intentional gaps, not hidden failures in the passing local m
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue
 - **Document extraction:** lightweight PyMuPDF service with page, bounding-box, and content-hash provenance
 - **Scheduling:** isolated FastAPI OR-Tools CP-SAT service; infeasibility is returned, never hidden
-- **AI:** schema-validated `ModelProvider`; deterministic mock by default and Gemini only when explicitly configured. Per [agentFixingPlan.md](agentFixingPlan.md) this becomes a split boundary — `MODEL_PROVIDER` (`mock`/`gemini`/`nim`) for generation and `EMBEDDING_PROVIDER` (`mock`/`service`) for embeddings — so the deterministic mock keeps the offline verification matrix green regardless of which hosted model is configured
-- **Retrieval (planned):** a third stateless FastAPI service alongside ingestion and the solver, serving `sentence-transformers` embeddings and cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks
+- **AI:** a split, schema-validated provider boundary — `MODEL_PROVIDER` (`mock`/`gemini`/`nim`) for structured generation, `EMBEDDING_PROVIDER` (`mock`/`service`) for embeddings — with a JSON-repair retry shared by every real (non-mock) provider so one malformed response doesn't fail a job outright. The deterministic mock is the default and keeps the offline verification matrix green regardless of which hosted model is configured; every AI-authored suggestion is labeled with its source and model version in the audit trail and lands `reviewState: "proposed"`, never auto-accepted
+- **Retrieval:** a third stateless FastAPI service (`services/retrieval`, port 8003) alongside ingestion and the solver, serving `BAAI/bge-base-en-v1.5` embeddings (768-dim, matching the existing `vector(768)` column with no migration) and `BAAI/bge-reranker-base` cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks. Every stored vector is tagged with the model that produced it, so a provider switch degrades to fewer results rather than silently corrupting cosine rankings across incompatible vector spaces
 - **Authentication:** owned credentials/TOTP or Clerk adapter; all authorization remains in project memberships and server-side permissions
 - **Design system:** IBM Plex Serif headings, Hanken Grotesk body, JetBrains Mono labels; primary `#2D463E`, secondary `#B5651D`, tertiary `#583935`, neutral `#FDFBF7`
 
@@ -342,7 +344,7 @@ docker info
 docker compose up --build
 ```
 
-The web application is configured for [http://localhost:4173](http://localhost:4173), not port 3000. Compose starts PostgreSQL/pgvector, Redis, MinIO, ingestion, solver, core API, and worker.
+The web application is configured for [http://localhost:4173](http://localhost:4173), not port 3000. Compose starts PostgreSQL/pgvector, Redis, MinIO, ingestion, solver, retrieval, core API, and worker. The retrieval container is only load-bearing when `EMBEDDING_PROVIDER=service`; it is probed for visibility but never forces the platform into a degraded state under the default `EMBEDDING_PROVIDER=mock`.
 
 ### Existing local-service fallback
 
@@ -367,12 +369,17 @@ npm run verify:evidence-turnover-http
 npm run verify:schedule-http
 npm run verify:cx-http
 npm run verify:compliance-http
+npm run verify:compliance-scan-http
+npm run verify:compliance-llm-http
 npm run verify:risk-http
+npm run verify:risk-mitigations-http
+npm run verify:knowledge-synthesis
+npm run verify:model-provider
 npm run verify:audit
 npm run verify:all
 ```
 
-`verify:all` is the authoritative local matrix. It applies migrations, type-checks, creates a production build, seeds prerequisites, launches isolated development and credentials runtimes, uses an isolated Redis queue prefix, and runs Phase 0, credentials/MFA, evidence/turnover, schedule, Cx, compliance, predictive-risk, and audit verification. The production model, real risk-signal clients, and S3/MinIO paths still require configured services/credentials and separate acceptance runs.
+`verify:all` is the authoritative local matrix. It applies migrations, type-checks, creates a production build, seeds prerequisites, launches isolated development and credentials runtimes, uses an isolated Redis queue prefix, and runs Phase 0, credentials/MFA, evidence/turnover, schedule, Cx, compliance (including semantic discovery and the LLM-owned verdict), predictive-risk (including the lively signal formula and mitigation generation), knowledge (including reranking, graph context, and synthesis), model-provider, and audit verification — all under the deterministic mock, so it runs offline with no containers or API keys. `verify:retrieval-service` skips cleanly under the default `EMBEDDING_PROVIDER=mock` and only exercises the real container when `EMBEDDING_PROVIDER=service` is set. Real Gemini/NIM generation, the retrieval container, and S3/MinIO paths require configured services/credentials and separate acceptance runs.
 
 ## Configuration requiring manual credentials
 
@@ -380,7 +387,8 @@ The default local stack uses development authentication, local object storage, a
 
 - Clerk publishable/secret keys only if `AUTH_MODE=clerk` is selected
 - a strong `AUTH_ENCRYPTION_KEY` when owned credentials/TOTP are used
-- Gemini API key only if `MODEL_PROVIDER=gemini` is selected; an NVIDIA `NIM_API_KEY` only if `MODEL_PROVIDER=nim` is selected once [agentFixingPlan.md](agentFixingPlan.md) Slice 0 lands
+- Gemini API key only if `MODEL_PROVIDER=gemini` is selected; an NVIDIA `NIM_API_KEY` only if `MODEL_PROVIDER=nim` is selected (hosted by default at `NIM_BASE_URL`, or point it at a self-hosted NIM endpoint)
+- no credential is required for `EMBEDDING_PROVIDER=service` — the retrieval container serves open-weights models locally; only Docker is required
 - S3/MinIO endpoint, bucket, region, access key, and secret when `OBJECT_STORAGE_DRIVER=s3`
 - procurement, equipment-lead-time, workforce, and weather endpoint URLs when `RISK_POLL_MODE=http`
 - AIS and shipment congestion/weather credentials when real shipment providers replace synthetic estimates
