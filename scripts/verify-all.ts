@@ -71,6 +71,7 @@ async function main() {
   run("HTTP risk signal clients", "npm", ["run", "verify:risk-http-clients"], developmentEnv);
   run("Live AIS position poll", "npm", ["run", "verify:supply-poll-http"], developmentEnv);
   run("Weather status transitions", "npm", ["run", "verify:weather-poll-http"], developmentEnv);
+  run("Live events feed", "npm", ["run", "verify:live-events-http"], { ...developmentEnv, LIVE_EVENTS_TEST_URL: developmentBase });
   run("Knowledge embeddings", "npm", ["run", "verify:knowledge-embed"], developmentEnv);
   run("Knowledge semantic query", "npm", ["run", "verify:knowledge-query-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("RFI similarity retrieval", "npm", ["run", "verify:rfi-similar-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });

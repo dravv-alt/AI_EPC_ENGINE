@@ -30,6 +30,7 @@
     "verify:knowledge-query-http": "tsx scripts/verify-knowledge-query-http.ts",
     "verify:rfi-similar-http": "tsx scripts/verify-rfi-similar-http.ts",
     "verify:evidence-turnover-http": "tsx scripts/verify-evidence-turnover-http.ts",
+    "verify:live-events-http": "tsx scripts/verify-live-events-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {
