@@ -1,8 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   assets,
+  auditEvents,
   cxTestRecords,
+  documentVersions,
+  documents,
   edges,
   evidence,
   findings,
@@ -10,6 +13,7 @@ import {
   requirements,
   scheduleTasks,
   shipments,
+  sourceRegions,
   systems
 } from "@/lib/db/schema";
 
@@ -56,4 +60,53 @@ export async function getProjectGraph(projectId: string) {
     ...testRows.map((item) => ({ id: item.id, type: "cx_test", label: `Cx test ${item.id.slice(0, 8)}`, state: item.overallStatus }))
   ];
   return { nodes, edges: edgeRows };
+}
+
+/**
+ * Expands a single graph node: resolves the edges touching it, the entities on
+ * the far side of those edges, and the linked documents / supply records / audit
+ * entries that let a reviewer traverse the evidence graph from that node.
+ */
+export async function expandGraphNode(projectId: string, nodeId: string) {
+  const { nodes } = await getProjectGraph(projectId);
+  const byId = new Map(nodes.map((item) => [item.id, item]));
+  const node = byId.get(nodeId);
+  if (!node) return null;
+
+  const [edgeRows, auditRows] = await Promise.all([
+    db.select().from(edges).where(and(eq(edges.projectId, projectId), or(eq(edges.fromId, nodeId), eq(edges.toId, nodeId)))),
+    db.select().from(auditEvents).where(and(eq(auditEvents.projectId, projectId), eq(auditEvents.entityId, nodeId))).orderBy(desc(auditEvents.createdAt))
+  ]);
+
+  const neighbors = edgeRows
+    .map((edge) => {
+      const otherId = edge.fromId === nodeId ? edge.toId : edge.fromId;
+      const other = byId.get(otherId);
+      return other ? { edge, node: other } : null;
+    })
+    .filter((entry): entry is { edge: (typeof edgeRows)[number]; node: (typeof nodes)[number] } => entry !== null);
+
+  // Linked documents: any evidence in the node's neighbourhood (the node itself
+  // or a neighbour) resolves through its source region to a document version.
+  const scopeNodes = [node, ...neighbors.map((entry) => entry.node)];
+  const evidenceIds = scopeNodes.filter((item) => item.type === "evidence").map((item) => item.id);
+  const documentRows = evidenceIds.length
+    ? await db.select({
+        evidenceId: evidence.id,
+        documentId: documents.id,
+        title: documents.title,
+        documentType: documents.documentType,
+        revision: documentVersions.revision
+      })
+      .from(evidence)
+      .innerJoin(sourceRegions, eq(evidence.sourceRegionId, sourceRegions.id))
+      .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+      .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+      .where(inArray(evidence.id, evidenceIds))
+    : [];
+
+  // Supply records: shipments in the node's neighbourhood.
+  const supply = scopeNodes.filter((item) => item.type === "shipment").map((item) => ({ id: item.id, label: item.label, state: item.state }));
+
+  return { node, neighbors, documents: documentRows, supply, audits: auditRows };
 }

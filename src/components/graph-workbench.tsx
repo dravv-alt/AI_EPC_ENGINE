@@ -1,19 +1,33 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Node = { id: string; type: string; label: string; state: string };
 type Edge = { id: string; fromType: string; fromId: string; relationshipType: string; toType: string; toId: string };
 type Audit = { id: string; action: string; entityType: string; entityId: string; createdAt: Date | string; actorName: string | null; eventHash: string };
+type Expansion = { node: Node; neighbors: { edge: Edge; node: Node }[]; documents: { documentId: string; title: string; documentType: string; revision: string }[]; supply: { id: string; label: string; state: string }[]; audits: Audit[] };
 
 export function GraphWorkbench({ projectId, nodes, edges, audit }: { projectId: string; nodes: Node[]; edges: Edge[]; audit: Audit[] }) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState(nodes[0]?.id ?? "");
   const [message, setMessage] = useState("");
+  const [expansion, setExpansion] = useState<Expansion | null>(null);
   const selected = nodes.find((node) => node.id === selectedId);
   const labels = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const connected = selected ? edges.filter((edge) => edge.fromId === selected.id || edge.toId === selected.id) : [];
+
+  // Clicking a node traverses the evidence graph: fetch its linked entities so
+  // the reviewer sees neighbours, documents, supply records, and audit entries.
+  useEffect(() => {
+    if (!selectedId) { setExpansion(null); return; }
+    let active = true;
+    fetch(`/api/projects/${projectId}/graph/nodes/${selectedId}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => { if (active) setExpansion(body); })
+      .catch(() => { if (active) setExpansion(null); });
+    return () => { active = false; };
+  }, [projectId, selectedId]);
 
   async function createEdge(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,6 +50,12 @@ export function GraphWorkbench({ projectId, nodes, edges, audit }: { projectId: 
       <section className="surface workflow-card">
         <p className="eyebrow">Selected context</p><h2>{selected?.label ?? "Select an entity"}</h2>{selected && <p>{selected.type.replaceAll("_", " ")} · {selected.state.replaceAll("_", " ")}</p>}
         <div className="connection-list">{connected.map((edge) => { const otherId = edge.fromId === selected?.id ? edge.toId : edge.fromId; const other = labels.get(otherId); return <button className="entity-row" onClick={() => setSelectedId(otherId)} key={edge.id}><div><b>{edge.relationshipType}</b><span>{other?.label ?? otherId}</span></div><small>{other?.type.replaceAll("_", " ")}</small></button>; })}{selected && !connected.length && <p className="workflow-hint">No relationships are connected yet.</p>}</div>
+        {expansion && expansion.node.id === selectedId && <div className="expansion-panel">
+          <div className="connection-list">{expansion.neighbors.map((entry) => <button className="entity-row" onClick={() => setSelectedId(entry.node.id)} key={entry.edge.id}><div><b>{entry.edge.relationshipType.replaceAll("_", " ")}</b><span>{entry.node.label}</span></div><small>{entry.node.type.replaceAll("_", " ")}</small></button>)}</div>
+          {Boolean(expansion.documents.length) && <p className="workflow-hint">Linked documents: {expansion.documents.map((doc) => `${doc.title} (${doc.revision})`).join(", ")}</p>}
+          {Boolean(expansion.supply.length) && <p className="workflow-hint">Supply records: {expansion.supply.map((item) => item.label).join(", ")}</p>}
+          {Boolean(expansion.audits.length) && <p className="workflow-hint">{expansion.audits.length} audit entr{expansion.audits.length === 1 ? "y" : "ies"} for this node.</p>}
+        </div>}
       </section>
       <form className="surface compact-form" onSubmit={createEdge}>
         <div><p className="eyebrow">Typed relationship</p><h2>Connect records</h2></div>
