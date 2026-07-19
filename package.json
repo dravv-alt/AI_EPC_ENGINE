@@ -36,6 +36,7 @@
     "verify:turnover-cx-http": "tsx scripts/verify-turnover-cx-http.ts",
     "verify:gate-context-http": "tsx scripts/verify-gate-context-http.ts",
     "verify:change-impact-http": "tsx scripts/verify-change-impact-http.ts",
+    "verify:hardening-http": "tsx scripts/verify-hardening-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {

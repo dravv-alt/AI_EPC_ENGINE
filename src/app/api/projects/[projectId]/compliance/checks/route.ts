@@ -6,6 +6,7 @@ import { compareCompliance, normalizedContentHash } from "@/lib/compliance/compa
 import { db } from "@/lib/db/client";
 import { complianceChecks, compliancePrecedents, documents, documentVersions, edges, findings, requirements, sourceRegions, users } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { enforceAiRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({
   requirementId: z.string().uuid(),
@@ -59,6 +60,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   if (!parsed.success) return NextResponse.json({ error: "Invalid comparison request.", issues: parsed.error.flatten() }, { status: 400 });
   try {
     const actor = await requireProjectPermission(projectId, "requirement:review");
+    const limited = await enforceAiRateLimit(`compliance-check:${projectId}`);
+    if (limited) return limited;
     const requirement = await db.query.requirements.findFirst({ where: and(eq(requirements.id, parsed.data.requirementId), eq(requirements.projectId, projectId)) });
     if (!requirement) return NextResponse.json({ error: "The controlled requirement is outside this project." }, { status: 422 });
     if (requirement.reviewState !== "accepted") return NextResponse.json({ error: "Only accepted requirements can be checked." }, { status: 409 });
