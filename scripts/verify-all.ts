@@ -79,6 +79,15 @@ async function main() {
   run("RFI similarity retrieval", "npm", ["run", "verify:rfi-similar-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   run("Graph node expansion", "npm", ["run", "verify:graph-expansion-http"], { ...developmentEnv, GRAPH_TEST_URL: developmentBase });
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
+
+  // Slice 15 hardening: a dedicated server with a low AI rate limit so the 429 is
+  // reachable, and the S3 driver pointed at MinIO for the storage round-trip.
+  const hardeningPort = 4303;
+  const hardeningBase = `http://localhost:${hardeningPort}`;
+  const hardeningEnv = { ...shared, AUTH_MODE: "development", APP_BASE_URL: hardeningBase, REDIS_PREFIX: `${redisPrefix}-hardening`, OBJECT_STORAGE_DRIVER: "s3", AI_RATE_LIMIT: "5", AI_RATE_LIMIT_WINDOW_SECONDS: "60" };
+  const hardening = start("node_modules/.bin/next", ["start", "-p", String(hardeningPort)], hardeningEnv);
+  await waitFor(`${hardeningBase}/api/health`, hardening);
+  run("Rate limits and offline/storage hardening", "npm", ["run", "verify:hardening-http"], { ...hardeningEnv, HARDENING_TEST_URL: hardeningBase });
   console.log("\nAll local verification suites passed.");
 }
 
