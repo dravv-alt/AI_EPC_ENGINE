@@ -69,8 +69,12 @@ async function main() {
 
     console.log(`HTTP risk clients verified: ${signals.length} signal(s) sourced from ${origin}; marine endpoint queried ${hits.marine}x for weather.`);
   } finally {
-    if (pollCycleId) await db.delete(riskSignals).where(eq(riskSignals.pollCycleId, pollCycleId));
-    // Restore any scheduleRisks the poll mutated back to their pre-test state.
+    // Restore/remove scheduleRisks mutations BEFORE deleting riskSignals: a
+    // pre-existing (e.g. seeded) schedule_risk can have its sourceSignalId
+    // updated to point at a row created in THIS poll's cycle — including on
+    // the resolve path, which sets sourceSignalId even when clearing a risk
+    // that predates this test. Deleting riskSignals first would violate that
+    // foreign key; restoring the original sourceSignalId first releases it.
     const after = await db.select().from(scheduleRisks).where(eq(scheduleRisks.projectId, SEEDED_PROJECT));
     const beforeById = new Map(before.map((row) => [row.id, row]));
     const created = after.filter((row) => !beforeById.has(row.id)).map((row) => row.id);
@@ -78,6 +82,7 @@ async function main() {
     for (const original of before) {
       await db.update(scheduleRisks).set({ status: original.status, sourceSignalId: original.sourceSignalId, probability: original.probability, estimatedDelayHours: original.estimatedDelayHours, clearedAt: original.clearedAt, version: original.version, observedAt: original.observedAt, updatedAt: original.updatedAt }).where(eq(scheduleRisks.id, original.id));
     }
+    if (pollCycleId) await db.delete(riskSignals).where(eq(riskSignals.pollCycleId, pollCycleId));
     server.close();
   }
 }

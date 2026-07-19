@@ -64,8 +64,17 @@ async function main() {
     jobIds.push(first.pollJobId);
     const firstJob = await pollJob(base, first.pollJobId);
     pollCycleIds.push(firstJob.result.pollCycleId);
-    assert.equal(firstJob.result.emittedCount, 1);
-    assert.equal(firstJob.result.unavailableCount, 1);
+    // These four whole-cycle counters aggregate over every task in the current
+    // schedule version, not just this test's own task — and since Slice 8 made
+    // the synthetic signal client lively for every task (not a flat inert
+    // constant), any other accepted task in the project (e.g. the seeded
+    // always-critical task) can legitimately also emit/dedupe/resolve in the
+    // same cycle. This task's own scenario override always contributes at
+    // least its guaranteed share, so "at least" bounds stay exact for what this
+    // test actually verifies; the task-scoped assertions below (?taskId=, exact
+    // dedupKey match) remain precise.
+    assert.ok(firstJob.result.emittedCount >= 1);
+    assert.ok(firstJob.result.unavailableCount >= 1);
     const live = await request(base, `/api/projects/${developmentProjectId}/schedule/live-events?taskId=${taskId}`);
     const firstCycle = live.items.filter((item: { signal: { pollCycleId: string } }) => item.signal.pollCycleId === firstJob.result.pollCycleId);
     assert.equal(firstCycle.length, 4);
@@ -86,15 +95,18 @@ async function main() {
     jobIds.push(unchanged.pollJobId);
     const unchangedJob = await pollJob(base, unchanged.pollJobId);
     pollCycleIds.push(unchangedJob.result.pollCycleId);
-    assert.equal(unchangedJob.result.emittedCount, 0);
-    assert.equal(unchangedJob.result.unchangedCount, 1);
+    // No-duplicate-event is verified exactly below via the dedupKey count on
+    // this risk specifically; emittedCount/unchangedCount are whole-cycle
+    // aggregates so only unchangedCount gets an "at least" bound (this task's
+    // own unchanged workforce signal always contributes 1).
+    assert.ok(unchangedJob.result.unchangedCount >= 1);
     assert.equal(await db.$count(scheduleEvents, and(eq(scheduleEvents.projectId, developmentProjectId), eq(scheduleEvents.eventType, "predicted_risk_delay"), eq(scheduleEvents.dedupKey, `predicted_risk_delay:${risk.id}:${risk.materialityHash.slice(0, 32)}`))), 1);
 
     const resolved = await post(base, `/api/projects/${developmentProjectId}/schedule/risks`, { idempotencyKey: `risk-resolved-${randomUUID()}`, scenario: scenario(taskId, 0.1, 0) });
     jobIds.push(resolved.pollJobId);
     const resolvedJob = await pollJob(base, resolved.pollJobId);
     pollCycleIds.push(resolvedJob.result.pollCycleId);
-    assert.equal(resolvedJob.result.resolvedCount, 1);
+    assert.ok(resolvedJob.result.resolvedCount >= 1);
     risks = await request(base, `/api/projects/${developmentProjectId}/schedule/risks?taskId=${taskId}`);
     assert.equal(risks.items[0].risk.status, "resolved");
     commandCenter = await request(base, `/api/projects/${developmentProjectId}/alerts`);
@@ -104,7 +116,7 @@ async function main() {
     jobIds.push(changed.pollJobId);
     const changedJob = await pollJob(base, changed.pollJobId);
     pollCycleIds.push(changedJob.result.pollCycleId);
-    assert.equal(changedJob.result.emittedCount, 1);
+    assert.ok(changedJob.result.emittedCount >= 1);
     risks = await request(base, `/api/projects/${developmentProjectId}/schedule/risks?taskId=${taskId}`);
     risk = risks.items[0].risk;
     const reviewed = await request(base, `/api/schedule/risks/${risk.id}/review`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledge", expectedVersion: risk.version, note: "Planner acknowledges the advisory signal; no mitigation or schedule date is applied." }) });
@@ -117,11 +129,14 @@ async function main() {
     if (riskIds.length) await db.delete(alerts).where(inArray(alerts.dedupKey, riskIds.map((id) => `risk:${id}`)));
     if (riskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.id, riskIds));
     for (const riskId of riskIds) await db.delete(scheduleEvents).where(and(eq(scheduleEvents.projectId, developmentProjectId), like(scheduleEvents.dedupKey, `predicted_risk_delay:${riskId}:%`)));
-    if (pollCycleIds.length) await db.delete(riskSignals).where(inArray(riskSignals.pollCycleId, pollCycleIds));
-    // The background recurring risk.poll.all job (registerPollSchedules) can also
-    // observe these same seeded tasks on its own poll cycle, independent of the
-    // cycles this test triggered manually — clear by taskId too, or a later
-    // scheduleTasks delete hits the risk_signals foreign key.
+    // Deliberately scoped by taskId, not by pollCycleId: a single project-wide
+    // poll cycle now covers every accepted task (Slice 8 made the synthetic
+    // client lively for all of them, not just this test's task), so a blanket
+    // delete-by-pollCycleId would also try to remove risk_signals rows that a
+    // completely different task's legitimate scheduleRisks row still
+    // references, violating that foreign key. Scoping by this test's own
+    // taskIds deletes exactly what this test created — nothing that belongs to
+    // another task, whether from this cycle or the recurring background poll.
     if (taskIds.length) await db.delete(riskSignals).where(inArray(riskSignals.taskId, taskIds));
     if (jobIds.length) await db.delete(durableJobs).where(inArray(durableJobs.id, jobIds));
     if (versionIds.length) await db.delete(scheduleAssignments).where(inArray(scheduleAssignments.versionId, versionIds));

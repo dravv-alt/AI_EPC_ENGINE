@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { env } from "@/lib/env";
 import { OpenMeteoWeatherClient } from "@/lib/supply/weather-client";
@@ -11,10 +12,33 @@ export interface SignalClient { type: RiskSignalType; poll(task: RiskTaskContext
 
 const responseSchema = z.object({ dataAvailable: z.boolean(), probability: z.number().min(0).max(1).nullable(), estimatedDelayHours: z.number().int().nonnegative().nullable(), value: z.record(z.unknown()).nullable().default(null), unavailableReason: z.string().max(1000).nullable().default(null) });
 
+// Deterministic-per-cycle, varying-across-cycles synthetic observation. Every
+// task/signal pair gets a stable reading for the duration of one
+// POLL_INTERVAL_MS bucket (so two polls firing in the same window never
+// contradict each other) but a different reading in the next bucket — this is
+// what lets risks organically appear, persist, and self-resolve across
+// consecutive poll cycles instead of the flat constant this replaces, which
+// could never cross the materiality thresholds.
 class SyntheticSignalClient implements SignalClient {
   constructor(readonly type: RiskSignalType) {}
   async poll(task: RiskTaskContext): Promise<SignalObservation> {
-    return { dataAvailable: true, source: `synthetic:${this.type}`, probability: 0.1, estimatedDelayHours: 0, value: { taskName: task.taskName, mode: "synthetic-baseline", advisory: true }, unavailableReason: null };
+    const cycleBucket = Math.floor(Date.now() / env.POLL_INTERVAL_MS);
+    const seedInput = `${task.taskId}:${this.type}:${cycleBucket}`;
+    const seedHex = createHash("sha256").update(seedInput).digest("hex");
+    const frac1 = parseInt(seedHex.slice(0, 8), 16) / 0xffffffff;
+    const frac2 = parseInt(seedHex.slice(8, 16), 16) / 0xffffffff;
+    const frac3 = parseInt(seedHex.slice(16, 24), 16) / 0xffffffff;
+
+    const dataAvailable = frac3 >= 0.125;
+    if (!dataAvailable) {
+      return { dataAvailable: false, source: `synthetic:${this.type}`, probability: null, estimatedDelayHours: null, value: null, unavailableReason: "Synthetic signal unavailable this cycle." };
+    }
+
+    let probability = 0.15 + frac1 * 0.70;
+    if (task.isCritical) probability = Math.min(1, probability * 1.15);
+    const estimatedDelayHours = Math.round(frac2 * 36);
+
+    return { dataAvailable: true, source: `synthetic:${this.type}`, probability, estimatedDelayHours, value: { taskName: task.taskName, mode: "synthetic-baseline", advisory: true, cycleBucket }, unavailableReason: null };
   }
 }
 

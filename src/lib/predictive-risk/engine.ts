@@ -7,6 +7,7 @@ import { riskSignals, scheduleAssignments, scheduleRisks, scheduleTasks, schedul
 import { env } from "@/lib/env";
 import { processScheduleEvent } from "@/lib/events/process";
 import { getRiskSignalClients, type RiskSignalType, type SignalObservation } from "@/lib/predictive-risk/clients";
+import { generateMitigations } from "@/lib/predictive-risk/mitigations";
 
 export interface RiskScenarioOverride {
   taskId: string;
@@ -16,30 +17,6 @@ export interface RiskScenarioOverride {
   estimatedDelayHours?: number;
   unavailableReason?: string;
   value?: Record<string, unknown>;
-}
-
-interface MitigationOption { id: string; label: string; description: string }
-
-function mitigations(type: RiskSignalType): MitigationOption[] {
-  const options: Record<RiskSignalType, MitigationOption[]> = {
-    procurement_status: [
-      { id: "expedite-vendor", label: "Review vendor expediting", description: "A planner may confirm expediting feasibility and then model the accepted constraint separately." },
-      { id: "alternate-source", label: "Evaluate an alternate source", description: "Procurement may assess an approved alternative supplier without the risk engine selecting one." }
-    ],
-    equipment_lead_time: [
-      { id: "split-delivery", label: "Evaluate split delivery", description: "The delivery owner may assess whether a controlled partial shipment protects the critical task." },
-      { id: "resequence", label: "Review task resequencing", description: "A scheduler may model a reviewed precedence change through a separate deterministic solve." }
-    ],
-    workforce_availability: [
-      { id: "reallocate-crew", label: "Review crew reallocation", description: "The planner may assess moving an available crew and explicitly update reviewed resource constraints." },
-      { id: "approved-subcontract", label: "Evaluate approved subcontract support", description: "The project team may assess qualified support; this proposal does not appoint or schedule anyone." }
-    ],
-    weather_forecast: [
-      { id: "weather-window", label: "Review a protected weather window", description: "The planner may set a reviewed work window before invoking the deterministic solver." },
-      { id: "indoor-resequence", label: "Evaluate indoor work resequencing", description: "The scheduler may assess moving unaffected indoor tasks without this engine changing dates." }
-    ]
-  };
-  return options[type];
 }
 
 function materialityHash(input: { versionId: string; taskId: string; signalType: string; probability: number; estimatedDelayHours: number }) {
@@ -54,7 +31,7 @@ function scenarioObservation(override: RiskScenarioOverride): SignalObservation 
 export async function pollProjectRisks(input: { projectId: string; actorId: string; scenario?: RiskScenarioOverride[] }) {
   const latest = await db.query.scheduleVersions.findFirst({ where: eq(scheduleVersions.projectId, input.projectId), orderBy: [desc(scheduleVersions.versionNumber)] });
   if (!latest) throw new Error("A current immutable schedule version is required before predictive-risk polling.");
-  const assignments = await db.select({ taskId: scheduleTasks.id, taskName: scheduleTasks.name, deadline: scheduleTasks.deadline, startAt: scheduleAssignments.startAt, endAt: scheduleAssignments.endAt, isCritical: scheduleAssignments.isCritical }).from(scheduleAssignments).innerJoin(scheduleTasks, eq(scheduleAssignments.taskId, scheduleTasks.id)).where(and(eq(scheduleAssignments.versionId, latest.id), eq(scheduleTasks.projectId, input.projectId), eq(scheduleTasks.reviewState, "accepted")));
+  const assignments = await db.select({ taskId: scheduleTasks.id, taskName: scheduleTasks.name, vendor: scheduleTasks.vendor, deadline: scheduleTasks.deadline, startAt: scheduleAssignments.startAt, endAt: scheduleAssignments.endAt, isCritical: scheduleAssignments.isCritical }).from(scheduleAssignments).innerJoin(scheduleTasks, eq(scheduleAssignments.taskId, scheduleTasks.id)).where(and(eq(scheduleAssignments.versionId, latest.id), eq(scheduleTasks.projectId, input.projectId), eq(scheduleTasks.reviewState, "accepted")));
   if (!assignments.length) throw new Error("The current schedule contains no accepted task assignments.");
   const pollCycleId = randomUUID(); const observedAt = new Date(); const clients = getRiskSignalClients();
   let availableCount = 0; let unavailableCount = 0; let emittedCount = 0; let unchangedCount = 0; let resolvedCount = 0;
@@ -82,14 +59,15 @@ export async function pollProjectRisks(input: { projectId: string; actorId: stri
       if (existing?.status === "active" && existing.materialityHash === hash) {
         await db.update(scheduleRisks).set({ sourceSignalId: signal.id, observedAt, updatedAt: observedAt }).where(eq(scheduleRisks.id, existing.id)); unchangedCount += 1; continue;
       }
-      const options = mitigations(client.type);
+      const mitigationResult = await generateMitigations({ type: client.type, taskName: task.taskName, vendor: task.vendor, probability, estimatedDelayHours: delayHours, isCritical: task.isCritical, deadlineBreach });
+      const options = mitigationResult.options;
       const [risk] = existing
         ? await db.update(scheduleRisks).set({ sourceSignalId: signal.id, status: "active", probability: String(probability), estimatedDelayHours: delayHours, mitigationOptions: options, materialityHash: hash, scheduleEventId: null, reviewState: "proposed", reviewedBy: null, reviewedAt: null, reviewNote: null, mitigationDisposition: "unreviewed", observedAt, clearedAt: null, version: existing.version + 1, updatedAt: observedAt }).where(eq(scheduleRisks.id, existing.id)).returning()
         : await db.insert(scheduleRisks).values({ projectId: input.projectId, taskId: task.taskId, sourceSignalId: signal.id, riskType: client.type, status: "active", probability: String(probability), estimatedDelayHours: delayHours, mitigationOptions: options, materialityHash: hash, observedAt }).returning();
       const eventResult = await processScheduleEvent({ eventId: randomUUID(), projectId: input.projectId, occurredAt: observedAt.toISOString(), transitionId: hash.slice(0, 32), eventType: "predicted_risk_delay", payload: { riskId: risk.id, riskType: client.type, sourceSignalId: signal.id, probability, delayDays: delayHours / 24, affectedTaskIds: [task.taskId], mitigationOptions: options, materialitySignature: hash } }, input.actorId);
       const scheduleEventId = "event" in eventResult ? eventResult.event?.id ?? null : null;
       await db.update(scheduleRisks).set({ scheduleEventId, updatedAt: new Date() }).where(eq(scheduleRisks.id, risk.id)); emittedCount += 1;
-      await writeAuditEvent({ projectId: input.projectId, actorId: input.actorId, action: "schedule.risk.material_change_emitted", entityType: "schedule_risk", entityId: risk.id, before: existing, after: { risk, scheduleEventId, advisory: true, solverInvoked: false } });
+      await writeAuditEvent({ projectId: input.projectId, actorId: input.actorId, action: "schedule.risk.material_change_emitted", entityType: "schedule_risk", entityId: risk.id, before: existing, after: { risk, scheduleEventId, advisory: true, solverInvoked: false, mitigationProvider: mitigationResult.provider, mitigationModel: mitigationResult.model } });
     }
   }
   const summary = { pollCycleId, scheduleVersionId: latest.id, taskCount: assignments.length, availableCount, unavailableCount, emittedCount, unchangedCount, resolvedCount, thresholds: { probability: env.RISK_PROBABILITY_THRESHOLD, delayHours: env.RISK_DELAY_HOURS_THRESHOLD } };
