@@ -132,6 +132,15 @@ async function testScenarioDrivenLifecycle() {
     await db.delete(alerts).where(inArray(alerts.dedupKey, riskIds.map((id) => `risk:${id}`)));
     if (riskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.id, riskIds));
     for (const riskId of riskIds) await db.delete(scheduleEvents).where(and(eq(scheduleEvents.projectId, developmentProjectId), like(scheduleEvents.dedupKey, `predicted_risk_delay:${riskId}:%`)));
+    // This task lives in developmentProjectId's current schedule version, so
+    // the background recurring risk.poll.all job can independently create a
+    // scheduleRisks row here too (a different riskType than the one this
+    // script tracked in riskIds) -- untracked, but still referencing a
+    // risk_signals row for this taskId via its own foreign key. Clear by
+    // taskId (a superset of riskIds) before deleting risk_signals.
+    const untrackedRisks = await db.select({ id: scheduleRisks.id }).from(scheduleRisks).where(eq(scheduleRisks.taskId, task.id));
+    if (untrackedRisks.length) await db.delete(alerts).where(inArray(alerts.dedupKey, untrackedRisks.map((row) => `risk:${row.id}`)));
+    await db.delete(scheduleRisks).where(eq(scheduleRisks.taskId, task.id));
     await db.delete(riskSignals).where(eq(riskSignals.taskId, task.id));
     await db.delete(scheduleAssignments).where(eq(scheduleAssignments.id, assignment.id));
     await db.delete(scheduleTasks).where(eq(scheduleTasks.id, task.id));

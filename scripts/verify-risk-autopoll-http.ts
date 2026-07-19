@@ -11,13 +11,20 @@ import { durableJobs, riskSignals } from "../src/lib/db/schema";
 async function main() {
   let autoJob: { id: string; status: string; result: unknown } | undefined;
   for (let attempt = 0; attempt < 80; attempt += 1) {
+    // Filter for status="completed" directly in SQL rather than checking only
+    // the single most-recent job regardless of status: the recurring poll
+    // also legitimately attempts (and fails) other active projects that lack
+    // a current schedule baseline (e.g. an in-progress test fixture from
+    // another verify script), and if one of those happens to be the
+    // most-recently-updated row, the naive "most recent, then check status"
+    // query never finds the developmentProjectId's own successful poll.
     const [row] = await db
       .select({ id: durableJobs.id, status: durableJobs.status, result: durableJobs.result })
       .from(durableJobs)
-      .where(and(eq(durableJobs.name, "risk.poll"), like(durableJobs.idempotencyKey, "risk-poll-auto:%")))
+      .where(and(eq(durableJobs.name, "risk.poll"), like(durableJobs.idempotencyKey, "risk-poll-auto:%"), eq(durableJobs.status, "completed")))
       .orderBy(desc(durableJobs.updatedAt))
       .limit(1);
-    if (row && row.status === "completed") { autoJob = row; break; }
+    if (row) { autoJob = row; break; }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 

@@ -12,9 +12,17 @@ async function main() {
   const base = process.env.COMPLIANCE_TEST_URL ?? "http://localhost:4173";
   const documentIds: string[] = []; const versionIds: string[] = []; const regionIds: string[] = []; const requirementIds: string[] = []; const checkIds: string[] = []; const precedentIds: string[] = []; const findingIds: string[] = []; const edgeIds: string[] = [];
   let gateId: string | undefined; let originalGateStatus: typeof gates.$inferSelect.status | undefined;
+  let otherProjectId: string | undefined;
   try {
     const gate = await db.query.gates.findFirst({ where: eq(gates.projectId, developmentProjectId) }); assert.ok(gate); gateId = gate.id; originalGateStatus = gate.status;
-    const otherProject = await db.query.projects.findFirst({ where: (table, { ne }) => ne(table.id, developmentProjectId) }); assert.ok(otherProject);
+    // A dedicated throwaway project for the cross-project rejection check,
+    // rather than an arbitrary unordered row from `projects` — a clean
+    // database has no "other" project to find, and relying on one left over
+    // from a prior run is exactly the kind of debris-dependent fragility that
+    // silently masks a real bug until the database happens to be clean.
+    const developmentProject = await db.query.projects.findFirst({ where: eq(projects.id, developmentProjectId) }); assert.ok(developmentProject);
+    const [otherProject] = await db.insert(projects).values({ tenantId: developmentProject.tenantId, name: `Compliance cross-project check ${randomUUID().slice(0, 8)}`, code: `CPX-${randomUUID().slice(0, 8)}`, timezone: "UTC" }).returning();
+    otherProjectId = otherProject.id;
 
     async function controlledRegion(projectId: string, documentType: string, title: string, text: string) {
       const token = randomUUID();
@@ -59,6 +67,7 @@ async function main() {
     if (versionIds.length) await db.delete(documentVersions).where(inArray(documentVersions.id, versionIds));
     if (documentIds.length) await db.delete(documents).where(inArray(documents.id, documentIds));
     if (gateId && originalGateStatus) await db.update(gates).set({ status: originalGateStatus, updatedAt: new Date() }).where(and(eq(gates.id, gateId), eq(gates.projectId, developmentProjectId)));
+    if (otherProjectId) await db.delete(projects).where(eq(projects.id, otherProjectId));
   }
 }
 

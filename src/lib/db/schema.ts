@@ -305,6 +305,8 @@ export const complianceChecks = pgTable("compliance_checks", {
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   reviewNote: text("review_note"),
   version: integer("version").notNull().default(1),
+  suggestionSource: varchar("suggestion_source", { length: 20 }),
+  suggestionModelVersion: varchar("suggestion_model_version", { length: 80 }),
   ...timestamps
 }, (table) => [index("compliance_checks_project_review_idx").on(table.projectId, table.reviewState, table.createdAt)]);
 

@@ -49,6 +49,16 @@ async function main() {
     if (riskSignalId) await db.delete(riskSignals).where(eq(riskSignals.id, riskSignalId));
     if (shipmentId) await db.delete(alerts).where(eq(alerts.dedupKey, `shipment:${shipmentId}`));
     if (shipmentId) await db.delete(shipments).where(eq(shipments.id, shipmentId));
+    // This project has its own member and accepted schedule version, so the
+    // background recurring risk.poll.all job also polls it independently of
+    // this script's own tracked riskId/riskSignalId — it can write additional
+    // schedule_risks/risk_signals rows against these same taskIds, which would
+    // block the scheduleTasks delete below via their task_id foreign keys.
+    // Scope by taskId (a strict superset of the one tracked riskId) rather
+    // than relying only on what this script itself created.
+    if (taskIds.length) await db.delete(alerts).where(inArray(alerts.dedupKey, (await db.select({ id: scheduleRisks.id }).from(scheduleRisks).where(inArray(scheduleRisks.taskId, taskIds))).map((row) => `risk:${row.id}`)));
+    if (taskIds.length) await db.delete(scheduleRisks).where(inArray(scheduleRisks.taskId, taskIds));
+    if (taskIds.length) await db.delete(riskSignals).where(inArray(riskSignals.taskId, taskIds));
     if (taskIds.length) await db.delete(scheduleDependencies).where(and(eq(scheduleDependencies.projectId, testProjectId), inArray(scheduleDependencies.predecessorTaskId, taskIds)));
     if (taskIds.length) await db.delete(scheduleTaskResources).where(inArray(scheduleTaskResources.taskId, taskIds));
     if (taskIds.length) await db.delete(scheduleTasks).where(inArray(scheduleTasks.id, taskIds));

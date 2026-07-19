@@ -1,8 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { writeAuditEvent } from "@/lib/audit/write-event";
-import { compareCompliance, normalizedContentHash } from "@/lib/compliance/compare";
+import { assessCompliance } from "@/lib/compliance/assess";
+import { normalizedContentHash } from "@/lib/compliance/compare";
 import { db } from "@/lib/db/client";
 import { complianceChecks, compliancePrecedents, documents, documentVersions, edges, findings, requirements, sourceRegions } from "@/lib/db/schema";
+import { retrieveSemanticCitations } from "@/lib/knowledge/query";
 
 export async function citation(regionId: string) {
   const [row] = await db.select({
@@ -33,12 +35,13 @@ export class CreateComplianceCheckError extends Error {
   }
 }
 
-// Creates one complianceChecks row (and, when the deterministic comparator
-// flags a mismatch, a proposed finding) from a requirement + target source
-// region pair. Shared by the synchronous POST /compliance/checks route and
-// the durable "compliance.check.candidate" job handler so there is exactly
-// one place that owns check-creation logic — this is also the single seam a
-// later slice swaps in an LLM-based comparator behind.
+// Creates one complianceChecks row (and, when the LLM-owned verdict flags a
+// mismatch, a proposed finding) from a requirement + target source region
+// pair. Shared by the synchronous POST /compliance/checks route and the
+// durable "compliance.check.candidate" job handler so there is exactly one
+// place that owns check-creation logic. assessCompliance (Slice 6) owns the
+// verdict in real mode; compareCompliance is still computed unconditionally
+// inside it as the mock-supplier and recorded deterministicCrossCheck.
 export async function createComplianceCheck(input: {
   projectId: string;
   requirementId: string;
@@ -65,11 +68,45 @@ export async function createComplianceCheck(input: {
     if (!acceptedPrecedent || acceptedPrecedent.targetContentHash !== normalizedContentHash(targetCitation.text)) throw new CreateComplianceCheckError("The selected precedent is not accepted for this requirement and exact normalized target line.", 409);
   }
 
-  const result = compareCompliance(requirement, targetCitation.text, Boolean(acceptedPrecedent));
+  // lookup_standard_clause grounding: retrieve candidate standards clauses so
+  // the LLM assessment can ground an equivalence claim in a real citation,
+  // deterministically validated in code (assess.ts) against this exact set.
+  const groundingCandidates = await retrieveSemanticCitations({ projectId, query: requirement.statement, documentType: "standard", limit: 5 });
+
+  const requirementContext = { documentType: requirementDocument.documentType, documentTitle: requirementDocument.title, revision: requirementCitation.revision, hierarchy: hierarchy(requirementDocument.documentType) };
+  const targetContext = { documentType: targetDocument.documentType, documentTitle: targetDocument.title, revision: targetCitation.revision, hierarchy: hierarchy(targetDocument.documentType) };
+
+  const assessment = await assessCompliance({
+    requirement,
+    targetText: targetCitation.text,
+    acceptedPrecedent: Boolean(acceptedPrecedent),
+    groundingCandidates,
+    requirementContext,
+    targetContext
+  });
+
+  const result = {
+    comparisonType: assessment.deterministicCrossCheck.comparisonType,
+    verdict: assessment.verdict,
+    confidence: assessment.confidence,
+    reason: assessment.reason,
+    requirementSnapshot: assessment.requirementSnapshot,
+    targetSnapshot: assessment.targetSnapshot
+  };
   const sourceConflict = hierarchy(requirementDocument.documentType) !== hierarchy(targetDocument.documentType) && !["conforms", "equivalent_by_precedent"].includes(result.verdict);
-  result.requirementSnapshot.source = { regionId: requirementCitation.regionId, documentType: requirementDocument.documentType, documentTitle: requirementDocument.title, revision: requirementCitation.revision, hierarchy: hierarchy(requirementDocument.documentType), createdAt: requirementCitation.versionCreatedAt };
-  result.targetSnapshot.source = { regionId: targetCitation.regionId, documentType: targetDocument.documentType, documentTitle: targetDocument.title, revision: targetCitation.revision, hierarchy: hierarchy(targetDocument.documentType), createdAt: targetCitation.versionCreatedAt };
+  result.requirementSnapshot.source = { regionId: requirementCitation.regionId, ...requirementContext, createdAt: requirementCitation.versionCreatedAt };
+  result.targetSnapshot.source = { regionId: targetCitation.regionId, ...targetContext, createdAt: targetCitation.versionCreatedAt };
   result.targetSnapshot.sourceConflict = sourceConflict;
+  // Record only the comparison outcome, not compareCompliance's own
+  // requirementSnapshot/targetSnapshot — those ARE (by reference) this same
+  // requirementSnapshot/targetSnapshot, so nesting them here would create a
+  // circular structure.
+  result.targetSnapshot.deterministicCrossCheck = {
+    comparisonType: assessment.deterministicCrossCheck.comparisonType,
+    verdict: assessment.deterministicCrossCheck.verdict,
+    confidence: assessment.deterministicCrossCheck.confidence,
+    reason: assessment.deterministicCrossCheck.reason
+  };
 
   const created = await db.transaction(async (tx) => {
     const [check] = await tx.insert(complianceChecks).values({
@@ -83,7 +120,9 @@ export async function createComplianceCheck(input: {
       confidence: result.confidence,
       reason: result.reason,
       precedentId: acceptedPrecedent?.id ?? null,
-      findingDisposition: ["deterministic_flag", "possible_mismatch"].includes(result.verdict) ? "proposed" : "not_applicable"
+      findingDisposition: ["deterministic_flag", "possible_mismatch"].includes(result.verdict) ? "proposed" : "not_applicable",
+      suggestionSource: assessment.suggestionSource,
+      suggestionModelVersion: assessment.suggestionModelVersion
     }).returning();
     if (!["deterministic_flag", "possible_mismatch"].includes(result.verdict)) return { check, finding: null };
     const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, requirement.id), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
