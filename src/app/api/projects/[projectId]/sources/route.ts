@@ -13,7 +13,18 @@ import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 export const runtime = "nodejs";
 
 const metadataSchema = z.object({ title: z.string().trim().min(3).max(300), revision: z.string().trim().min(1).max(80), documentType: z.string().trim().min(2).max(40).default("procedure") });
-const maxPdfBytes = 20 * 1024 * 1024;
+const maxSourceBytes = 20 * 1024 * 1024;
+
+const XLSX_CONTENT_TYPES = new Set(["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]);
+const CSV_CONTENT_TYPES = new Set(["text/csv", "application/csv", "application/vnd.ms-excel.sheet.csv"]);
+
+function detectMediaType(file: File): "application/pdf" | "text/csv" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" | null {
+  const name = file.name?.toLowerCase() ?? "";
+  if (file.type === "application/pdf" || name.endsWith(".pdf")) return "application/pdf";
+  if (XLSX_CONTENT_TYPES.has(file.type) || name.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (CSV_CONTENT_TYPES.has(file.type) || name.endsWith(".csv")) return "text/csv";
+  return null;
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -23,14 +34,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const metadata = metadataSchema.safeParse({ title: form.get("title"), revision: form.get("revision"), documentType: form.get("documentType") ?? "procedure" });
     const file = form.get("file");
     if (!metadata.success) return NextResponse.json({ error: "Invalid source metadata", details: metadata.error.flatten() }, { status: 400 });
-    if (!(file instanceof File)) return NextResponse.json({ error: "A PDF file is required." }, { status: 400 });
-    if (file.size === 0 || file.size > maxPdfBytes) return NextResponse.json({ error: "PDF must be between 1 byte and 20 MB." }, { status: 413 });
+    if (!(file instanceof File)) return NextResponse.json({ error: "A PDF, CSV, or XLSX file is required." }, { status: 400 });
+    if (file.size === 0 || file.size > maxSourceBytes) return NextResponse.json({ error: "Source file must be between 1 byte and 20 MB." }, { status: 413 });
+
+    const mediaType = detectMediaType(file);
+    if (!mediaType) return NextResponse.json({ error: "Only PDF, CSV, and XLSX uploads are accepted." }, { status: 415 });
 
     const bytes = Buffer.from(await file.arrayBuffer());
-    if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return NextResponse.json({ error: "Only valid PDF uploads are accepted in this foundation release." }, { status: 415 });
+    if (mediaType === "application/pdf" && bytes.subarray(0, 5).toString("ascii") !== "%PDF-") return NextResponse.json({ error: "PDF magic bytes are invalid." }, { status: 415 });
+    if (mediaType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" && bytes.subarray(0, 4).toString("latin1") !== "PK\x03\x04") return NextResponse.json({ error: "XLSX signature is invalid." }, { status: 415 });
     const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
     if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
-    const stored = await objectStorage.put({ tenantId: project.tenantId, projectId, bytes, mediaType: "application/pdf", fileName: file.name || "source.pdf" });
+    const stored = await objectStorage.put({ tenantId: project.tenantId, projectId, bytes, mediaType, fileName: file.name || "source" });
     const existing = await db.query.documentVersions.findFirst({ where: eq(documentVersions.sha256, stored.sha256) });
     if (existing) return NextResponse.json({ error: "This exact source version is already controlled.", documentVersionId: existing.id }, { status: 409 });
     const { document, version } = await db.transaction(async (tx) => {

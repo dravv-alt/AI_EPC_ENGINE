@@ -26,9 +26,12 @@ export async function extractDocument(input: { documentVersionId: string; object
     await db.update(documentVersions).set({ extractionStatus: "completed", extractionError: null, updatedAt: new Date() }).where(eq(documentVersions.id, documentVersionId));
     return { regionCount: existing.length, idempotent: true };
   }
+  const version = await db.query.documentVersions.findFirst({ where: eq(documentVersions.id, documentVersionId) });
+  const mediaType = version?.mediaType ?? "application/pdf";
+  const extension = mediaType === "text/csv" ? "csv" : mediaType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ? "xlsx" : "pdf";
   const bytes = await objectStorage.read(objectKey);
   const form = new FormData();
-  form.set("file", new Blob([bytes], { type: "application/pdf" }), "controlled-source.pdf");
+  form.set("file", new Blob([bytes], { type: mediaType }), `controlled-source.${extension}`);
   const response = await fetch(`${env.INGESTION_SERVICE_URL}/parse-upload`, { method: "POST", body: form });
   if (!response.ok) throw new Error(`Ingestion service returned ${response.status}.`);
   const parsed = await response.json() as { chunks: Array<{ page_number: number; text: string; bbox?: unknown; content_hash?: string }> };
