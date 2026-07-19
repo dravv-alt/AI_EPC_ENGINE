@@ -62,6 +62,7 @@ async function main() {
   run("Phase 0 contracts", "npm", ["run", "verify:phase0"], developmentEnv);
   run("Credentials and MFA", "npm", ["run", "verify:credentials-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
   run("Evidence to turnover", "npm", ["run", "verify:evidence-turnover-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
+  run("Turnover Cx manifest", "npm", ["run", "verify:turnover-cx-http"], { ...credentialsEnv, CREDENTIALS_TEST_URL: credentialsBase });
   run("Deterministic schedule", "npm", ["run", "verify:schedule-http"], { ...developmentEnv, SCHEDULE_TEST_URL: developmentBase });
   run("Governed Cx", "npm", ["run", "verify:cx-http"], { ...developmentEnv, CX_TEST_URL: developmentBase });
   run("Governed compliance", "npm", ["run", "verify:compliance-http"], { ...developmentEnv, COMPLIANCE_TEST_URL: developmentBase });
