@@ -4,11 +4,17 @@ Pramana Cx is an evidence control plane for mission-critical EPC commissioning. 
 
 The product is **advisory by design**. AI may extract, retrieve, rank, draft, and explain. Deterministic services calculate readiness, schedule feasibility, and test verdicts. Only an authorized human review can accept requirements, evidence, checklists, reports, precedents, or gate decisions.
 
-This README is the global implementation map. Detailed planning remains in [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md), product intent in [PLANNER/PRD.md](PLANNER/PRD.md), technical constraints in [PLANNER/TRD.md](PLANNER/TRD.md), and the chronological build ledger in [what I have built.md](what%20I%20have%20built.md).
+This README is the global implementation map. Detailed planning remains in [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md), product intent in [PLANNER/PRD.md](PLANNER/PRD.md), technical constraints in [PLANNER/TRD.md](PLANNER/TRD.md), the chronological build ledger in [what I have built.md](what%20I%20have%20built.md), and the approved remediation plan for the retrieval-backed agents in [agentFixingPlan.md](agentFixingPlan.md).
 
 ## Current status
 
-The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 deterministic schedule tracer are implemented and locally verified. Governed Cx, compliance, and the core predictive-risk workflow are also verified end to end. Predictive risk remains a human-triggered durable poll until the single recurring poll orchestrator is added. The remaining Phase 3–4 depth is listed without treating planned work as shipped.
+The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 deterministic schedule tracer are implemented and locally verified. Governed Cx, compliance, and the predictive-risk pipeline are also verified end to end. The remaining Phase 3–4 depth is listed without treating planned work as shipped.
+
+Three agents are implemented but shallower than their approved designs, and [agentFixingPlan.md](agentFixingPlan.md) is the sequenced plan to close that gap:
+
+- **Specification & Quality Compliance** compares a requirement against a target citation the caller must already know. It performs no retrieval, so it discovers nothing on its own.
+- **Predictive Schedule Risk** polls on a correct recurring schedule, but its default synthetic signal client returns a flat `probability: 0.1, delay: 0h` against thresholds of `0.5`/`8h` — so in the default configuration it cannot raise a risk at all.
+- **Project Knowledge & RFI** performs scoped vector retrieval and returns raw chunk text. There is no query planning, reranking, or synthesised cited answer.
 
 | Area | State | What exists now |
 | --- | --- | --- |
@@ -21,9 +27,9 @@ The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 determini
 | Offline field capture | Built | IndexedDB queue, device encryption where available, idempotent sync, immutable object storage, PWA shell |
 | Governed Cx workflow | Verified | Standard ingestion, cited checklist generation/review, deterministic readings, human-routed narrative steps, editable draft, approved immutable report |
 | Shipments | Built | Asset-linked legs, estimate provenance, delayed/recovered events, graph-derived schedule mappings, map UI |
-| Compliance | Verified | Unit-aware numeric, explicit boolean/categorical comparison, qualitative review, proposed findings, exact-citation equality precedents, human disposition, source hierarchy warnings |
-| Knowledge and RFI similarity | Partial | Project-scoped exact-citation search; hybrid FTS/vector ranking, reranking, grounded answers, and RFI similarity remain |
-| Predictive risk | Verified core | Swappable procurement/lead-time/workforce/weather clients, explicit unavailable readings, durable polls, deterministic materiality, task/type deduplication, self-resolution, advisory mitigations, alerts, project-scoped event validation, APIs, and schedule UI; recurring orchestration remains |
+| Compliance | Verified, shallow | Unit-aware numeric, explicit boolean/categorical comparison, qualitative review, proposed findings, exact-citation equality precedents, human disposition, source hierarchy warnings. **Requires a caller-supplied target region — no semantic candidate discovery, and the qualitative branch is a stub with no model reasoning.** |
+| Knowledge and RFI similarity | Partial | Project-scoped metadata-filtered pgvector retrieval and an RFI-similarity endpoint both work. **Query planning, cross-encoder reranking, graph-context expansion, and synthesised claim-level cited answers remain — the query route currently concatenates raw chunk text.** |
+| Predictive risk | Verified, inert by default | Swappable procurement/lead-time/workforce/weather clients, explicit unavailable readings, durable polls, deterministic materiality, task/type deduplication, self-resolution, alerts, project-scoped event validation, APIs, and schedule UI. **Recurring orchestration is built** (BullMQ repeatable `risk.poll.all`). **The default synthetic client emits a constant sub-threshold signal, so no risk can fire without `RISK_POLL_MODE=http`; mitigation options are eight hardcoded strings.** |
 | Command Center | Partial | Stable event alerts and recovery clearing; richer grouping, ownership, and cross-links remain |
 | Production hardening | Partial | Builds and focused integration tests pass; CI, accessibility, observability, load, and full Compose/MinIO tests remain |
 
@@ -33,7 +39,7 @@ The complete local matrix passed against a newly built production artifact. It a
 
 | Check | Result | Evidence covered |
 | --- | --- | --- |
-| Database and production artifact | Passed | All 10 migrations, TypeScript, and optimized Next.js production build |
+| Database and production artifact | Passed | All 12 migrations, TypeScript, and optimized Next.js production build |
 | Foundation contracts | Passed | Redis rate limit, durable-job idempotency, encrypted TOTP, event validation, model boundary, signed object reads |
 | Credentials and MFA | Passed | Registration, HttpOnly session, scoped profile, TOTP enrollment, MFA challenge, MFA login |
 | Evidence to turnover | Passed | Pending evidence, accepted-only proof, deterministic readiness, fresh-TOTP decision, immutable pack, independent manifest verification |
@@ -298,8 +304,8 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 
 The verified foundation is usable locally. The following work is still required before representing the full Phase 0–4 product as complete or production-ready:
 
-1. **Predictive-risk automation:** add the single recurring poll orchestrator plus long-running worker restart/recovery and configured external-provider acceptance.
-2. **Knowledge and RFI:** add PostgreSQL full-text indexes, pgvector embeddings where configured, metadata filters, hybrid retrieval, reranking, grounded answers, and similar-RFI detection with cited decisions.
+1. **Retrieval-backed agents (1, 4, 5):** the sequenced remediation in [agentFixingPlan.md](agentFixingPlan.md) — a split generation/embedding provider boundary with NVIDIA NIM alongside Gemini, a stateless `services/retrieval` embedding/rerank service, semantic candidate discovery for compliance, synthesised cited answers for knowledge, and live synthetic risk signals with model-written mitigations.
+2. **Predictive-risk automation:** recurring orchestration is already shipped; what remains is long-running worker restart/recovery and configured external-provider acceptance.
 3. **Command Center:** add grouped active/resolved views, severity/owner filters, deep links to source entities, and consistent acknowledgement/recovery semantics.
 4. **Ingestion coverage:** extend controlled ingestion beyond PDF to the required office/text formats while retaining immutable originals, extraction provenance, limits, and failure states.
 5. **External integrations:** configure real risk-signal and AIS/weather/congestion providers while retaining explicit provenance, timeouts, unavailable states, and deterministic synthetic local behavior.
@@ -318,7 +324,8 @@ The items above are intentional gaps, not hidden failures in the passing local m
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue
 - **Document extraction:** lightweight PyMuPDF service with page, bounding-box, and content-hash provenance
 - **Scheduling:** isolated FastAPI OR-Tools CP-SAT service; infeasibility is returned, never hidden
-- **AI:** schema-validated `ModelProvider`; deterministic mock by default and Gemini only when explicitly configured
+- **AI:** schema-validated `ModelProvider`; deterministic mock by default and Gemini only when explicitly configured. Per [agentFixingPlan.md](agentFixingPlan.md) this becomes a split boundary — `MODEL_PROVIDER` (`mock`/`gemini`/`nim`) for generation and `EMBEDDING_PROVIDER` (`mock`/`service`) for embeddings — so the deterministic mock keeps the offline verification matrix green regardless of which hosted model is configured
+- **Retrieval (planned):** a third stateless FastAPI service alongside ingestion and the solver, serving `sentence-transformers` embeddings and cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks
 - **Authentication:** owned credentials/TOTP or Clerk adapter; all authorization remains in project memberships and server-side permissions
 - **Design system:** IBM Plex Serif headings, Hanken Grotesk body, JetBrains Mono labels; primary `#2D463E`, secondary `#B5651D`, tertiary `#583935`, neutral `#FDFBF7`
 
@@ -373,7 +380,7 @@ The default local stack uses development authentication, local object storage, a
 
 - Clerk publishable/secret keys only if `AUTH_MODE=clerk` is selected
 - a strong `AUTH_ENCRYPTION_KEY` when owned credentials/TOTP are used
-- Gemini API key only if `MODEL_PROVIDER=gemini` is selected
+- Gemini API key only if `MODEL_PROVIDER=gemini` is selected; an NVIDIA `NIM_API_KEY` only if `MODEL_PROVIDER=nim` is selected once [agentFixingPlan.md](agentFixingPlan.md) Slice 0 lands
 - S3/MinIO endpoint, bucket, region, access key, and secret when `OBJECT_STORAGE_DRIVER=s3`
 - procurement, equipment-lead-time, workforce, and weather endpoint URLs when `RISK_POLL_MODE=http`
 - AIS and shipment congestion/weather credentials when real shipment providers replace synthetic estimates
