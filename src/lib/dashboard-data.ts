@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { documentVersions, documents, findings, gates, requirements, sourceRegions, systems, users } from "@/lib/db/schema";
+import { documentVersions, documents, findings, gates, requirements, scheduleRisks, scheduleTasks, scheduleVersions, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getProjectGateReadiness, type GateReadiness } from "@/lib/readiness/project-readiness";
 import { requireProjectPermission } from "@/lib/projects/access";
 
@@ -15,6 +15,64 @@ export interface DashboardData {
   sources: Array<{ title: string; revision: string; status: string; detail: string }>;
   actions: Array<{ title: string; owner: string; due: string; severity: string }>;
   proposal: { id: string; statement: string; citation: string } | null;
+}
+
+export interface AlertLink { href: string; label: string }
+
+export interface AlertRow { id: string; projectId: string; eventType: string; dedupKey: string; status: string; title: string; payload: unknown; createdAt: Date }
+
+export interface ResolvedAlert { alert: AlertRow; links: AlertLink[] }
+
+// Slice 10: resolve each Command Center alert to deep-links pointing at the real
+// records it concerns. Link targets are validated against live rows so a stale
+// payload never renders a dead link. Hrefs point at existing routes with a query
+// param the destination can consume.
+export async function resolveAlertLinks(projectId: string, alertRows: AlertRow[]): Promise<ResolvedAlert[]> {
+  const findingIds = new Set<string>();
+  const gateIds = new Set<string>();
+  const taskIds = new Set<string>();
+  const riskIds = new Set<string>();
+  const readPayload = (alert: AlertRow) => (alert.payload && typeof alert.payload === "object" ? alert.payload as Record<string, unknown> : {});
+  for (const alert of alertRows) {
+    const payload = readPayload(alert);
+    if (alert.eventType === "TEST_FAILED") { if (typeof payload.findingId === "string") findingIds.add(payload.findingId); if (typeof payload.gateId === "string") gateIds.add(payload.gateId); }
+    if (alert.eventType === "SHIPMENT_DELAYED" && Array.isArray(payload.affectedTaskIds)) for (const id of payload.affectedTaskIds) if (typeof id === "string") taskIds.add(id);
+    if (alert.eventType === "predicted_risk_delay") { if (typeof payload.riskId === "string") riskIds.add(payload.riskId); if (Array.isArray(payload.affectedTaskIds)) for (const id of payload.affectedTaskIds) if (typeof id === "string") taskIds.add(id); }
+  }
+
+  const [findingRows, gateRows, taskRows, riskRows, latestVersion] = await Promise.all([
+    findingIds.size ? db.select({ id: findings.id, title: findings.title }).from(findings).where(eq(findings.projectId, projectId)) : Promise.resolve([]),
+    gateIds.size ? db.select({ id: gates.id, name: gates.name }).from(gates).where(eq(gates.projectId, projectId)) : Promise.resolve([]),
+    taskIds.size ? db.select({ id: scheduleTasks.id, name: scheduleTasks.name }).from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)) : Promise.resolve([]),
+    riskIds.size ? db.select({ id: scheduleRisks.id, mitigationOptions: scheduleRisks.mitigationOptions }).from(scheduleRisks).where(eq(scheduleRisks.projectId, projectId)) : Promise.resolve([]),
+    db.query.scheduleVersions.findFirst({ where: eq(scheduleVersions.projectId, projectId), orderBy: [desc(scheduleVersions.versionNumber)] })
+  ]);
+  const findingById = new Map(findingRows.map((row) => [row.id, row.title]));
+  const gateById = new Map(gateRows.map((row) => [row.id, row.name]));
+  const taskById = new Map(taskRows.map((row) => [row.id, row.name]));
+  const riskById = new Map(riskRows.map((row) => [row.id, row.mitigationOptions]));
+
+  return alertRows.map((alert) => {
+    const payload = readPayload(alert);
+    const links: AlertLink[] = [];
+    if (alert.eventType === "TEST_FAILED") {
+      if (typeof payload.findingId === "string" && findingById.has(payload.findingId)) links.push({ href: `/actions?finding=${payload.findingId}`, label: `Finding: ${findingById.get(payload.findingId)}` });
+      if (typeof payload.gateId === "string" && gateById.has(payload.gateId)) links.push({ href: `/readiness?gate=${payload.gateId}`, label: `Gate: ${gateById.get(payload.gateId)}` });
+    }
+    if (alert.eventType === "SHIPMENT_DELAYED") {
+      if (Array.isArray(payload.affectedTaskIds)) for (const id of payload.affectedTaskIds) if (typeof id === "string" && taskById.has(id)) links.push({ href: `/schedule?task=${id}`, label: `Affected task: ${taskById.get(id)}` });
+      if (latestVersion) links.push({ href: `/schedule?version=${latestVersion.id}`, label: `Current schedule v${latestVersion.versionNumber}` });
+    }
+    if (alert.eventType === "predicted_risk_delay") {
+      if (Array.isArray(payload.affectedTaskIds)) for (const id of payload.affectedTaskIds) if (typeof id === "string" && taskById.has(id)) links.push({ href: `/schedule?task=${id}`, label: `At-risk task: ${taskById.get(id)}` });
+      if (typeof payload.riskId === "string" && riskById.has(payload.riskId)) {
+        const options = riskById.get(payload.riskId);
+        const first = Array.isArray(options) ? (options[0] as { label?: string } | undefined) : undefined;
+        links.push({ href: `/schedule?risk=${payload.riskId}`, label: `Mitigation: ${first?.label ?? "review options"}` });
+      }
+    }
+    return { alert, links };
+  });
 }
 
 function stateTone(readiness: GateReadiness["state"]): ReadinessTone {
