@@ -37,6 +37,8 @@
     "verify:gate-context-http": "tsx scripts/verify-gate-context-http.ts",
     "verify:change-impact-http": "tsx scripts/verify-change-impact-http.ts",
     "verify:hardening-http": "tsx scripts/verify-hardening-http.ts",
+    "verify:polling-http": "tsx scripts/verify-polling-http.ts",
+    "verify:knowledge-http": "tsx scripts/verify-knowledge-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {

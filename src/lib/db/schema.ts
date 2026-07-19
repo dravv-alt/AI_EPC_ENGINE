@@ -226,7 +226,10 @@ export const edges = pgTable("edges", {
   toType: varchar("to_type", { length: 40 }).notNull(),
   toId: uuid("to_id").notNull(),
   ...timestamps
-}, (table) => [index("edges_project_from_idx").on(table.projectId, table.fromType, table.fromId)]);
+}, (table) => [
+  index("edges_project_from_idx").on(table.projectId, table.fromType, table.fromId),
+  uniqueIndex("edges_project_edge_unique").on(table.projectId, table.fromType, table.fromId, table.relationshipType, table.toType, table.toId),
+]);
 
 export const auditEvents = pgTable("audit_events", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -307,7 +310,11 @@ export const complianceChecks = pgTable("compliance_checks", {
 
 export const knowledgeChunks = pgTable("knowledge_chunks", {
   id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), sourceRegionId: uuid("source_region_id").notNull().references(() => sourceRegions.id), documentType: varchar("document_type", { length: 40 }).notNull(), content: text("content").notNull(), contentHash: varchar("content_hash", { length: 64 }).notNull(), embedding: vector("embedding", { dimensions: 768 }), ...timestamps
-}, (table) => [index("knowledge_chunks_scope_idx").on(table.tenantId, table.projectId, table.documentType), index("knowledge_chunks_embedding_idx").using("ivfflat", table.embedding.op("vector_cosine_ops"))]);
+}, (table) => [
+  index("knowledge_chunks_scope_idx").on(table.tenantId, table.projectId, table.documentType),
+  index("knowledge_chunks_embedding_idx").using("ivfflat", table.embedding.op("vector_cosine_ops")),
+  uniqueIndex("knowledge_chunks_project_hash_unique").on(table.projectId, table.contentHash),
+]);
 
 export const shipments = pgTable("shipments", {
   id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), equipmentId: uuid("equipment_id").references(() => assets.id), name: varchar("name", { length: 200 }).notNull(), originName: varchar("origin_name", { length: 200 }), originLat: numeric("origin_lat", { precision: 9, scale: 6 }), originLng: numeric("origin_lng", { precision: 9, scale: 6 }), destinationName: varchar("destination_name", { length: 200 }), destinationLat: numeric("destination_lat", { precision: 9, scale: 6 }), destinationLng: numeric("destination_lng", { precision: 9, scale: 6 }), currentLat: numeric("current_lat", { precision: 9, scale: 6 }), currentLng: numeric("current_lng", { precision: 9, scale: 6 }), positionSource: varchar("position_source", { length: 20 }).notNull().default("simulated"), mmsi: varchar("mmsi", { length: 20 }), plannedEta: timestamp("planned_eta", { withTimezone: true }).notNull(), weatherAdjustedEta: timestamp("weather_adjusted_eta", { withTimezone: true }), weatherDelayFactor: numeric("weather_delay_factor", { precision: 8, scale: 5 }).notNull().default("0"), telemetryReason: text("telemetry_reason"), lastPolledAt: timestamp("last_polled_at", { withTimezone: true }), requiredOnSite: timestamp("required_on_site", { withTimezone: true }).notNull(), portCongestion: boolean("port_congestion").notNull().default(false), status: varchar("status", { length: 10 }).notNull().default("green"), lastNotifiedStatus: varchar("last_notified_status", { length: 10 }), createdBy: uuid("created_by").notNull().references(() => users.id), ...timestamps
@@ -315,7 +322,10 @@ export const shipments = pgTable("shipments", {
 
 export const alerts = pgTable("alerts", {
   id: uuid("id").primaryKey().defaultRandom(), projectId: uuid("project_id").notNull().references(() => projects.id), eventType: varchar("event_type", { length: 40 }).notNull(), dedupKey: varchar("dedup_key", { length: 300 }).notNull(), status: alertStatus("status").notNull().default("active"), title: varchar("title", { length: 300 }).notNull(), payload: jsonb("payload").notNull(), ...timestamps
-}, (table) => [index("alerts_project_status_idx").on(table.projectId, table.status)]);
+}, (table) => [
+  index("alerts_project_status_idx").on(table.projectId, table.status),
+  uniqueIndex("alerts_dedup_key_unique").on(table.dedupKey),
+]);
 
 export const durableJobs = pgTable("durable_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),

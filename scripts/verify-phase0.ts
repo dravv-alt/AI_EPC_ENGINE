@@ -25,7 +25,10 @@ async function main() {
   assert.notEqual(ciphertext, totp.secret.base32);
   assert.equal(decryptSecret(ciphertext), totp.secret.base32);
 
-  const event = scheduleEventSchema.parse({ eventId: randomUUID(), projectId: "10000000-0000-4000-8000-000000000003", occurredAt: new Date().toISOString(), transitionId: "transition-1", eventType: "SHIPMENT_DELAYED", payload: { shipmentId: randomUUID(), status: "amber", availableAt: new Date(Date.now() + 3_600_000).toISOString(), affectedTaskIds: [], estimate: true } });
+  const [project] = await db.select().from(await import("../src/lib/db/schema").then(m => m.projects)).limit(1);
+  const testProjectId = project ? project.id : "10000000-0000-4000-8000-000000000010";
+
+  const event = scheduleEventSchema.parse({ eventId: randomUUID(), projectId: testProjectId, occurredAt: new Date().toISOString(), transitionId: "transition-1", eventType: "SHIPMENT_DELAYED", payload: { shipmentId: randomUUID(), status: "amber", availableAt: new Date(Date.now() + 3_600_000).toISOString(), affectedTaskIds: [], estimate: true } });
   assert.match(eventDedupKey(event), /^SHIPMENT_DELAYED:/);
   assert.equal(scheduleEventSchema.safeParse({ ...event, payload: { ...event.payload, estimate: false } }).success, false);
 
@@ -40,8 +43,8 @@ async function main() {
   await localStorage.remove(object.objectKey);
 
   const idempotencyKey = `phase0:${randomUUID()}`;
-  const first = await enqueueDurableJob({ queue: "core", name: "schedule.event", projectId: "10000000-0000-4000-8000-000000000003", idempotencyKey, payload: { scheduleEventId: randomUUID() } });
-  const second = await enqueueDurableJob({ queue: "core", name: "schedule.event", projectId: "10000000-0000-4000-8000-000000000003", idempotencyKey, payload: { scheduleEventId: randomUUID() } });
+  const first = await enqueueDurableJob({ queue: "core", name: "schedule.event", projectId: testProjectId, idempotencyKey, payload: { scheduleEventId: randomUUID() } });
+  const second = await enqueueDurableJob({ queue: "core", name: "schedule.event", projectId: testProjectId, idempotencyKey, payload: { scheduleEventId: randomUUID() } });
   assert.equal(first.queuedInRedis, true); assert.equal(second.duplicate, true); assert.equal(first.job.id, second.job.id);
   await db.delete(durableJobs).where((await import("drizzle-orm")).eq(durableJobs.id, first.job.id));
 

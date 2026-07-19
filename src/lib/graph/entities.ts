@@ -53,7 +53,7 @@ export async function getProjectGraph(projectId: string) {
     ...assetRows.map((item) => ({ id: item.id, type: "asset", label: item.tag, state: item.assetType })),
     ...gateRows.map((item) => ({ id: item.id, type: "gate", label: item.name, state: item.status })),
     ...requirementRows.map((item) => ({ id: item.id, type: "requirement", label: item.statement, state: item.reviewState })),
-    ...evidenceRows.map((item) => ({ id: item.id, type: "evidence", label: item.evidenceType, state: item.validityState })),
+    ...evidenceRows.map((item) => ({ id: item.id, type: "evidence", label: item.notes ? `${item.evidenceType}: ${item.notes.length > 36 ? item.notes.slice(0, 36) + "..." : item.notes}` : `${item.evidenceType} (${item.id.slice(0, 8)})`, state: item.validityState })),
     ...findingRows.map((item) => ({ id: item.id, type: "finding", label: item.title, state: item.status })),
     ...taskRows.map((item) => ({ id: item.id, type: "schedule_task", label: item.name, state: item.reviewState })),
     ...shipmentRows.map((item) => ({ id: item.id, type: "shipment", label: item.name, state: item.status })),

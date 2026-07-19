@@ -182,6 +182,25 @@ const T = {
   // Alerts
   alert_a1:     "10000000-0000-4000-8000-000000000100",
   alert_a2:     "10000000-0000-4000-8000-000000000101",
+
+  // Graph edges (stable IDs so PK conflict fires on re-seed)
+  edge_req1_gate4:   "10000000-0000-4000-8000-000000000110",
+  edge_req2_gate3:   "10000000-0000-4000-8000-000000000111",
+  edge_req3_gate4:   "10000000-0000-4000-8000-000000000112",
+  edge_req4_gate2:   "10000000-0000-4000-8000-000000000113",
+  edge_req5_gate5:   "10000000-0000-4000-8000-000000000114",
+  edge_req6_gate3:   "10000000-0000-4000-8000-000000000115",
+  edge_evid1_req1:   "10000000-0000-4000-8000-000000000116",
+  edge_evid2_req2:   "10000000-0000-4000-8000-000000000117",
+  edge_evid5_req5:   "10000000-0000-4000-8000-000000000118",
+  edge_gate1_gate2:  "10000000-0000-4000-8000-000000000119",
+  edge_gate2_gate3:  "10000000-0000-4000-8000-00000000011A",
+  edge_gate3_gate4:  "10000000-0000-4000-8000-00000000011B",
+
+  // Knowledge chunks (stable IDs so PK conflict fires on re-seed)
+  kc_1:         "10000000-0000-4000-8000-000000000120",
+  kc_3:         "10000000-0000-4000-8000-000000000121",
+  kc_5:         "10000000-0000-4000-8000-000000000122",
 };
 
 function sha256(value: string): string {
@@ -357,20 +376,20 @@ async function seed() {
   // ── Graph edges ───────────────────────────────────────────────────────────
   await db.insert(edges).values([
     // Requirements AFFECTS gates
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r1, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l4 },
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r2, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l3 },
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r3, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l4 },
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r4, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l2 },
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r5, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l5 },
-    { projectId: T.project, fromType: "requirement", fromId: T.req_r6, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l3 },
+    { id: T.edge_req1_gate4,  projectId: T.project, fromType: "requirement", fromId: T.req_r1, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l4 },
+    { id: T.edge_req2_gate3,  projectId: T.project, fromType: "requirement", fromId: T.req_r2, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l3 },
+    { id: T.edge_req3_gate4,  projectId: T.project, fromType: "requirement", fromId: T.req_r3, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l4 },
+    { id: T.edge_req4_gate2,  projectId: T.project, fromType: "requirement", fromId: T.req_r4, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l2 },
+    { id: T.edge_req5_gate5,  projectId: T.project, fromType: "requirement", fromId: T.req_r5, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l5 },
+    { id: T.edge_req6_gate3,  projectId: T.project, fromType: "requirement", fromId: T.req_r6, relationshipType: "AFFECTS",   toType: "gate",        toId: T.gate_l3 },
     // Evidence PROVES requirements
-    { projectId: T.project, fromType: "evidence", fromId: T.evid_e1, relationshipType: "PROVES", toType: "requirement", toId: T.req_r1 },
-    { projectId: T.project, fromType: "evidence", fromId: T.evid_e2, relationshipType: "PROVES", toType: "requirement", toId: T.req_r2 },
-    { projectId: T.project, fromType: "evidence", fromId: T.evid_e5, relationshipType: "PROVES", toType: "requirement", toId: T.req_r5 },
+    { id: T.edge_evid1_req1,  projectId: T.project, fromType: "evidence",    fromId: T.evid_e1, relationshipType: "PROVES",   toType: "requirement", toId: T.req_r1 },
+    { id: T.edge_evid2_req2,  projectId: T.project, fromType: "evidence",    fromId: T.evid_e2, relationshipType: "PROVES",   toType: "requirement", toId: T.req_r2 },
+    { id: T.edge_evid5_req5,  projectId: T.project, fromType: "evidence",    fromId: T.evid_e5, relationshipType: "PROVES",   toType: "requirement", toId: T.req_r5 },
     // Gate prerequisites
-    { projectId: T.project, fromType: "gate", fromId: T.gate_l1, relationshipType: "PRECEDES", toType: "gate", toId: T.gate_l2 },
-    { projectId: T.project, fromType: "gate", fromId: T.gate_l2, relationshipType: "PRECEDES", toType: "gate", toId: T.gate_l3 },
-    { projectId: T.project, fromType: "gate", fromId: T.gate_l3, relationshipType: "PRECEDES", toType: "gate", toId: T.gate_l4 },
+    { id: T.edge_gate1_gate2, projectId: T.project, fromType: "gate",        fromId: T.gate_l1, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l2 },
+    { id: T.edge_gate2_gate3, projectId: T.project, fromType: "gate",        fromId: T.gate_l2, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l3 },
+    { id: T.edge_gate3_gate4, projectId: T.project, fromType: "gate",        fromId: T.gate_l3, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l4 },
   ]).onConflictDoNothing();
   console.log("  ✓ Graph edges (requirements→gates AFFECTS, evidence→requirements PROVES, gate prerequisites)");
 
@@ -638,9 +657,9 @@ async function seed() {
 
   // ── Knowledge chunks ──────────────────────────────────────────────────────
   await db.insert(knowledgeChunks).values([
-    { tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r1, documentType: "procedure", content: regions[0]!.extractedText, contentHash: sha256("kc-1") },
-    { tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r3, documentType: "standard",  content: regions[2]!.extractedText, contentHash: sha256("kc-3") },
-    { tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r5, documentType: "standard",  content: regions[4]!.extractedText, contentHash: sha256("kc-5") },
+    { id: T.kc_1, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r1, documentType: "procedure", content: regions[0]!.extractedText, contentHash: sha256("kc-1") },
+    { id: T.kc_3, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r3, documentType: "standard",  content: regions[2]!.extractedText, contentHash: sha256("kc-3") },
+    { id: T.kc_5, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r5, documentType: "standard",  content: regions[4]!.extractedText, contentHash: sha256("kc-5") },
   ]).onConflictDoNothing();
   console.log("  ✓ Knowledge chunks (3 — for full-text search in /knowledge)");
 

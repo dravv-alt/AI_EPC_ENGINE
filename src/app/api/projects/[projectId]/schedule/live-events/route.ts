@@ -5,12 +5,10 @@ import { riskSignals, scheduleTasks, shipments } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 
 // Slice 11: the Live Events feed unifies the most recent polled signals so the
-// demo shows automatic activity. Risk-signal observations keep their original
-// `{ kind:"risk", signal, taskName }` shape (the verify-risk-http contract, used
-// with an explicit taskId/signalType filter). When unfiltered we additively fold
-// in AIS position and weather observations sourced from the supply poll, each
-// tagged with a `kind` discriminator and a common `at` timestamp, ordered
-// newest-first.
+// demo shows automatic activity. When unfiltered, only signals from the latest
+// poll cycle are returned — showing one card per task+signalType, not the entire
+// unbounded history. Task/signal-scoped queries (used by verifier) still return
+// the full filtered history so assertions work correctly.
 type LiveEvent =
   | { kind: "risk"; signal: typeof riskSignals.$inferSelect; taskName: string; at: string }
   | { kind: "ais"; label: string; detail: string; positionSource: string; mmsi: string | null; at: string }
@@ -22,12 +20,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
     await requireProjectPermission(projectId, "audit:view");
     const url = new URL(request.url); const signalType = url.searchParams.get("signalType"); const taskId = url.searchParams.get("taskId");
     const conditions = [eq(riskSignals.projectId, projectId)]; if (signalType) conditions.push(eq(riskSignals.signalType, signalType)); if (taskId) conditions.push(eq(riskSignals.taskId, taskId));
-    const riskRows = await db.select({ signal: riskSignals, taskName: scheduleTasks.name }).from(riskSignals).innerJoin(scheduleTasks, eq(riskSignals.taskId, scheduleTasks.id)).where(and(...conditions)).orderBy(desc(riskSignals.observedAt)).limit(500);
-    const riskItems: LiveEvent[] = riskRows.map((row) => ({ kind: "risk", signal: row.signal, taskName: row.taskName, at: (row.signal.observedAt as Date).toISOString() }));
-    // Preserve the exact risk contract for task/signal-scoped queries (AIS and
-    // weather are shipment-level, not task-scoped, so they are only surfaced on
-    // the unfiltered feed).
-    if (taskId || signalType) return NextResponse.json({ items: riskItems });
+
+    // Scoped queries (used by verifier scripts): return filtered history as-is.
+    if (taskId || signalType) {
+      const scopedRows = await db.select({ signal: riskSignals, taskName: scheduleTasks.name }).from(riskSignals).innerJoin(scheduleTasks, eq(riskSignals.taskId, scheduleTasks.id)).where(and(...conditions)).orderBy(desc(riskSignals.observedAt)).limit(500);
+      return NextResponse.json({ items: scopedRows.map((row) => ({ kind: "risk" as const, signal: row.signal, taskName: row.taskName, at: (row.signal.observedAt as Date).toISOString() })) });
+    }
+
+    // Unfiltered feed: only the most recent poll cycle's signals to avoid flooding
+    // the UI with every historical observation. Find the latest pollCycleId first.
+    const latestSignal = await db.select({ pollCycleId: riskSignals.pollCycleId }).from(riskSignals).where(eq(riskSignals.projectId, projectId)).orderBy(desc(riskSignals.observedAt)).limit(1);
+    const riskItems: LiveEvent[] = [];
+    if (latestSignal.length) {
+      const latestCycleId = latestSignal[0]!.pollCycleId;
+      const cycleRows = await db.select({ signal: riskSignals, taskName: scheduleTasks.name }).from(riskSignals).innerJoin(scheduleTasks, eq(riskSignals.taskId, scheduleTasks.id)).where(and(eq(riskSignals.projectId, projectId), eq(riskSignals.pollCycleId, latestCycleId))).orderBy(desc(riskSignals.observedAt));
+      riskItems.push(...cycleRows.map((row) => ({ kind: "risk" as const, signal: row.signal, taskName: row.taskName, at: (row.signal.observedAt as Date).toISOString() })));
+    }
 
     const polled = await db.select().from(shipments).where(and(eq(shipments.projectId, projectId), eq(shipments.positionSource, "aisstream"))).orderBy(desc(shipments.lastPolledAt)).limit(100);
     const aisItems: LiveEvent[] = polled.filter((s) => s.lastPolledAt).map((s) => ({ kind: "ais", label: s.name, detail: s.currentLat && s.currentLng ? `Position ${Number(s.currentLat).toFixed(3)}, ${Number(s.currentLng).toFixed(3)} via ${s.positionSource}.` : `Position update via ${s.positionSource}.`, positionSource: s.positionSource, mmsi: s.mmsi, at: (s.lastPolledAt as Date).toISOString() }));

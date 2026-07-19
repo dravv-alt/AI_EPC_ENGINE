@@ -90,6 +90,11 @@ async function main() {
   const hardening = start("node_modules/.bin/next", ["start", "-p", String(hardeningPort)], hardeningEnv);
   await waitFor(`${hardeningBase}/api/health`, hardening);
   run("Rate limits and offline/storage hardening", "npm", ["run", "verify:hardening-http"], { ...hardeningEnv, HARDENING_TEST_URL: hardeningBase });
+
+  // Slice 16: end-to-end composite verification — these compose all the
+  // individual-slice checks above into two cross-cutting integration chains.
+  run("E2E polling loop", "npm", ["run", "verify:polling-http"], { ...developmentEnv, POLLING_TEST_URL: developmentBase });
+  run("E2E knowledge pipeline", "npm", ["run", "verify:knowledge-http"], { ...developmentEnv, KNOWLEDGE_TEST_URL: developmentBase });
   console.log("\nAll local verification suites passed.");
 }
 
