@@ -1,0 +1,1 @@
+ALTER TABLE "shipments" ADD COLUMN "assessed_threats" jsonb DEFAULT '[]'::jsonb;

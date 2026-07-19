@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { semanticSearch } from "@/lib/knowledge/query";
+import { env } from "@/lib/env";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { canonicalJson } from "@/lib/crypto/canonical-json";
@@ -56,13 +58,40 @@ export async function generateChecklistDraft(checklistId: string, actorId: strin
   if (!checklist) throw new Error("Checklist job references a missing checklist.");
   try {
     const versionIds = (checklist.standardVersionIds as string[]).filter((value) => z.string().uuid().safeParse(value).success);
-    const [system, gate, asset, regionRows] = await Promise.all([
+    const [system, gate, asset] = await Promise.all([
       db.query.systems.findFirst({ where: and(eq(systems.id, checklist.systemId), eq(systems.projectId, checklist.projectId)) }),
       db.query.gates.findFirst({ where: and(eq(gates.id, checklist.gateId), eq(gates.projectId, checklist.projectId)) }),
       db.query.assets.findFirst({ where: and(eq(assets.id, checklist.assetId), eq(assets.projectId, checklist.projectId)) }),
-      versionIds.length ? db.select({ region: sourceRegions, version: documentVersions, document: documents }).from(sourceRegions).innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id)).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(and(inArray(documentVersions.id, versionIds), eq(documents.projectId, checklist.projectId), eq(documentVersions.extractionStatus, "completed"))) : []
     ]);
     if (!system || !gate || !asset) throw new Error("Checklist scope is no longer valid for this project.");
+
+    // Try semantic search first, fall back to FK join
+    let regionRows: Array<{ region: typeof sourceRegions.$inferSelect; version: typeof documentVersions.$inferSelect; document: typeof documents.$inferSelect }> = [];
+    if (env.GEMINI_API_KEY && versionIds.length) {
+      const searchQuery = `${system.name} ${gate.name} ${asset.tag} commissioning test procedure`;
+      const semanticResults = await semanticSearch({ projectId: checklist.projectId, query: searchQuery, limit: 20 });
+      // Filter to only regions from selected standard versions
+      const semanticRegionIds = new Set(semanticResults.map((r) => r.regionId));
+      regionRows = versionIds.length
+        ? (await db.select({ region: sourceRegions, version: documentVersions, document: documents })
+            .from(sourceRegions)
+            .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+            .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+            .where(and(inArray(documentVersions.id, versionIds), eq(documents.projectId, checklist.projectId), eq(documentVersions.extractionStatus, "completed"))))
+            .filter((row) => semanticRegionIds.has(row.region.id))
+        : [];
+      // If semantic search returned too few, fall through to full FK join
+      if (regionRows.length < 3) regionRows = []; // will be re-fetched below
+    }
+    if (!regionRows.length) {
+      regionRows = versionIds.length
+        ? await db.select({ region: sourceRegions, version: documentVersions, document: documents })
+            .from(sourceRegions)
+            .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+            .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+            .where(and(inArray(documentVersions.id, versionIds), eq(documents.projectId, checklist.projectId), eq(documentVersions.extractionStatus, "completed")))
+        : [];
+    }
     if (!regionRows.length) throw new Error("Completed standards/procedures with extracted citation regions are required.");
     const allowedRegions = new Set(regionRows.map((row) => row.region.id));
     const source = regionRows.map((row) => ({ regionId: row.region.id, page: Number(row.region.pageNumber), text: row.region.extractedText, contentHash: row.region.contentHash, standardSet: row.document.standardSet, revision: row.version.revision }));

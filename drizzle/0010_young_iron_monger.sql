@@ -1,0 +1,1 @@
+ALTER TABLE "shipments" ADD COLUMN "transport_mode" varchar(10) DEFAULT 'sea' NOT NULL;

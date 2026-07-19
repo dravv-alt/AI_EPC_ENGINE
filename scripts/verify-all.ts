@@ -11,12 +11,12 @@ const shared = { ...process.env, AUTH_ENCRYPTION_KEY: "isolated-verification-key
 
 function run(label: string, command: string, args: string[], env: NodeJS.ProcessEnv = shared) {
   console.log(`\n=== ${label} ===`);
-  const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
+  const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit", shell: true });
   if (result.status !== 0) throw new Error(`${label} failed with exit code ${result.status ?? "unknown"}.`);
 }
 
 function start(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"], shell: true });
   child.stdout?.on("data", (chunk) => process.stdout.write(`[runtime] ${chunk}`));
   child.stderr?.on("data", (chunk) => process.stderr.write(`[runtime] ${chunk}`));
   children.push(child);
@@ -49,14 +49,14 @@ async function main() {
 
   const developmentBase = `http://localhost:${devPort}`;
   const developmentEnv = { ...shared, AUTH_MODE: "development", APP_BASE_URL: developmentBase, REDIS_PREFIX: redisPrefix };
-  const worker = start("node_modules/.bin/tsx", ["scripts/worker.ts"], developmentEnv);
-  const development = start("node_modules/.bin/next", ["start", "-p", String(devPort)], developmentEnv);
+  const worker = start("npx", ["tsx", "--env-file=.env", "scripts/worker.ts"], developmentEnv);
+  const development = start("npx", ["next", "start", "-p", String(devPort)], developmentEnv);
   await waitFor(`${developmentBase}/api/health`, development);
   if (worker.exitCode !== null) throw new Error("Verification worker failed to start.");
 
   const credentialsBase = `http://localhost:${credentialsPort}`;
   const credentialsEnv = { ...shared, AUTH_MODE: "credentials", APP_BASE_URL: credentialsBase, REDIS_PREFIX: `${redisPrefix}-credentials` };
-  const credentials = start("node_modules/.bin/next", ["start", "-p", String(credentialsPort)], credentialsEnv);
+  const credentials = start("npx", ["next", "start", "-p", String(credentialsPort)], credentialsEnv);
   await waitFor(`${credentialsBase}/api/health`, credentials);
 
   run("Phase 0 contracts", "npm", ["run", "verify:phase0"], developmentEnv);

@@ -1,0 +1,226 @@
+"use server";
+
+// @ts-ignore
+import searoute from "searoute-js";
+import { greatCircle } from "@turf/great-circle";
+import { point, lineString } from "@turf/helpers";
+import bezierSpline from "@turf/bezier-spline";
+import { findNearestPort, findNearestAirport, getDistance } from "./geo/nearest";
+
+// Haversine distance in km
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export async function getShipmentRoute(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  mode: "sea" | "air" | "land"
+): Promise<{ mode: "sea" | "air" | "land", coords: [number, number][] }[]> {
+  try {
+    const segments: { mode: "sea" | "air" | "land", coords: [number, number][] }[] = [];
+
+    if (mode === "land") {
+      const landSegments = await getLandRoute(originLat, originLng, destLat, destLng);
+      if (landSegments.length > 0) {
+        segments.push(...landSegments.map(coords => ({ mode: "land" as const, coords })));
+      } else {
+        mode = "sea"; // Fallback to sea if land is impossible
+      }
+    }
+    
+    if (mode === "air") {
+      const oAir = findNearestAirport(originLat, originLng);
+      const dAir = findNearestAirport(destLat, destLng);
+
+      const oDist = oAir ? getDistance(originLat, originLng, oAir.lat, oAir.lng) : 0;
+      const dDist = dAir ? getDistance(destLat, destLng, dAir.lat, dAir.lng) : 0;
+
+      let actualOriginLat = originLat, actualOriginLng = originLng;
+      let actualDestLat = destLat, actualDestLng = destLng;
+
+      if (oAir && oDist > 2) { // > 2km from airport, add land leg
+        const landSegs = await getLandRoute(originLat, originLng, oAir.lat, oAir.lng);
+        if (landSegs.length > 0) {
+          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
+          actualOriginLat = oAir.lat;
+          actualOriginLng = oAir.lng;
+        }
+      }
+
+      if (dAir && dDist > 2) {
+        actualDestLat = dAir.lat;
+        actualDestLng = dAir.lng;
+      }
+
+      const airSegs = getAirRoute(actualOriginLat, actualOriginLng, actualDestLat, actualDestLng);
+      segments.push(...airSegs.map(coords => ({ mode: "air" as const, coords })));
+
+      if (dAir && dDist > 2) {
+        const landSegs = await getLandRoute(actualDestLat, actualDestLng, destLat, destLng);
+        if (landSegs.length > 0) {
+          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
+        }
+      }
+    } else if (mode === "sea") {
+      const oPort = findNearestPort(originLat, originLng);
+      const dPort = findNearestPort(destLat, destLng);
+
+      const oDist = oPort ? getDistance(originLat, originLng, oPort.lat, oPort.lng) : 0;
+      const dDist = dPort ? getDistance(destLat, destLng, dPort.lat, dPort.lng) : 0;
+
+      let actualOriginLat = originLat, actualOriginLng = originLng;
+      let actualDestLat = destLat, actualDestLng = destLng;
+
+      if (oPort && oDist > 1) { // > 1km from port, add land leg
+        const landSegs = await getLandRoute(originLat, originLng, oPort.lat, oPort.lng);
+        if (landSegs.length > 0) {
+          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
+          actualOriginLat = oPort.lat;
+          actualOriginLng = oPort.lng;
+        }
+      }
+
+      if (dPort && dDist > 1) {
+        actualDestLat = dPort.lat;
+        actualDestLng = dPort.lng;
+      }
+
+      const seaSegs = getMarineRoute(
+        actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
+        oPort?.seaRouteEntryPoint, dPort?.seaRouteEntryPoint
+      );
+      segments.push(...seaSegs.map(coords => ({ mode: "sea" as const, coords })));
+
+      if (dPort && dDist > 1) {
+        const landSegs = await getLandRoute(actualDestLat, actualDestLng, destLat, destLng);
+        if (landSegs.length > 0) {
+          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
+        }
+      }
+    }
+
+    if (segments.length === 0) {
+      return [{ mode: "land", coords: [[originLat, originLng], [destLat, destLng]] }];
+    }
+
+    return segments;
+  } catch (err) {
+    console.error(`Error computing ${mode} route:`, err);
+    return [{ mode: "land", coords: [[originLat, originLng], [destLat, destLng]] }];
+  }
+}
+
+function getMarineRoute(
+  originLat: number, originLng: number, 
+  destLat: number, destLng: number,
+  oEntryPoint?: [number, number],
+  dEntryPoint?: [number, number]
+): [number, number][][] {
+  const origin = [originLng, originLat];
+  const dest = [destLng, destLat];
+
+  let feature;
+  try {
+    if (oEntryPoint && dEntryPoint) {
+      const f1 = searoute(origin, [oEntryPoint[1], oEntryPoint[0]]);
+      const f2 = searoute([oEntryPoint[1], oEntryPoint[0]], [dEntryPoint[1], dEntryPoint[0]]);
+      const f3 = searoute([dEntryPoint[1], dEntryPoint[0]], dest);
+      feature = {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            ...(f1?.geometry?.coordinates || []),
+            ...(f2?.geometry?.coordinates || []),
+            ...(f3?.geometry?.coordinates || [])
+          ]
+        }
+      };
+    } else if (oEntryPoint) {
+      const f1 = searoute(origin, [oEntryPoint[1], oEntryPoint[0]]);
+      const f2 = searoute([oEntryPoint[1], oEntryPoint[0]], dest);
+      feature = {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            ...(f1?.geometry?.coordinates || []),
+            ...(f2?.geometry?.coordinates || [])
+          ]
+        }
+      };
+    } else if (dEntryPoint) {
+      const f1 = searoute(origin, [dEntryPoint[1], dEntryPoint[0]]);
+      const f2 = searoute([dEntryPoint[1], dEntryPoint[0]], dest);
+      feature = {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            ...(f1?.geometry?.coordinates || []),
+            ...(f2?.geometry?.coordinates || [])
+          ]
+        }
+      };
+    } else {
+      feature = searoute(origin, dest);
+    }
+  } catch (e) {
+    feature = searoute(origin, dest);
+  }
+  if (
+    !feature ||
+    !feature.geometry ||
+    !feature.geometry.coordinates ||
+    feature.geometry.coordinates.length < 2
+  ) {
+    return [[[originLat, originLng], [destLat, destLng]]] as [number, number][][];
+  }
+
+  const coordinates =
+    feature.geometry.type === "MultiLineString"
+      ? feature.geometry.coordinates
+      : [feature.geometry.coordinates];
+
+  return coordinates.map((segment: [number, number][]) => {
+    return segment.map(([lng, lat]) => [lat, lng] as [number, number]);
+  });
+}
+
+function getAirRoute(originLat: number, originLng: number, destLat: number, destLng: number): [number, number][][] {
+  const distKm = haversineKm(originLat, originLng, destLat, destLng);
+  // For very short distances great-circle produces degenerate results
+  if (distKm < 50) {
+    return [[[originLat, originLng], [destLat, destLng]]] as [number, number][][];
+  }
+  const start = point([originLng, originLat]);
+  const end = point([destLng, destLat]);
+  const line = greatCircle(start, end, { properties: { name: "air-route" }, npoints: 100 });
+  const coords = line.geometry.coordinates as [number, number][];
+  return [coords.map(([lng, lat]) => [lat, lng] as [number, number])];
+}
+
+async function getLandRoute(originLat: number, originLng: number, destLat: number, destLng: number): Promise<[number, number][][]> {
+  const url = `http://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.code === "Ok" && data.routes?.length > 0) {
+      const coords = data.routes[0].geometry.coordinates as [number, number][];
+      return [coords.map(([lng, lat]) => [lat, lng] as [number, number])];
+    }
+  } catch (e) {
+    // Ignore fetch errors
+  }
+  if (haversineKm(originLat, originLng, destLat, destLng) > 100) {
+    return [] as [number, number][][];
+  }
+  return [[[originLat, originLng], [destLat, destLng]]] as [number, number][][];
+}

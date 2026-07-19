@@ -2,7 +2,7 @@ import { Worker, type Job } from "bullmq";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { db } from "@/lib/db/client";
-import { documentVersions, durableJobs, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, sourceRegions } from "@/lib/db/schema";
+import { documentVersions, durableJobs, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, sourceRegions, projects, users, projectMembers } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis/client";
 import { objectStorage } from "@/lib/storage/service";
@@ -11,6 +11,7 @@ import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
+import { processShipmentsWeather } from "@/lib/supply/weather-engine";
 
 export async function extractDocument(input: { documentVersionId: string; objectKey: string }) {
   const { documentVersionId, objectKey } = input;
@@ -55,8 +56,37 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
     return generateCxReport(data.testRecordId, data.actorId);
   },
   "risk.poll": (job) => {
-    const data = job.data as { projectId: string; actorId: string; scenario?: RiskScenarioOverride[] };
+    const data = job.data as { projectId: string; actorId: string; scenario?: RiskScenarioOverride[]; durableJobId?: string };
     return pollProjectRisks(data);
+  },
+  "risk.poll.all": async (job) => {
+    const activeProjects = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.status, "active"));
+    for (const proj of activeProjects) {
+      const [admin] = await db.select({ id: users.id })
+        .from(users)
+        .innerJoin(projectMembers, eq(users.id, projectMembers.userId))
+        .where(and(eq(projectMembers.projectId, proj.id), eq(projectMembers.role, "admin")))
+        .limit(1);
+      
+      const actorId = admin?.id ?? "system";
+      
+      await enqueueDurableJob({
+        queue: "core",
+        name: "risk.poll",
+        tenantId: proj.tenantId,
+        projectId: proj.id,
+        idempotencyKey: `risk.poll:${proj.id}:${job.id}`,
+        payload: {
+          projectId: proj.id,
+          actorId
+        }
+      });
+    }
+    return { projectsPolled: activeProjects.length };
+  },
+  "supply.weather.poll": async (job) => {
+    await processShipmentsWeather();
+    return { success: true };
   },
   "schedule.baseline": async (job) => {
     const data = job.data as { projectId: string; actorId: string; horizonStart: string; reason: string };
@@ -87,15 +117,22 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
 export function startWorker(queueName = "core") {
   const worker = new Worker(queueName, async (job) => {
     const durableJobId = String(job.data.durableJobId);
-    await db.update(durableJobs).set({ status: "running", attempts: job.attemptsMade + 1, startedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+    const isRecurring = durableJobId.startsWith("recurring-");
+    if (!isRecurring) {
+      await db.update(durableJobs).set({ status: "running", attempts: job.attemptsMade + 1, startedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+    }
     const handler = handlers[job.name];
     if (!handler) throw new Error(`No worker handler is registered for ${job.name}.`);
     try {
       const result = await handler(job);
-      await db.update(durableJobs).set({ status: "completed", result: result as Record<string, unknown>, completedAt: new Date(), updatedAt: new Date(), error: null }).where(eq(durableJobs.id, durableJobId));
+      if (!isRecurring) {
+        await db.update(durableJobs).set({ status: "completed", result: result as Record<string, unknown>, completedAt: new Date(), updatedAt: new Date(), error: null }).where(eq(durableJobs.id, durableJobId));
+      }
       return result;
     } catch (error) {
-      await db.update(durableJobs).set({ status: "failed", error: error instanceof Error ? error.message : "Worker failed", completedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+      if (!isRecurring) {
+        await db.update(durableJobs).set({ status: "failed", error: error instanceof Error ? error.message : "Worker failed", completedAt: new Date(), updatedAt: new Date() }).where(eq(durableJobs.id, durableJobId));
+      }
       if (job.name === "schedule.event" && job.data.scheduleEventId) await db.update(scheduleEvents).set({ processingStatus: "solve_failed", processingError: error instanceof Error ? error.message : "Schedule event failed", processedAt: new Date(), updatedAt: new Date() }).where(eq(scheduleEvents.id, String(job.data.scheduleEventId)));
       throw error;
     }

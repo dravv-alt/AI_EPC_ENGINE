@@ -11,7 +11,7 @@ import { calculateShipmentStatus } from "@/lib/supply/status";
 import { currentMappedTaskIds, equipmentTaskIds } from "@/lib/supply/task-mapping";
 
 const coordinate = z.object({ name: z.string().trim().min(2).max(200), lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
-const schema = z.object({ name: z.string().min(3).max(200), equipmentId: z.string().uuid(), origin: coordinate, destination: coordinate, mmsi: z.string().regex(/^\d{7,9}$/).optional(), plannedEta: z.string().datetime(), requiredOnSite: z.string().datetime(), portCongestion: z.boolean().default(false), weatherDelayFactor: z.number().min(0).max(2).default(0) });
+const schema = z.object({ name: z.string().min(3).max(200), equipmentId: z.string().uuid(), transportMode: z.enum(["sea", "air", "land"]).default("sea"), origin: coordinate, destination: coordinate, mmsi: z.string().regex(/^\d{7,9}$/).optional(), plannedEta: z.string().datetime(), requiredOnSite: z.string().datetime(), portCongestion: z.boolean().default(false), weatherDelayFactor: z.number().min(0).max(2).default(0) });
 
 export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params; try { await requireProjectPermission(projectId, "audit:view"); const items = await db.select().from(shipments).where(eq(shipments.projectId, projectId)).orderBy(desc(shipments.updatedAt)); return NextResponse.json({ items, estimate: true, pollingSeconds: 30 }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load shipments" }, { status: error instanceof AccessError ? error.status : 500 }); }
@@ -23,10 +23,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const actor = await requireProjectPermission(projectId, "schedule:manage");
     const [project, equipment] = await Promise.all([db.query.projects.findFirst({ where: eq(projects.id, projectId) }), db.query.assets.findFirst({ where: and(eq(assets.id, parsed.data.equipmentId), eq(assets.projectId, projectId)) })]);
     if (!project || !equipment) return NextResponse.json({ error: "Project or equipment is outside the active scope." }, { status: 400 });
-    const calculated = calculateShipmentStatus({ plannedEta: new Date(parsed.data.plannedEta), requiredOnSite: new Date(parsed.data.requiredOnSite), portCongestion: parsed.data.portCongestion, weatherDelayFactor: parsed.data.weatherDelayFactor });
+    const CONGESTED_PORTS = ["Port of Los Angeles", "Port of Singapore", "Port of Shanghai", "Port of Rotterdam"];
+    let isCongested = parsed.data.portCongestion || CONGESTED_PORTS.includes(parsed.data.destination.name);
+    if (!isCongested) {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${parsed.data.destination.lat}&longitude=${parsed.data.destination.lng}&current=wind_speed_10m,precipitation,weather_code&wind_speed_unit=kmh`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const current = data.current;
+        if (current) {
+          if (current.wind_speed_10m > 50 || current.precipitation > 10 || (current.weather_code >= 95 && current.weather_code <= 99)) {
+            isCongested = true;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch weather for destination port', e);
+      }
+    }
+    const calculated = calculateShipmentStatus({ plannedEta: new Date(parsed.data.plannedEta), requiredOnSite: new Date(parsed.data.requiredOnSite), portCongestion: isCongested, weatherDelayFactor: parsed.data.weatherDelayFactor });
     const mappedTasks = await equipmentTaskIds(projectId, equipment.id);
     const shipment = await db.transaction(async (tx) => {
-      const [shipment] = await tx.insert(shipments).values({ tenantId: project.tenantId, projectId, equipmentId: equipment.id, name: parsed.data.name, originName: parsed.data.origin.name, originLat: String(parsed.data.origin.lat), originLng: String(parsed.data.origin.lng), destinationName: parsed.data.destination.name, destinationLat: String(parsed.data.destination.lat), destinationLng: String(parsed.data.destination.lng), currentLat: String(parsed.data.origin.lat), currentLng: String(parsed.data.origin.lng), positionSource: "simulated", mmsi: parsed.data.mmsi ?? null, plannedEta: new Date(parsed.data.plannedEta), weatherAdjustedEta: calculated.weatherAdjustedEta, weatherDelayFactor: String(calculated.weatherDelayFactor), telemetryReason: "Awaiting AIS poll; deterministic simulated origin is displayed.", lastPolledAt: new Date(), requiredOnSite: new Date(parsed.data.requiredOnSite), portCongestion: parsed.data.portCongestion, status: calculated.status, lastNotifiedStatus: calculated.status, createdBy: actor.userId }).returning();
+      const [shipment] = await tx.insert(shipments).values({ tenantId: project.tenantId, projectId, equipmentId: equipment.id, name: parsed.data.name, transportMode: parsed.data.transportMode, originName: parsed.data.origin.name, originLat: String(parsed.data.origin.lat), originLng: String(parsed.data.origin.lng), destinationName: parsed.data.destination.name, destinationLat: String(parsed.data.destination.lat), destinationLng: String(parsed.data.destination.lng), currentLat: String(parsed.data.origin.lat), currentLng: String(parsed.data.origin.lng), positionSource: "simulated", mmsi: parsed.data.mmsi ?? null, plannedEta: new Date(parsed.data.plannedEta), weatherAdjustedEta: calculated.weatherAdjustedEta, weatherDelayFactor: String(calculated.weatherDelayFactor), telemetryReason: "Awaiting AIS poll; deterministic simulated origin is displayed.", lastPolledAt: new Date(), requiredOnSite: new Date(parsed.data.requiredOnSite), portCongestion: isCongested, status: calculated.status, lastNotifiedStatus: calculated.status, createdBy: actor.userId }).returning();
       if (mappedTasks.length) await tx.insert(edges).values(mappedTasks.map((taskId) => ({ projectId, fromType: "shipment", fromId: shipment.id, relationshipType: "AFFECTS", toType: "schedule_task", toId: taskId }))).onConflictDoNothing();
       return shipment;
     });

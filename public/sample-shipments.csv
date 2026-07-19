@@ -1,0 +1,4 @@
+Equipment Tag,Shipment Name,Origin Name,Origin Lat,Origin Lng,Destination Name,Destination Lat,Destination Lng,MMSI,Planned ETA,Required On Site,Port Congestion,Weather Delay Factor
+PMP-101A,Cooling Water Pump Shanghai-LA,Shanghai Port (CNSHA),31.2304,121.4737,Los Angeles Port (USLAX),33.7292,-118.2620,368207620,2026-08-15T12:00:00Z,2026-08-20T12:00:00Z,false,0.0
+COMP-202B,Gas Compressor Rotterdam-NY,Rotterdam Port (NLRTM),51.9244,4.4777,New York Port (USNYC),40.7128,-74.0060,367719770,2026-09-01T10:00:00Z,2026-09-05T08:00:00Z,true,0.1
+VLV-300,Control Valves Houston-Dubai,Houston Port (USHOU),29.7604,-95.3698,Jebel Ali Port (AEJEA),24.9857,55.0273,211476060,2026-09-10T15:00:00Z,2026-09-15T09:00:00Z,false,0.0

@@ -53,9 +53,15 @@ function scenarioObservation(override: RiskScenarioOverride): SignalObservation 
 
 export async function pollProjectRisks(input: { projectId: string; actorId: string; scenario?: RiskScenarioOverride[] }) {
   const latest = await db.query.scheduleVersions.findFirst({ where: eq(scheduleVersions.projectId, input.projectId), orderBy: [desc(scheduleVersions.versionNumber)] });
-  if (!latest) throw new Error("A current immutable schedule version is required before predictive-risk polling.");
+  if (!latest) {
+    console.warn(`[predictive-risk] No schedule version for project ${input.projectId}. Skipping poll.`);
+    return { pollCycleId: randomUUID(), scheduleVersionId: null, taskCount: 0, availableCount: 0, unavailableCount: 0, emittedCount: 0, unchangedCount: 0, resolvedCount: 0, thresholds: { probability: env.RISK_PROBABILITY_THRESHOLD, delayHours: env.RISK_DELAY_HOURS_THRESHOLD } };
+  }
   const assignments = await db.select({ taskId: scheduleTasks.id, taskName: scheduleTasks.name, deadline: scheduleTasks.deadline, startAt: scheduleAssignments.startAt, endAt: scheduleAssignments.endAt, isCritical: scheduleAssignments.isCritical }).from(scheduleAssignments).innerJoin(scheduleTasks, eq(scheduleAssignments.taskId, scheduleTasks.id)).where(and(eq(scheduleAssignments.versionId, latest.id), eq(scheduleTasks.projectId, input.projectId), eq(scheduleTasks.reviewState, "accepted")));
-  if (!assignments.length) throw new Error("The current schedule contains no accepted task assignments.");
+  if (!assignments.length) {
+    console.warn(`[predictive-risk] No accepted assignments for project ${input.projectId}. Skipping poll.`);
+    return { pollCycleId: randomUUID(), scheduleVersionId: latest.id, taskCount: 0, availableCount: 0, unavailableCount: 0, emittedCount: 0, unchangedCount: 0, resolvedCount: 0, thresholds: { probability: env.RISK_PROBABILITY_THRESHOLD, delayHours: env.RISK_DELAY_HOURS_THRESHOLD } };
+  }
   const pollCycleId = randomUUID(); const observedAt = new Date(); const clients = getRiskSignalClients();
   let availableCount = 0; let unavailableCount = 0; let emittedCount = 0; let unchangedCount = 0; let resolvedCount = 0;
 
