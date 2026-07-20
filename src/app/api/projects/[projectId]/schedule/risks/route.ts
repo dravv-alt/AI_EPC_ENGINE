@@ -8,6 +8,7 @@ import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { pollProjectRisks } from "@/lib/predictive-risk/engine";
 import { riskSignalTypes } from "@/lib/predictive-risk/clients";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { enforceScheduleRateLimit } from "@/lib/redis/rate-limit";
 
 const scenarioSchema = z.object({ taskId: z.string().uuid(), signalType: z.enum(riskSignalTypes), dataAvailable: z.boolean(), probability: z.number().min(0).max(1).optional(), estimatedDelayHours: z.number().int().nonnegative().max(2160).optional(), unavailableReason: z.string().trim().max(1000).optional(), value: z.record(z.unknown()).optional() }).superRefine((value, context) => { if (value.dataAvailable && (value.probability === undefined || value.estimatedDelayHours === undefined)) context.addIssue({ code: "custom", message: "Available scenario signals require probability and delay hours." }); });
 const schema = z.object({ idempotencyKey: z.string().min(8).max(200).optional(), scenario: z.array(scenarioSchema).max(100).optional() });
@@ -29,6 +30,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   const { projectId } = await params; const parsed = schema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "Risk poll request is invalid.", issues: parsed.error.flatten() }, { status: 400 });
   try {
+    const limited = await enforceScheduleRateLimit(`risks:${projectId}`);
+    if (limited) return limited;
     const actor = await requireProjectPermission(projectId, "schedule:manage");
     if (parsed.data.scenario?.length && env.AUTH_MODE !== "development") return NextResponse.json({ error: "Scenario overrides are restricted to the isolated development runtime." }, { status: 403 });
     const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) }); if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });

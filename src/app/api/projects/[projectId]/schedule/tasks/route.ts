@@ -5,6 +5,7 @@ import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, scheduleResources, scheduleTaskResources, scheduleTasks, sourceRegions } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { enforceScheduleRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({
   name: z.string().trim().min(3).max(240), durationHours: z.number().int().min(1).max(100000), sourceRegionId: z.string().uuid().optional(), earliestStart: z.string().datetime().optional(), deadline: z.string().datetime().optional(), fixedStart: z.string().datetime().optional(), vendor: z.string().trim().max(200).optional(), leadTimeDays: z.number().int().nonnegative().optional(), deadlineType: z.enum(["hard", "soft"]).optional(), confidence: z.number().min(0).max(1).optional(), validationIssues: z.array(z.string().min(1).max(200)).max(50).default([]), resourceDemands: z.array(z.object({ resourceId: z.string().uuid(), demand: z.number().int().positive() })).max(100).default([])
@@ -13,7 +14,7 @@ const schema = z.object({
 export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) { const { projectId } = await params; try { await requireProjectPermission(projectId, "audit:view"); return NextResponse.json({ items: await db.select().from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)) }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load schedule tasks." }, { status: error instanceof AccessError ? error.status : 500 }); } }
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params; const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "Task proposal is invalid.", issues: parsed.error.flatten() }, { status: 400 });
+  const { projectId } = await params; const limited = await enforceScheduleRateLimit(`tasks:${projectId}`); if (limited) return limited; const parsed = schema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "Task proposal is invalid.", issues: parsed.error.flatten() }, { status: 400 });
   try {
     const actor = await requireProjectPermission(projectId, "schedule:manage");
     const resourceIds = parsed.data.resourceDemands.map((item) => item.resourceId);

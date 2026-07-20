@@ -46,6 +46,18 @@ const environmentSchema = z.object({
   KNOWLEDGE_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.2),
   AI_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(60),
   AI_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
+  // Per-category budgets (Rules.md line 87: auth, upload, search, AI, export,
+  // schedule, compliance, risk, and knowledge endpoints all require rate limiting).
+  // Each category gets its own budget since an upload and an AI call have very
+  // different natural request rates.
+  AUTH_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(10),
+  AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
+  UPLOAD_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(20),
+  UPLOAD_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
+  SCHEDULE_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(30),
+  SCHEDULE_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
+  EXPORT_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(10),
+  EXPORT_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional(),
   // Named accuracy/latency targets (TRD NFR table; PRD success metrics). These are
@@ -105,6 +117,14 @@ export const env = environmentSchema.parse({
   KNOWLEDGE_SIMILARITY_THRESHOLD: process.env.KNOWLEDGE_SIMILARITY_THRESHOLD,
   AI_RATE_LIMIT: process.env.AI_RATE_LIMIT,
   AI_RATE_LIMIT_WINDOW_SECONDS: process.env.AI_RATE_LIMIT_WINDOW_SECONDS,
+  AUTH_RATE_LIMIT: process.env.AUTH_RATE_LIMIT,
+  AUTH_RATE_LIMIT_WINDOW_SECONDS: process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+  UPLOAD_RATE_LIMIT: process.env.UPLOAD_RATE_LIMIT,
+  UPLOAD_RATE_LIMIT_WINDOW_SECONDS: process.env.UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+  SCHEDULE_RATE_LIMIT: process.env.SCHEDULE_RATE_LIMIT,
+  SCHEDULE_RATE_LIMIT_WINDOW_SECONDS: process.env.SCHEDULE_RATE_LIMIT_WINDOW_SECONDS,
+  EXPORT_RATE_LIMIT: process.env.EXPORT_RATE_LIMIT,
+  EXPORT_RATE_LIMIT_WINDOW_SECONDS: process.env.EXPORT_RATE_LIMIT_WINDOW_SECONDS,
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
   COMPLIANCE_DEVIATION_ACCURACY_TARGET: process.env.COMPLIANCE_DEVIATION_ACCURACY_TARGET,

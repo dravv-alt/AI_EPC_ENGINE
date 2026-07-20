@@ -8,6 +8,7 @@ import { verifyTotp } from "@/lib/auth/totp";
 import { db } from "@/lib/db/client";
 import { authSessions, users } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { enforceAuthRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({ password: z.string().min(1).max(128), token: z.string().regex(/^\d{6}$/) });
 
@@ -15,6 +16,8 @@ export async function POST(request: Request) {
   if (env.AUTH_MODE !== "credentials") return NextResponse.json({ error: "MFA is managed by the configured identity provider." }, { status: 409 });
   const session = await getSessionUser();
   if (!session) return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
+  const limited = await enforceAuthRateLimit(`totp-disable:${session.id}`);
+  if (limited) return limited;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Password and a six-digit authenticator code are required." }, { status: 400 });
   const user = await db.query.users.findFirst({ where: eq(users.id, session.id) });

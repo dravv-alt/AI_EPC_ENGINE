@@ -8,11 +8,14 @@ import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { createScheduleVersion } from "@/lib/schedule/create-version";
 import { assertAcyclic, ScheduleCycleError } from "@/lib/schedule/solver";
+import { enforceScheduleRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({ horizonStart: z.string().datetime(), reason: z.string().trim().min(5).max(2000), idempotencyKey: z.string().min(8).max(200).optional() });
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
+  const limited = await enforceScheduleRateLimit(`baseline:${projectId}`);
+  if (limited) return limited;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "A horizon start and solve reason are required." }, { status: 400 });
   try {

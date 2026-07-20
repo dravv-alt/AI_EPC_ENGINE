@@ -5,6 +5,7 @@ import { db } from "@/lib/db/client";
 import { projectMembers, projects, tenants, users } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { createSession } from "@/lib/auth/session";
+import { clientIp, enforceAuthRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({
   email: z.string().email().max(320).transform((value) => value.toLowerCase()),
@@ -18,6 +19,8 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   if (env.AUTH_MODE !== "credentials") return NextResponse.json({ error: "Credentials registration is disabled in the active auth mode." }, { status: 409 });
+  const limited = await enforceAuthRateLimit(`register:${clientIp(request)}`);
+  if (limited) return limited;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Registration data is invalid.", issues: parsed.error.flatten().fieldErrors }, { status: 400 });
   try {

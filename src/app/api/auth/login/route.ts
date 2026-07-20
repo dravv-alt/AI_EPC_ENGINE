@@ -8,12 +8,17 @@ import { env } from "@/lib/env";
 import { decryptSecret } from "@/lib/auth/crypto";
 import { createSession } from "@/lib/auth/session";
 import { verifyTotp } from "@/lib/auth/totp";
+import { clientIp, enforceAuthRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({ email: z.string().email().transform((value) => value.toLowerCase()), password: z.string().min(1).max(128), totp: z.string().optional() });
 const denied = () => NextResponse.json({ error: "Email, password, or verification code is invalid." }, { status: 401 });
 
 export async function POST(request: Request) {
   if (env.AUTH_MODE !== "credentials") return NextResponse.json({ error: "Credentials login is disabled in the active auth mode." }, { status: 409 });
+  // Scoped by client IP, never by email, so a rate-limited response cannot be
+  // used to probe whether an account exists (Rules.md line 87).
+  const limited = await enforceAuthRateLimit(`login:${clientIp(request)}`);
+  if (limited) return limited;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return denied();
   const user = await db.query.users.findFirst({ where: eq(users.email, parsed.data.email) });

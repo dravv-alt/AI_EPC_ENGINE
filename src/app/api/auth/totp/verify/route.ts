@@ -7,6 +7,7 @@ import { verifyTotp } from "@/lib/auth/totp";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { env } from "@/lib/env";
+import { enforceAuthRateLimit } from "@/lib/redis/rate-limit";
 
 const schema = z.object({ token: z.string().regex(/^\d{6}$/) });
 
@@ -14,6 +15,8 @@ export async function POST(request: Request) {
   if (env.AUTH_MODE !== "credentials") return NextResponse.json({ error: "TOTP verification requires credentials auth mode." }, { status: 409 });
   const sessionUser = await getSessionUser();
   if (!sessionUser) return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
+  const limited = await enforceAuthRateLimit(`totp-verify:${sessionUser.id}`);
+  if (limited) return limited;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "A six-digit code is required." }, { status: 400 });
   const user = await db.query.users.findFirst({ where: eq(users.id, sessionUser.id) });

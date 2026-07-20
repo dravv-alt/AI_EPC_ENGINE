@@ -9,6 +9,7 @@ import { extractDocument } from "@/lib/jobs/worker";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { objectStorage } from "@/lib/storage/service";
 import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
+import { enforceUploadRateLimit } from "@/lib/redis/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,8 @@ function detectMediaType(file: File): "application/pdf" | "text/csv" | "applicat
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
   try {
+    const limited = await enforceUploadRateLimit(`sources:${projectId}`);
+    if (limited) return limited;
     const actor = await requireProjectPermission(projectId, "source:upload");
     const form = await request.formData();
     const metadata = metadataSchema.safeParse({ title: form.get("title"), revision: form.get("revision"), documentType: form.get("documentType") ?? "procedure" });
