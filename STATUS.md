@@ -8,19 +8,23 @@ The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 determini
 
 The three retrieval-backed agents (Specification & Quality Compliance, Predictive Schedule Risk, Project Knowledge & RFI) have completed the remediation sequenced in [agentFixingPlan.md](agentFixingPlan.md): semantic candidate discovery and an LLM-owned verdict for compliance, a lively synthetic signal formula with model-written mitigations for predictive risk, and a two-call plan-then-synthesize pipeline with code-enforced groundedness for knowledge. All three now run in TypeScript inside the core app, generation is swappable between a deterministic mock, Gemini, and NVIDIA NIM, and embeddings/reranking run through a third stateless Python service alongside ingestion and the solver.
 
+The 10-slice remediation sequenced in [PLANNER/final_fix_plans.md](PLANNER/final_fix_plans.md) is also complete: named/overridable target constants, solver timeout+bounded-retry+`SOLVE_FAILED` degradation, rate-limit coverage across auth/upload/schedule/export/knowledge endpoints, owner/due-date on compliance-generated findings, overdue-finding visibility in blocker views (kept separate from the readiness verdict), CP-SAT solver/model provenance in the turnover manifest, an advisory evidence-entropy score, teach-back generalized from compliance-only to all seven review routes, RFI resolution state, and mandatory-first metadata filters (system/asset/gate/revision/date) on knowledge retrieval.
+
 | Area | State | What exists now |
 | --- | --- | --- |
-| Platform, tenancy, auth, RBAC | Verified | Project membership enforcement, credentials sessions, optional Clerk adapter, TOTP, session revocation, rate limits, audit chain |
+| Platform, tenancy, auth, RBAC | Verified | Project membership enforcement, credentials sessions, optional Clerk adapter, TOTP, session revocation, category-scoped rate limits across auth/upload/schedule/export/AI/knowledge endpoints (auth 429s never leak account existence), audit chain |
 | Controlled sources and provenance | Verified | Hash-controlled PDF storage, PyMuPDF extraction, page/bounding-box regions, exact citations, revision blast radius |
-| Evidence, readiness, gate approval | Verified | Pending-to-accepted evidence review, deterministic readiness v2.1, fresh-TOTP gate approval, immutable decision baseline |
-| Turnover | Verified | Approved-gate-only manifests, canonical hashes, signed artifact URLs, independent verification |
-| Deterministic scheduling | Verified | Reviewed tasks/resources, dependency checks, CP-SAT solve, immutable versions, event-driven re-solve, warm starts |
-| Systems, assets, findings, graph | Verified | Project-scoped CRUD, typed provenance edges, action lifecycle, graph explorer |
+| Evidence, readiness, gate approval | Verified | Pending-to-accepted evidence review, deterministic readiness v2.1, fresh-TOTP gate approval, immutable decision baseline, overdue findings surfaced in blocker views at any severity (visibility only — the readiness verdict itself is unaffected) |
+| Evidence entropy (advisory) | Verified | Deterministic, LLM-free weak-evidence score (over-reuse, stale/unsigned, missing calibration, circular edges, low-confidence extraction, overloaded approver) with per-signal drill-down and honest `unavailable` reporting; structurally isolated from `computeReadiness` |
+| Turnover | Verified | Approved-gate-only manifests, canonical hashes, signed artifact URLs, independent verification, CP-SAT solver version + Gemini explanation-model version in a deterministic `scheduleSnapshot` section |
+| Deterministic scheduling | Verified | Reviewed tasks/resources, dependency checks, CP-SAT solve, immutable versions, event-driven re-solve, warm starts, bounded solver timeout + backed-off retry degrading to an explicit `SOLVE_FAILED` state with the prior version left untouched and an audit trail |
+| Systems, assets, findings, graph | Verified | Project-scoped CRUD, typed provenance edges, action lifecycle, graph explorer, compliance-generated findings carry a deterministic project-scoped owner and severity-derived due date on both the proposal and human-acceptance paths |
 | Offline field capture | Built | IndexedDB queue, device encryption where available, idempotent sync, immutable object storage, PWA shell |
 | Governed Cx workflow | Verified | Standard ingestion, cited checklist generation/review, deterministic readings, human-routed narrative steps, editable draft, approved immutable report |
 | Shipments | Built | Asset-linked legs, estimate provenance, delayed/recovered events, graph-derived schedule mappings, map UI |
 | Compliance | Verified | Metadata-filtered semantic candidate discovery across submittals/POs/shop-drawings/drawings, LLM-owned verdict with the deterministic comparator retained as mock-supplier and recorded cross-check, code-enforced grounding validation, unchanged exact-citation precedent semantics, AI-suggestion labeling, source-hierarchy conflict panel, scan-triggered review queue |
-| Knowledge and RFI similarity | Verified | Metadata-filtered pgvector retrieval, cross-encoder reranking, deterministic graph-context expansion, a two-call plan-then-synthesize pipeline with a code-enforced groundedness filter (fabricated citations are dropped, never trusted from the model), citation-chip UI, explicit "no results in scope" state |
+| Teach-back (generalized) | Verified | Reusable, cited, attributed correction capture on edit/reject (never on plain accept) across all seven generic review routes, surfaced as read-only advisory context on similar future reviews, never auto-applied; the specialized `compliancePrecedents` exact-hash path is untouched |
+| Knowledge and RFI similarity | Verified | Mandatory-first, in-SQL metadata filters (project/doc-type plus system/asset/gate/revision/date) enforced before ranking, cross-encoder reranking, deterministic graph-context expansion, a two-call plan-then-synthesize pipeline with a code-enforced groundedness filter, citation-chip UI, explicit "no results in scope" state, explicit RFI `resolutionState` so only actually-resolved RFIs surface under the "previously resolved" heading |
 | Predictive risk | Verified | Swappable procurement/lead-time/workforce/weather clients, a lively hash-seeded synthetic formula that organically crosses materiality thresholds, LLM-generated mitigation proposals with a static fallback on any failure, durable polls, deterministic materiality, task/type deduplication, self-resolution, alerts, recurring BullMQ orchestration, project-scoped event validation, APIs, and schedule UI |
 | Command Center | Partial | Stable event alerts and recovery clearing; richer grouping, ownership, and cross-links remain |
 | Production hardening | Partial | Builds and focused integration tests pass; CI, accessibility, observability, load, and full Compose/MinIO tests remain |
@@ -31,21 +35,28 @@ The complete local matrix passed against a newly built production artifact. It a
 
 | Check | Result | Evidence covered |
 | --- | --- | --- |
-| Database and production artifact | Passed | All 13 migrations, TypeScript, and optimized Next.js production build |
+| Database and production artifact | Passed | All migrations, TypeScript, and optimized Next.js production build |
+| Config targets | Passed | Every named accuracy/latency/timeout constant resolves to its documented default, respects an env override, and rejects an out-of-range override |
 | Foundation contracts | Passed | Redis rate limit, durable-job idempotency, encrypted TOTP, event validation, model boundary, signed object reads |
 | Credentials and MFA | Passed | Registration, HttpOnly session, scoped profile, TOTP enrollment, MFA challenge, MFA login |
 | Evidence to turnover | Passed | Pending evidence, accepted-only proof, deterministic readiness, fresh-TOTP decision, immutable pack, independent manifest verification |
+| Turnover schedule/solver provenance | Passed | `scheduleSnapshot` carries solver version + explanation-model version, sort-deterministic assignments, manifest hash stable across two generations, clean omission when no schedule version exists |
+| Evidence entropy | Passed | Over-reuse and stale-record signals fire with correct contributions, an uncomputable signal reports `unavailable` (never 0), readiness verdict byte-identical with and without the score |
 | Deterministic schedule | Passed | Reviewed inputs, resource/dependency constraints, CP-SAT optimum, immutable versions, shipment-triggered warm-start re-solve |
+| Solver resilience | Passed | Timeout aborts rather than hangs, bounded backed-off retry, prior schedule version byte-identical after exhaustion, `SOLVE_FAILED` recorded with an audit event, resubmission requeues, a recovering stub still succeeds |
 | Governed Cx | Passed | Controlled standard extraction, cited checklist, readings, editable report, immutable approved evidence artifact |
 | Governed compliance | Passed | Unit normalization, semantic candidate discovery, LLM-owned verdict with recorded deterministic cross-check, non-authoritative proposed finding, human blocker promotion, exact-citation precedent, cross-project rejection |
+| Compliance finding owner/due-date | Passed | Both the proposal and human-acceptance paths derive a real, project-scoped owner (never fabricated/cross-project) and a severity-scaled due date |
+| Teach-back (generalized) | Passed | Reject/edit capture rationale with before/after values, plain accept captures nothing, cross-project notes never leak, surfaced notes never mutate the reviewed record's state, `compliancePrecedents` untouched |
 | Predictive risk | Passed | Four-source poll, lively synthetic signal formula, LLM-generated mitigations with static fallback, explicit unavailable state, materiality/deduplication, self-resolution, advisory alert, review, solver isolation |
-| Knowledge and RFI | Passed | Metadata-filtered retrieval, reranking, graph-context expansion, plan-then-synthesize pipeline, code-enforced groundedness filter, RFI similarity |
+| Knowledge and RFI | Passed | Metadata-filtered retrieval (project/doc-type/system/asset/gate/revision/date, mandatory-first in SQL before ranking), reranking, graph-context expansion, plan-then-synthesize pipeline, code-enforced groundedness filter, RFI similarity restricted to `resolutionState = resolved` |
+| Rate-limit coverage | Passed | Auth (login/register/TOTP), upload, schedule, export, and knowledge routes all return a real HTTP 429 past budget with a retry hint; the auth 429 is byte-identical for a real vs. nonexistent account |
+| Overdue findings | Passed | Low-severity overdue and high-severity in-date findings both surface in the gate blocker view with correct reasons; `computeReadiness`'s verdict and every input stay byte-identical before/after the overdue finding exists |
 | Model provider foundation | Passed | Mock/Gemini/NIM generation split, mock/service embedding split, JSON-repair retry |
 | Retrieval service | Passed (skips offline) | Embed/rerank contract verified against the live container when `EMBEDDING_PROVIDER=service`; skips cleanly in the default offline matrix |
 | Audit integrity | Passed | Canonical hash-chain verified with no forks and a single head |
-| Browser acceptance | Passed | 19 desktop routes and 11 critical 390×844 mobile routes; no missing page, console warning/error, or document-level horizontal overflow |
 
-Run the same matrix with `npm run verify:all`.
+Run the same matrix with `npm run verify:all`. Confirmed green on two consecutive full runs.
 
 ## What remains
 

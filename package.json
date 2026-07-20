@@ -49,6 +49,16 @@
     "verify:ingestion-formats-http": "tsx scripts/verify-ingestion-formats-http.ts",
     "verify:compliance-modality-http": "tsx scripts/verify-compliance-modality-http.ts",
     "verify:turnover-provenance-http": "tsx scripts/verify-turnover-provenance-http.ts",
+    "verify:config-targets": "tsx scripts/verify-config-targets.ts",
+    "verify:solver-resilience": "tsx scripts/verify-solver-resilience.ts",
+    "verify:rate-limit-coverage": "tsx scripts/verify-rate-limit-coverage.ts",
+    "verify:compliance-finding-fields": "tsx scripts/verify-compliance-finding-fields.ts",
+    "verify:overdue-findings": "tsx scripts/verify-overdue-findings.ts",
+    "verify:turnover-schedule-provenance": "tsx scripts/verify-turnover-schedule-provenance.ts",
+    "verify:evidence-entropy": "tsx scripts/verify-evidence-entropy.ts",
+    "verify:teachback-http": "tsx scripts/verify-teachback-http.ts",
+    "verify:rfi-resolution": "tsx scripts/verify-rfi-resolution.ts",
+    "verify:knowledge-filters": "tsx scripts/verify-knowledge-filters.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {

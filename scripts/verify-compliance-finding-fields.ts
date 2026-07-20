@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { complianceChecks, documentVersions, documents, edges, findings, gates, memberRole, projectMembers, projects, requirements, sourceRegions, systems } from "../src/lib/db/schema";
+import { complianceChecks, documentVersions, documents, edges, findings, gates, memberRole, projectMembers, projects, requirements, sourceRegions, systems, teachbackNotes } from "../src/lib/db/schema";
 import { developmentProjectId } from "../src/lib/demo";
 
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
@@ -121,6 +121,11 @@ async function main() {
 
     console.log("Compliance finding-fields verification passed: proposed and human-accepted findings both carry a deterministic, project-scoped owner and a severity-derived due date.");
   } finally {
+    // The "edit" action on the review route (Slice 8 teach-back capture) writes a
+    // teachback_notes row citing the check's targetSourceRegionId. That FKs to
+    // source_regions, so it must be cleaned up before regionIds are deleted below —
+    // scoped to exactly the region ids this script created, never a broader delete.
+    if (regionIds.length) await db.delete(teachbackNotes).where(inArray(teachbackNotes.sourceRegionId, regionIds));
     if (checkIds.length) await db.delete(complianceChecks).where(inArray(complianceChecks.id, checkIds));
     if (findingIds.length) await db.delete(findings).where(inArray(findings.id, findingIds));
     if (edgeIds.length) await db.delete(edges).where(inArray(edges.id, edgeIds));
