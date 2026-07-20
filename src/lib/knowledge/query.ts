@@ -1,9 +1,52 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
 import { rerankCitations } from "@/lib/knowledge/rerank";
+
+// ADR-021 scope dimensions: a requirement or evidence row anchored to the
+// chunk's source_region_id is the entry point into the provenance graph
+// (mirrors the anchor resolution in expand.ts). From that anchor, a chunk is
+// "in scope" for a system/asset/gate filter when either:
+//   - the anchor is evidence carrying that system_id/asset_id directly
+//     (evidence already has those columns; no edge needed), or
+//   - a one-hop AFFECTS/BELONGS_TO edge (either direction) connects the
+//     anchor to the target system/asset/gate node.
+// This runs as a correlated SQL subquery, not a JS graph walk, so it composes
+// into the mandatory pre-ranking WHERE clause alongside project/documentType
+// instead of being applied after vector ranking.
+function scopeFilterSql(projectId: string, targetType: "system" | "asset" | "gate", targetId: string) {
+  return sql`${knowledgeChunks.sourceRegionId} IN (
+    SELECT requirements.source_region_id FROM requirements
+    WHERE requirements.project_id = ${projectId} AND requirements.source_region_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM edges
+        WHERE edges.project_id = ${projectId}
+          AND edges.relationship_type IN ('AFFECTS', 'BELONGS_TO')
+          AND (
+            (edges.from_type = 'requirement' AND edges.from_id = requirements.id AND edges.to_type = ${targetType} AND edges.to_id = ${targetId})
+            OR (edges.to_type = 'requirement' AND edges.to_id = requirements.id AND edges.from_type = ${targetType} AND edges.from_id = ${targetId})
+          )
+      )
+    UNION
+    SELECT evidence.source_region_id FROM evidence
+    WHERE evidence.project_id = ${projectId} AND evidence.source_region_id IS NOT NULL
+      AND (
+        (${targetType} = 'system' AND evidence.system_id = ${targetId})
+        OR (${targetType} = 'asset' AND evidence.asset_id = ${targetId})
+        OR EXISTS (
+          SELECT 1 FROM edges
+          WHERE edges.project_id = ${projectId}
+            AND edges.relationship_type IN ('AFFECTS', 'BELONGS_TO')
+            AND (
+              (edges.from_type = 'evidence' AND edges.from_id = evidence.id AND edges.to_type = ${targetType} AND edges.to_id = ${targetId})
+              OR (edges.to_type = 'evidence' AND edges.to_id = evidence.id AND edges.from_type = ${targetType} AND edges.from_id = ${targetId})
+            )
+        )
+      )
+  )`;
+}
 
 export type SemanticCitation = {
   chunkId: string;
@@ -17,15 +60,21 @@ export type SemanticCitation = {
 };
 
 // Metadata-filter-first semantic retrieval: a mandatory SQL filter on project
-// (and optional documentType) runs before ranking, then pgvector cosine
-// similarity (1 - cosine distance) orders the surviving chunks and drops
-// anything below the configured threshold. The query text is embedded through
-// the active model provider so the same embedding space is used for indexing
-// and querying.
+// (and optional documentType/systemId/assetId/gateId/revision/date range)
+// runs before ranking, then pgvector cosine similarity (1 - cosine distance)
+// orders the surviving chunks and drops anything below the configured
+// threshold. The query text is embedded through the active model provider so
+// the same embedding space is used for indexing and querying.
 export async function retrieveSemanticCitations(options: {
   projectId: string;
   query: string;
   documentType?: string;
+  systemId?: string;
+  assetId?: string;
+  gateId?: string;
+  revision?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
   threshold?: number;
   limit?: number;
 }): Promise<SemanticCitation[]> {
@@ -47,6 +96,12 @@ export async function retrieveSemanticCitations(options: {
     eq(knowledgeChunks.embeddingModel, activeEmbeddingModelTag())
   ];
   if (options.documentType) filters.push(eq(knowledgeChunks.documentType, options.documentType));
+  if (options.revision) filters.push(eq(documentVersions.revision, options.revision));
+  if (options.dateFrom) filters.push(gte(documentVersions.createdAt, options.dateFrom));
+  if (options.dateTo) filters.push(lte(documentVersions.createdAt, options.dateTo));
+  if (options.systemId) filters.push(scopeFilterSql(options.projectId, "system", options.systemId));
+  if (options.assetId) filters.push(scopeFilterSql(options.projectId, "asset", options.assetId));
+  if (options.gateId) filters.push(scopeFilterSql(options.projectId, "gate", options.gateId));
 
   // Over-fetch more candidates when reranking is active (EMBEDDING_PROVIDER=
   // service) so the cross-encoder has a real pool to reorder; rerankCitations

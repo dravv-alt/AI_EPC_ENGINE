@@ -13,12 +13,21 @@ import { getGenerationProvider } from "@/lib/model/provider";
 
 const RETRIEVAL_LIMIT = 8;
 
-const PLAN_SYSTEM_PROMPT = `You are the planning stage of a controlled-document knowledge-query pipeline for an EPC commissioning project. Classify the intent of the user's query, optionally narrow retrieval to exactly one document type if the query is unambiguously about one kind of controlled document (or null to search everything), and decompose the query into up to 4 sub-queries that together cover everything being asked. Plausible document types for this domain include: procedure, standard, submittal, po, shop_drawing, drawing, rfi, spec, client_spec — but do not invent a type outside what a controlled EPC commissioning project would plausibly have, and never fabricate a type just to narrow scope. When in doubt, prefer null (search everything) and a single sub-query equal to the original. Output JSON only.`;
+const PLAN_SYSTEM_PROMPT = `You are the planning stage of a controlled-document knowledge-query pipeline for an EPC commissioning project. Classify the intent of the user's query, optionally narrow retrieval to exactly one document type if the query is unambiguously about one kind of controlled document (or null to search everything), and decompose the query into up to 4 sub-queries that together cover everything being asked. Plausible document types for this domain include: procedure, standard, submittal, po, shop_drawing, drawing, rfi, spec, client_spec — but do not invent a type outside what a controlled EPC commissioning project would plausibly have, and never fabricate a type just to narrow scope. You may also propose a systemId, assetId, gateId, or revision to narrow retrieval, but ONLY when the query names a specific one you were given as context — never fabricate an id or revision string; leave each null when unsure. When in doubt, prefer null (search everything) and a single sub-query equal to the original. Output JSON only.`;
 
 const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesis stage of a controlled-document knowledge-query pipeline. Answer the user's original query using ONLY the supplied citations — never introduce information, numbers, or clauses that are not present in the supplied citation text. Every claim you make must name which sourceRegionId(s) from the supplied set support it. Never cite a sourceRegionId that was not supplied to you; a fabricated or out-of-scope citation will be discarded by the calling system regardless of what you output, so only cite what you were given. If the supplied citations do not answer part of the query, omit that part rather than guessing. Output JSON only.`;
 
 const planSchema = z.object({
   documentType: z.string().nullable(),
+  // ADR-021 scope dimensions the plan may propose narrowing to. These are
+  // proposals only — see effectiveSystemId/effectiveAssetId/etc. below, which
+  // give the caller's explicit request-body filter absolute precedence over
+  // whatever the plan infers, mirroring the pre-existing documentType
+  // override rule.
+  systemId: z.string().uuid().nullable().default(null),
+  assetId: z.string().uuid().nullable().default(null),
+  gateId: z.string().uuid().nullable().default(null),
+  revision: z.string().nullable().default(null),
   subQueries: z.array(z.string().min(1)).min(1).max(4)
 });
 
@@ -70,6 +79,12 @@ export async function answerKnowledgeQuery(input: {
   projectId: string;
   query: string;
   documentType?: string;
+  systemId?: string;
+  assetId?: string;
+  gateId?: string;
+  revision?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
 }): Promise<AnswerKnowledgeQueryResult> {
   const generation = getGenerationProvider();
 
@@ -79,14 +94,21 @@ export async function answerKnowledgeQuery(input: {
     system: PLAN_SYSTEM_PROMPT,
     prompt: JSON.stringify({ query: input.query }),
     schema: planSchema,
-    mock: { documentType: null, subQueries: [input.query] }
+    mock: { documentType: null, systemId: null, assetId: null, gateId: null, revision: null, subQueries: [input.query] }
   });
 
-  // An explicit caller-supplied documentType (the pre-existing request-body
-  // filter) always overrides the plan's inferred routing — this preserves
-  // the existing HTTP contract's documentType filter, which the plan (null
-  // in mock mode) must not silently drop.
+  // An explicit caller-supplied filter (the pre-existing request-body
+  // documentType filter, plus the new systemId/assetId/gateId/revision
+  // dimensions) always overrides the plan's inferred narrowing — this
+  // preserves the existing HTTP contract, which the plan (all null in mock
+  // mode) must not silently override. Date range is caller-only: it is not
+  // threaded through the plan schema since an LLM-proposed date range is not
+  // a narrowing a caller can meaningfully be overridden on.
   const effectiveDocumentType = input.documentType ?? plan.data.documentType ?? undefined;
+  const effectiveSystemId = input.systemId ?? plan.data.systemId ?? undefined;
+  const effectiveAssetId = input.assetId ?? plan.data.assetId ?? undefined;
+  const effectiveGateId = input.gateId ?? plan.data.gateId ?? undefined;
+  const effectiveRevision = input.revision ?? plan.data.revision ?? undefined;
 
   // 2. Retrieval: run each sub-query, union, dedupe by chunkId (keep the
   // highest-similarity instance), rerank the deduped set against the
@@ -99,6 +121,12 @@ export async function answerKnowledgeQuery(input: {
         projectId: input.projectId,
         query: subQuery,
         documentType: effectiveDocumentType,
+        systemId: effectiveSystemId,
+        assetId: effectiveAssetId,
+        gateId: effectiveGateId,
+        revision: effectiveRevision,
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
         limit: RETRIEVAL_LIMIT
       })
     )

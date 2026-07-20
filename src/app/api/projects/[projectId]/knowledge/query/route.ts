@@ -5,13 +5,26 @@ import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { enforceAiRateLimit } from "@/lib/redis/rate-limit";
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
-  const { projectId } = await params; const { query, documentType } = await request.json().catch(() => ({}));
+  const { projectId } = await params;
+  const { query, documentType, systemId, assetId, gateId, revision, dateFrom, dateTo } = await request.json().catch(() => ({}));
   if (typeof query !== "string" || query.trim().length < 3) return NextResponse.json({ error: "A query of at least three characters is required." }, { status: 400 });
+  const parsedDateFrom = typeof dateFrom === "string" && !Number.isNaN(Date.parse(dateFrom)) ? new Date(dateFrom) : undefined;
+  const parsedDateTo = typeof dateTo === "string" && !Number.isNaN(Date.parse(dateTo)) ? new Date(dateTo) : undefined;
   try {
     const actor = await requireProjectPermission(projectId, "audit:view");
     const limited = await enforceAiRateLimit(`knowledge-query:${projectId}`);
     if (limited) return limited;
-    const result = await answerKnowledgeQuery({ projectId, query, documentType: typeof documentType === "string" ? documentType : undefined });
+    const result = await answerKnowledgeQuery({
+      projectId,
+      query,
+      documentType: typeof documentType === "string" ? documentType : undefined,
+      systemId: typeof systemId === "string" ? systemId : undefined,
+      assetId: typeof assetId === "string" ? assetId : undefined,
+      gateId: typeof gateId === "string" ? gateId : undefined,
+      revision: typeof revision === "string" ? revision : undefined,
+      dateFrom: parsedDateFrom,
+      dateTo: parsedDateTo
+    });
     await writeAuditEvent({
       projectId,
       actorId: actor.userId,
@@ -30,7 +43,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         advisory: true
       }
     });
-    return NextResponse.json({ answer: result.answer, claims: result.claims, noResults: result.noResults, scopedTo: { projectId, documentType: documentType ?? "all" } });
+    return NextResponse.json({
+      answer: result.answer,
+      claims: result.claims,
+      noResults: result.noResults,
+      scopedTo: {
+        projectId,
+        documentType: documentType ?? "all",
+        systemId: typeof systemId === "string" ? systemId : "all",
+        assetId: typeof assetId === "string" ? assetId : "all",
+        gateId: typeof gateId === "string" ? gateId : "all",
+        revision: typeof revision === "string" ? revision : "all",
+        dateFrom: parsedDateFrom?.toISOString() ?? "any",
+        dateTo: parsedDateTo?.toISOString() ?? "any"
+      }
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to query controlled knowledge" }, { status: error instanceof AccessError ? error.status : 500 });
   }
