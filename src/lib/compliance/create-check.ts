@@ -1,10 +1,52 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { assessCompliance } from "@/lib/compliance/assess";
 import { normalizedContentHash } from "@/lib/compliance/compare";
 import { db } from "@/lib/db/client";
-import { complianceChecks, compliancePrecedents, documents, documentVersions, edges, findings, requirements, sourceRegions } from "@/lib/db/schema";
+import { complianceChecks, compliancePrecedents, documents, documentVersions, edges, findings, gates, projectMembers, requirements, sourceRegions } from "@/lib/db/schema";
 import { retrieveSemanticCitations } from "@/lib/knowledge/query";
+
+// Not sourced from Slice 1's src/lib/config/targets.ts: that module hadn't
+// landed at the time this slice was written. Local, named, and overridable in
+// spirit (change the map, not scattered literals) — a future consolidation
+// into targets.ts is a mechanical move, not a behavior change.
+export const FINDING_DUE_DATE_DAYS_BY_SEVERITY: Record<string, number> = {
+  critical: 3,
+  high: 7,
+  medium: 14,
+  low: 30
+};
+const DEFAULT_FINDING_DUE_DATE_DAYS = 14;
+
+export function findingDueAt(severity: string, from: Date = new Date()): Date {
+  const days = FINDING_DUE_DATE_DAYS_BY_SEVERITY[severity] ?? DEFAULT_FINDING_DUE_DATE_DAYS;
+  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// Deterministic owner assignment for an AI-proposed (or human-accepted)
+// finding: the gate's approvalRole holder for this project, else the
+// requirement's own reviewer, else left unassigned. Both fallbacks are
+// verified project members before use — never a fabricated or cross-project
+// user id, per PRD US-24.
+export async function deriveFindingOwner(tx: DbTx, projectId: string, gateId: string | null, reviewedBy: string | null): Promise<string | null> {
+  if (gateId) {
+    const gate = await tx.query.gates.findFirst({ where: eq(gates.id, gateId) });
+    if (gate) {
+      const member = await tx.query.projectMembers.findFirst({
+        where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.role, gate.approvalRole)),
+        orderBy: [asc(projectMembers.createdAt), asc(projectMembers.id)]
+      });
+      if (member) return member.userId;
+    }
+  }
+  if (reviewedBy) {
+    const member = await tx.query.projectMembers.findFirst({ where: and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, reviewedBy)) });
+    if (member) return member.userId;
+  }
+  return null;
+}
 
 export async function citation(regionId: string) {
   const [row] = await db.select({
@@ -126,7 +168,10 @@ export async function createComplianceCheck(input: {
     }).returning();
     if (!["deterministic_flag", "possible_mismatch"].includes(result.verdict)) return { check, finding: null };
     const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, requirement.id), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
-    const [finding] = await tx.insert(findings).values({ projectId, gateId: gateEdge?.toId ?? null, title: `Proposed compliance ${result.verdict.replaceAll("_", " ")}`, description: `${result.reason}\n\nRequirement citation: ${requirement.sourceRegionId}\nTarget citation: ${targetCitation.regionId}`, severity: result.verdict === "deterministic_flag" ? "high" : "medium", status: "proposed" }).returning();
+    const proposedGateId = gateEdge?.toId ?? null;
+    const proposedSeverity = result.verdict === "deterministic_flag" ? "high" : "medium";
+    const ownerId = await deriveFindingOwner(tx, projectId, proposedGateId, requirement.reviewedBy ?? null);
+    const [finding] = await tx.insert(findings).values({ projectId, gateId: proposedGateId, title: `Proposed compliance ${result.verdict.replaceAll("_", " ")}`, description: `${result.reason}\n\nRequirement citation: ${requirement.sourceRegionId}\nTarget citation: ${targetCitation.regionId}`, severity: proposedSeverity, status: "proposed", ownerId, dueAt: findingDueAt(proposedSeverity) }).returning();
     const [updated] = await tx.update(complianceChecks).set({ proposedFindingId: finding.id, updatedAt: new Date() }).where(eq(complianceChecks.id, check.id)).returning();
     return { check: updated, finding };
   });

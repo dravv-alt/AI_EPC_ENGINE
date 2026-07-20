@@ -2,8 +2,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
+import { deriveFindingOwner, findingDueAt } from "@/lib/compliance/create-check";
 import { db } from "@/lib/db/client";
-import { complianceChecks, edges, findings } from "@/lib/db/schema";
+import { complianceChecks, edges, findings, requirements } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
 
@@ -33,12 +34,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ch
       let finding = existing.proposedFindingId ? await tx.query.findings.findFirst({ where: eq(findings.id, existing.proposedFindingId) }) : undefined;
       if (acceptedDeviation && !finding) {
         const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, existing.projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, existing.requirementId), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
-        [finding] = await tx.insert(findings).values({ projectId: existing.projectId, gateId: gateEdge?.toId ?? null, title: `Accepted compliance ${finalVerdict.replaceAll("_", " ")}`, description: `${existing.reason}\n\nEngineer disposition: ${parsed.data.note}`, severity: finalVerdict === "deterministic_flag" ? "high" : "medium", status: "open" }).returning();
+        const gateId = gateEdge?.toId ?? null;
+        const requirement = await tx.query.requirements.findFirst({ where: eq(requirements.id, existing.requirementId) });
+        const severity = finalVerdict === "deterministic_flag" ? "high" : "medium";
+        const ownerId = await deriveFindingOwner(tx, existing.projectId, gateId, requirement?.reviewedBy ?? null);
+        [finding] = await tx.insert(findings).values({ projectId: existing.projectId, gateId, title: `Accepted compliance ${finalVerdict.replaceAll("_", " ")}`, description: `${existing.reason}\n\nEngineer disposition: ${parsed.data.note}`, severity, status: "open", ownerId, dueAt: findingDueAt(severity) }).returning();
       } else if (finding) {
+        // A finding already proposed by createComplianceCheck carries its own
+        // ownerId/dueAt; only backfill here if an older row somehow lacks
+        // them, so acceptance never regresses completeness below the
+        // proposal's.
+        const backfillOwnerId = finding.ownerId ?? await deriveFindingOwner(tx, existing.projectId, finding.gateId, null);
+        const backfillDueAt = finding.dueAt ?? findingDueAt(finding.severity);
         [finding] = await tx.update(findings).set({
           status: acceptedDeviation ? "open" : "dismissed",
           title: acceptedDeviation ? `Accepted compliance ${finalVerdict.replaceAll("_", " ")}` : finding.title,
           description: `${finding.description ?? existing.reason}\n\nEngineer disposition: ${parsed.data.note}`,
+          ownerId: backfillOwnerId,
+          dueAt: backfillDueAt,
           version: sql`${findings.version} + 1`,
           updatedAt: new Date()
         }).where(eq(findings.id, finding.id)).returning();
