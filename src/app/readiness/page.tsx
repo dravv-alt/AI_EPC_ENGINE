@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
+import { EvidenceEntropyPanel } from "@/components/evidence-entropy-panel";
 import { GateDecisionForm } from "@/components/gate-decision-form";
 import { can } from "@/lib/auth/roles";
 import { getDashboardData } from "@/lib/dashboard-data";
@@ -21,7 +22,9 @@ export default async function ReadinessPage() {
   if (!data) throw new Error("Project not found");
   const contexts = (await Promise.all(gateRows.map((gate) => getGateReviewContext(projectId, gate.id)))).filter((item): item is NonNullable<typeof item> => Boolean(item));
   return <FeatureShell projectName={data.project} eyebrow="Deterministic rules" title="Readiness & decisions" description="Inspect every proof category, prerequisite and blocker behind a gate state. Schedule status is cross-linked but never changes readiness.">
-    <div className="workflow-stack">{contexts.map((context) => {
+    <div className="workflow-stack">
+      <EvidenceEntropyPanel projectId={projectId} />
+      {contexts.map((context) => {
       const readiness = context.readiness;
       const tone = readiness?.state === "in_review" ? "review" : readiness?.state ?? "unknown";
       return <article className="surface readiness-detail-card" key={context.gate.id}>
