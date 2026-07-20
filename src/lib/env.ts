@@ -47,7 +47,16 @@ const environmentSchema = z.object({
   AI_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(60),
   AI_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
-  CLERK_SECRET_KEY: z.string().optional()
+  CLERK_SECRET_KEY: z.string().optional(),
+  // Named accuracy/latency targets (TRD NFR table; PRD success metrics). These are
+  // targets/config for golden-set evaluation, not runtime enforcement.
+  COMPLIANCE_DEVIATION_ACCURACY_TARGET: z.coerce.number().min(0).max(1).default(0.95),
+  RISK_LEAD_TIME_TARGET_HOURS: z.coerce.number().min(0).max(720).default(48),
+  RFI_MATCH_ACCURACY_TARGET: z.coerce.number().min(0).max(1).default(0.85),
+  HIGH_SEVERITY_PRECISION_TARGET: z.coerce.number().min(0).max(1).default(0.9),
+  PACK_PREP_TIME_REDUCTION_TARGET: z.coerce.number().min(0).max(1).default(0.6),
+  SOLVER_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(90_000),
+  SOLVER_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3)
 });
 
 export const env = environmentSchema.parse({
@@ -97,7 +106,14 @@ export const env = environmentSchema.parse({
   AI_RATE_LIMIT: process.env.AI_RATE_LIMIT,
   AI_RATE_LIMIT_WINDOW_SECONDS: process.env.AI_RATE_LIMIT_WINDOW_SECONDS,
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-  CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY
+  CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+  COMPLIANCE_DEVIATION_ACCURACY_TARGET: process.env.COMPLIANCE_DEVIATION_ACCURACY_TARGET,
+  RISK_LEAD_TIME_TARGET_HOURS: process.env.RISK_LEAD_TIME_TARGET_HOURS,
+  RFI_MATCH_ACCURACY_TARGET: process.env.RFI_MATCH_ACCURACY_TARGET,
+  HIGH_SEVERITY_PRECISION_TARGET: process.env.HIGH_SEVERITY_PRECISION_TARGET,
+  PACK_PREP_TIME_REDUCTION_TARGET: process.env.PACK_PREP_TIME_REDUCTION_TARGET,
+  SOLVER_TIMEOUT_MS: process.env.SOLVER_TIMEOUT_MS,
+  SOLVER_MAX_ATTEMPTS: process.env.SOLVER_MAX_ATTEMPTS
 });
 
 export const clerkIsConfigured = env.AUTH_MODE === "clerk" && Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);
