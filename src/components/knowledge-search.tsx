@@ -122,13 +122,22 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
 }
 
 export function RfiSimilarity({ projectId }: { projectId: string }) {
-  const [text, setText] = useState(""); const [suggestions, setSuggestions] = useState<Claim[]>([]); const [message, setMessage] = useState("Enter RFI text to find previously resolved similar RFIs."); const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("");
+  const [suggestions, setSuggestions] = useState<Claim[]>([]);
+  // Slice 9: unresolved matches are surfaced separately and must never render
+  // under the "resolved" heading — resolutionState distinguishes an open RFI
+  // from a resolved one, which documentVersions.status never did.
+  const [unresolvedSuggestions, setUnresolvedSuggestions] = useState<Claim[]>([]);
+  const [message, setMessage] = useState("Enter RFI text to find previously resolved similar RFIs.");
+  const [loading, setLoading] = useState(false);
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setLoading(true);
     const response = await fetch(`/api/projects/${projectId}/knowledge/rfi-similar`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
     const result = await response.json(); setLoading(false);
     if (!response.ok) return setMessage(result.error ?? "Lookup failed.");
-    setSuggestions(result.suggestions); setMessage(result.noResults ? "No previously resolved RFI is similar enough." : `${result.suggestions.length} previously resolved RFI${result.suggestions.length === 1 ? "" : "s"} may be relevant.`);
+    setSuggestions(result.suggestions);
+    setUnresolvedSuggestions(result.unresolvedSuggestions ?? []);
+    setMessage(result.noResults ? "No previously resolved RFI is similar enough." : `${result.suggestions.length} previously resolved RFI${result.suggestions.length === 1 ? "" : "s"} may be relevant.`);
   }
   return (
     <section className="workflow-stack" style={{ marginTop: "1.5rem" }}>
@@ -146,6 +155,18 @@ export function RfiSimilarity({ projectId }: { projectId: string }) {
           <CitationChips claims={[suggestion]} />
         </article>
       ))}
+      {unresolvedSuggestions.length > 0 && (
+        <>
+          <h4 className="workflow-subtitle">Similar RFIs still open (not yet resolved)</h4>
+          {unresolvedSuggestions.map((suggestion) => (
+            <article className="surface workflow-card" key={suggestion.contentHash}>
+              <span className="mono clause">Open RFI, unresolved · {Math.round(suggestion.similarity * 100)}% match</span>
+              <p>{suggestion.content ?? suggestion.text}</p>
+              <CitationChips claims={[suggestion]} />
+            </article>
+          ))}
+        </>
+      )}
     </section>
   );
 }

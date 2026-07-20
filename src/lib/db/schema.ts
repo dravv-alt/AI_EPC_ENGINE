@@ -99,6 +99,12 @@ export const documents = pgTable("documents", {
   documentType: varchar("document_type", { length: 40 }).notNull(),
   standardSet: varchar("standard_set", { length: 120 }),
   title: varchar("title", { length: 300 }).notNull(),
+  // Slice 9: RFI resolution lifecycle — distinct from documentVersions.status
+  // (a document-version lifecycle: draft/approved/superseded). Only
+  // meaningful when documentType = "rfi"; nullable because it is irrelevant
+  // for every other document type. Values: open | resolved | withdrawn.
+  resolutionState: varchar("resolution_state", { length: 20 }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [index("documents_project_idx").on(table.projectId)]);
 
@@ -523,3 +529,42 @@ export const scheduleRisks = pgTable("schedule_risks", {
   clearedAt: timestamp("cleared_at", { withTimezone: true }),
   ...timestamps
 }, (table) => [uniqueIndex("schedule_risks_project_task_type_unique").on(table.projectId, table.taskId, table.riskType)]);
+
+// Slice 8: generalized teach-back — the general case of correcting any AI
+// proposal/disposition, following the same polymorphic subject pattern as
+// `edges` (subjectType/subjectId rather than a typed FK per subject table).
+// `compliancePrecedents` remains the specialized compliance case (exact-hash
+// matching semantics that compliance verdicts depend on) and is untouched;
+// this table never feeds compliance verdicts.
+export const teachbackNotes = pgTable("teachback_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  subjectType: varchar("subject_type", { length: 40 }).notNull(),
+  subjectId: uuid("subject_id").notNull(),
+  // What the AI proposed vs. what the human decided. Both are small JSON
+  // snapshots (not full-row payloads) so this stays cheap to write from every
+  // review route without duplicating the same shape the primary table stores.
+  correctedFrom: jsonb("corrected_from").notNull(),
+  correctedTo: jsonb("corrected_to"),
+  rationale: text("rationale").notNull(),
+  sourceRegionId: uuid("source_region_id").references(() => sourceRegions.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  // Mirrors the disposition that produced the note ("edited" | "rejected") —
+  // there is no separate approval workflow for teach-back notes themselves;
+  // they are already the record of a human's own decision and are only ever
+  // surfaced as advisory context, never auto-applied.
+  reviewState: reviewState("review_state").notNull(),
+  // Embedding of `correctedFrom` (what a *future* AI proposal would look
+  // like) so a later similar proposal can be matched against this note by
+  // semantic similarity, scoped to project + subjectType, mirroring the
+  // mandatory-filter-first pattern `retrieveSemanticCitations` uses over
+  // `knowledgeChunks` — implemented as a sibling query here rather than
+  // literal reuse, since that function is hard-wired to the ingestion-owned
+  // knowledgeChunks table.
+  embedding: vector("embedding", { dimensions: 768 }),
+  embeddingModel: varchar("embedding_model", { length: 80 }),
+  ...timestamps
+}, (table) => [
+  index("teachback_notes_project_subject_idx").on(table.projectId, table.subjectType, table.subjectId),
+  index("teachback_notes_embedding_idx").using("ivfflat", table.embedding.op("vector_cosine_ops")),
+]);

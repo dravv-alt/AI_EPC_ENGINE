@@ -7,6 +7,25 @@ import { db } from "@/lib/db/client";
 import { complianceChecks, edges, findings, requirements } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
+import { captureTeachbackNote } from "@/lib/teachback/capture";
+import { surfaceTeachbackAdvisory } from "@/lib/teachback/surface";
+
+// Slice 8: advisory-only teach-back context for a similar past compliance
+// check correction (the general case — distinct from the specialized,
+// exact-hash-matched compliancePrecedents path this route already supports
+// via `precedentId`). Read-only — never mutates the check.
+export async function GET(request: Request, { params }: { params: Promise<{ checkId: string }> }) {
+  const { checkId } = await params;
+  const existing = await db.query.complianceChecks.findFirst({ where: eq(complianceChecks.id, checkId) });
+  if (!existing) return NextResponse.json({ error: "Compliance check not found." }, { status: 404 });
+  try {
+    await requireProjectPermission(existing.projectId, "requirement:review");
+    const advisory = await surfaceTeachbackAdvisory({ projectId: existing.projectId, subjectType: "compliance_check", queryText: existing.reason });
+    return NextResponse.json({ advisory });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load advisory context" }, { status: error instanceof AccessError ? error.status : 500 });
+  }
+}
 
 const schema = z.object({
   action: z.enum(["accept", "edit", "reject"]),
@@ -68,6 +87,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ch
         updatedAt: new Date()
       }).where(and(eq(complianceChecks.id, checkId), eq(complianceChecks.version, parsed.data.expectedVersion), eq(complianceChecks.reviewState, "proposed"))).returning();
       if (!check) throw new Error("CONFLICT");
+      if (parsed.data.action === "edit" || parsed.data.action === "reject") {
+        await captureTeachbackNote(tx, {
+          projectId: existing.projectId,
+          subjectType: "compliance_check",
+          subjectId: existing.id,
+          correctedFrom: { verdict: existing.verdict, reason: existing.reason },
+          correctedTo: parsed.data.action === "edit" ? { verdict: finalVerdict } : null,
+          rationale: parsed.data.note,
+          sourceRegionId: existing.targetSourceRegionId,
+          createdBy: actor.userId,
+          disposition: parsed.data.action === "edit" ? "edited" : "rejected",
+          embedText: existing.reason
+        });
+      }
       return { check, finding };
     });
     await writeAuditEvent({ projectId: existing.projectId, actorId: actor.userId, action: `compliance.check.${parsed.data.action === "reject" ? "rejected" : parsed.data.action === "edit" ? "edited" : "accepted"}`, entityType: "compliance_check", entityId: existing.id, before: existing, after: { check: outcome.check, finding: outcome.finding } });

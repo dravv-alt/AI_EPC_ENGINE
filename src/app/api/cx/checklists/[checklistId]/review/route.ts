@@ -5,6 +5,23 @@ import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { cxChecklistSteps, cxChecklists, cxClauseCitations } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { captureTeachbackNote } from "@/lib/teachback/capture";
+import { surfaceTeachbackAdvisory } from "@/lib/teachback/surface";
+
+// Slice 8: advisory-only teach-back context for a similar past checklist
+// correction. Read-only — never mutates the checklist.
+export async function GET(request: Request, { params }: { params: Promise<{ checklistId: string }> }) {
+  const { checklistId } = await params;
+  const checklist = await db.query.cxChecklists.findFirst({ where: eq(cxChecklists.id, checklistId) });
+  if (!checklist) return NextResponse.json({ error: "Checklist not found." }, { status: 404 });
+  try {
+    await requireProjectPermission(checklist.projectId, "requirement:review");
+    const advisory = await surfaceTeachbackAdvisory({ projectId: checklist.projectId, subjectType: "cx_checklist", queryText: checklist.title });
+    return NextResponse.json({ advisory });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load advisory context" }, { status: error instanceof AccessError ? error.status : 500 });
+  }
+}
 
 const stepEdit = z.object({ id: z.string().uuid(), instruction: z.string().trim().min(8).max(4000).optional(), required: z.boolean().optional(), nominalValue: z.number().finite().nullable().optional(), tolerance: z.number().nonnegative().nullable().optional(), expectedBoolean: z.boolean().nullable().optional(), narrativeCriterion: z.string().trim().min(3).max(4000).nullable().optional() });
 const schema = z.object({ action: z.enum(["accept", "edit", "reject"]), note: z.string().trim().min(5).max(3000), steps: z.array(stepEdit).max(100).default([]) });
@@ -35,6 +52,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ che
       const nextStepState = parsed.data.action === "accept" ? "accepted" : parsed.data.action === "reject" ? "rejected" : null;
       if (nextStepState) await tx.update(cxChecklistSteps).set({ reviewState: nextStepState, reviewNote: parsed.data.note, updatedAt: new Date() }).where(inArray(cxChecklistSteps.id, steps.map((step) => step.id)));
       const [row] = await tx.update(cxChecklists).set({ status: nextStatus, reviewedBy: actor.userId, reviewedAt: new Date(), reviewNote: parsed.data.note, updatedAt: new Date() }).where(eq(cxChecklists.id, checklist.id)).returning();
+      if (parsed.data.action === "edit" || parsed.data.action === "reject") {
+        await captureTeachbackNote(tx, {
+          projectId: checklist.projectId,
+          subjectType: "cx_checklist",
+          subjectId: checklist.id,
+          correctedFrom: { title: checklist.title, steps: steps.map((step) => ({ id: step.id, instruction: step.instruction, required: step.required, nominalValue: step.nominalValue, tolerance: step.tolerance, expectedBoolean: step.expectedBoolean, narrativeCriterion: step.narrativeCriterion })) },
+          correctedTo: parsed.data.action === "edit" ? { title: row!.title, editedSteps: parsed.data.steps } : null,
+          rationale: parsed.data.note,
+          sourceRegionId: null,
+          createdBy: actor.userId,
+          disposition: parsed.data.action === "edit" ? "edited" : "rejected",
+          embedText: checklist.title
+        });
+      }
       return row;
     });
     await writeAuditEvent({ projectId: checklist.projectId, actorId: actor.userId, action: `cx.checklist.${parsed.data.action}`, entityType: "cx_checklist", entityId: checklist.id, before: { status: checklist.status }, after: { status: updated.status, note: parsed.data.note, editedStepIds: parsed.data.steps.map((step) => step.id) } });

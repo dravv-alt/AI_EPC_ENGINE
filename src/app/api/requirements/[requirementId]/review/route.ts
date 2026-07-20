@@ -6,6 +6,24 @@ import { db } from "@/lib/db/client";
 import { edges, requirements } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
+import { captureTeachbackNote } from "@/lib/teachback/capture";
+import { surfaceTeachbackAdvisory } from "@/lib/teachback/surface";
+
+// Slice 8: advisory-only teach-back context for a similar past requirement
+// correction. Never mutates the requirement — read-only lookup a review UI
+// can call before rendering the review form.
+export async function GET(request: Request, { params }: { params: Promise<{ requirementId: string }> }) {
+  const { requirementId } = await params;
+  const requirement = await db.query.requirements.findFirst({ where: eq(requirements.id, requirementId) });
+  if (!requirement) return NextResponse.json({ error: "Requirement not found" }, { status: 404 });
+  try {
+    await requireProjectPermission(requirement.projectId, "requirement:review");
+    const advisory = await surfaceTeachbackAdvisory({ projectId: requirement.projectId, subjectType: "requirement", queryText: requirement.statement });
+    return NextResponse.json({ advisory });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load advisory context" }, { status: error instanceof AccessError ? error.status : 500 });
+  }
+}
 
 const supportedUnits = new Set(["A", "V", "kV", "W", "kW", "MW", "Hz", "bar", "kPa", "Pa", "psi", "°C", "C", "%", "l/s", "L/s", "m3/h", "m³/h", "rpm", "mm", "cm", "m", "ms", "s", "min", "h", "day", "days"]);
 const reviewSchema = z.object({
@@ -51,6 +69,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
         updatedAt: new Date()
       }).where(eq(requirements.id, requirementId)).returning();
       if (duplicateTarget) await tx.insert(edges).values({ projectId: requirement.projectId, fromType: "requirement", fromId: requirement.id, relationshipType: "DUPLICATE_OF", toType: "requirement", toId: duplicateTarget.id });
+      if ((parsed.data.action === "edit" || parsed.data.action === "reject") && parsed.data.note) {
+        await captureTeachbackNote(tx, {
+          projectId: requirement.projectId,
+          subjectType: "requirement",
+          subjectId: requirement.id,
+          correctedFrom: { statement: requirement.statement, numericValue: requirement.numericValue, unit: requirement.unit, tolerance: requirement.tolerance },
+          correctedTo: parsed.data.action === "edit" ? { statement: updated!.statement, numericValue: updated!.numericValue, unit: updated!.unit, tolerance: updated!.tolerance } : null,
+          rationale: parsed.data.note,
+          sourceRegionId: requirement.sourceRegionId,
+          createdBy: actor.userId,
+          disposition: parsed.data.action === "edit" ? "edited" : "rejected",
+          embedText: requirement.statement
+        });
+      }
       return updated;
     });
     const readiness = await persistProjectGateReadiness(requirement.projectId);

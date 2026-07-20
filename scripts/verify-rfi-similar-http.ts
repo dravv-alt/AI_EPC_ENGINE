@@ -11,6 +11,15 @@ import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/prov
 // rfi-similar endpoint must return the resolved RFI (high similarity) and must
 // NEVER return the procedure chunk, proving the rfi scope is enforced before
 // ranking. Expected values come from the seeded literals.
+//
+// Slice 9 update (intentional fixture change, not a weakened assertion): the
+// endpoint now filters on the owning document's `resolutionState`, so the RFI
+// chunk must be anchored to a real documentType="rfi" document that is
+// explicitly marked resolutionState="resolved" — previously it reused
+// whatever source region happened to belong to the project's first
+// (non-rfi) seeded document and relied on the endpoint's old unconditional
+// "every rfi-tagged chunk is resolved" behavior. This script now creates and
+// tears down its own document/documentVersion/sourceRegion for that purpose.
 async function request(base: string, path: string, init?: RequestInit) {
   const response = await fetch(`${base}${path}`, init);
   const body = await response.json();
@@ -30,12 +39,27 @@ async function main() {
   const rfiText = `RFI ${tag}: Clarify chilled-water pump flow tolerance acceptance criteria for L4 integrated test.`;
   const procedureText = `Procedure ${tag}: Chilled-water pump flow tolerance acceptance criteria for L4 integrated test.`;
   const chunkIds: string[] = [];
+  let rfiDocumentId: string | undefined;
+  let rfiDocumentVersionId: string | undefined;
+  let rfiSourceRegionId: string | undefined;
   try {
     const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
     assert.ok(project, "A seeded project is required.");
     const provider = getModelProvider();
+
+    // Slice 9: a real documentType="rfi" document, explicitly marked
+    // resolutionState="resolved" — the endpoint now filters on this, so an
+    // rfi-tagged chunk anchored to a document without that state would never
+    // surface under "suggestions".
+    const [rfiDocument] = await db.insert(documents).values({ projectId: project.id, documentType: "rfi", title: `RFI ${tag}`, resolutionState: "resolved", resolvedAt: new Date() }).returning({ id: documents.id });
+    rfiDocumentId = rfiDocument.id;
+    const [rfiDocumentVersion] = await db.insert(documentVersions).values({ documentId: rfiDocument.id, revision: "1", sha256: `hash-rfi-doc-${tag}`, objectKey: `rfi/${tag}`, mediaType: "text/plain" }).returning({ id: documentVersions.id });
+    rfiDocumentVersionId = rfiDocumentVersion.id;
+    const [rfiSourceRegion] = await db.insert(sourceRegions).values({ documentVersionId: rfiDocumentVersion.id, pageNumber: "1", extractedText: rfiText, contentHash: `hash-rfi-region-${tag}` }).returning({ id: sourceRegions.id });
+    rfiSourceRegionId = rfiSourceRegion.id;
+
     const seeded = await db.insert(knowledgeChunks).values([
-      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "rfi", content: rfiText, contentHash: `hash-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
+      { tenantId: project.tenantId, projectId: project.id, sourceRegionId: rfiSourceRegion.id, documentType: "rfi", content: rfiText, contentHash: `hash-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
       { tenantId: project.tenantId, projectId: project.id, sourceRegionId: await firstSourceRegion(project.id), documentType: "procedure", content: procedureText, contentHash: `hash-proc-${tag}`, embedding: await provider.embed(procedureText), embeddingModel: activeEmbeddingModelTag() }
     ]).returning({ id: knowledgeChunks.id });
     chunkIds.push(...seeded.map((row) => row.id));
@@ -54,6 +78,9 @@ async function main() {
     console.log(`Slice 8 RFI similarity verified: resolved RFI suggested at similarity ${top.similarity.toFixed(4)}, rfi scope enforced.`);
   } finally {
     if (chunkIds.length) await db.delete(knowledgeChunks).where(inArray(knowledgeChunks.id, chunkIds));
+    if (rfiSourceRegionId) await db.delete(sourceRegions).where(eq(sourceRegions.id, rfiSourceRegionId));
+    if (rfiDocumentVersionId) await db.delete(documentVersions).where(eq(documentVersions.id, rfiDocumentVersionId));
+    if (rfiDocumentId) await db.delete(documents).where(eq(documents.id, rfiDocumentId));
   }
 }
 
