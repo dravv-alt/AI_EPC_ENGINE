@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
@@ -18,6 +18,20 @@ const maxSourceBytes = 20 * 1024 * 1024;
 
 const XLSX_CONTENT_TYPES = new Set(["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]);
 const CSV_CONTENT_TYPES = new Set(["text/csv", "application/csv", "application/vnd.ms-excel.sheet.csv"]);
+
+export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await params;
+  try {
+    await requireProjectPermission(projectId, "audit:view");
+    const rows = await db.select({ id: documents.id, title: documents.title, documentType: documents.documentType, standardSet: documents.standardSet, revision: documentVersions.revision, extractionStatus: documentVersions.extractionStatus, updatedAt: documentVersions.updatedAt })
+      .from(documents).innerJoin(documentVersions, eq(documentVersions.documentId, documents.id))
+      .where(eq(documents.projectId, projectId)).orderBy(desc(documentVersions.updatedAt));
+    const items = [...new Map(rows.map((row) => [row.id, row])).values()];
+    return NextResponse.json({ items });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load sources." }, { status: error instanceof AccessError ? error.status : 500 });
+  }
+}
 
 function detectMediaType(file: File): "application/pdf" | "text/csv" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" | null {
   const name = file.name?.toLowerCase() ?? "";

@@ -31,6 +31,19 @@ async function indexKnowledgeChunks(projectId: string, documentType: string, reg
   await enqueueDurableJob({ queue: "core", name: "knowledge.embed", tenantId: project.tenantId, projectId, idempotencyKey: `knowledge-embed:${projectId}`, payload: { projectId } });
 }
 
+// Extraction and semantic indexing are one ingestion contract. Keep this
+// callable independently from proposal generation so a model failure (or an
+// older queued extraction job) cannot leave a source marked "completed" but
+// absent from RAG.
+export async function indexDocumentKnowledgeChunks(documentVersionId: string) {
+  const context = await db.select({ document: documents }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documentVersions.id, documentVersionId)).limit(1);
+  if (!context[0]) throw new Error("Document version is missing.");
+  const regions = await db.select().from(sourceRegions).where(eq(sourceRegions.documentVersionId, documentVersionId));
+  if (!regions.length) return { indexed: 0 };
+  await indexKnowledgeChunks(context[0].document.projectId, context[0].document.documentType, regions);
+  return { indexed: regions.length };
+}
+
 export async function proposeDocumentRecords(documentVersionId: string, actorId: string) {
   const versionRows = await db.select({ version: documentVersions, document: documents }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documentVersions.id, documentVersionId)).limit(1);
   const context = versionRows[0]; if (!context) throw new Error("Document version is missing.");

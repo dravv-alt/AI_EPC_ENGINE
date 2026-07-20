@@ -3,11 +3,16 @@ import { writeAuditEvent } from "@/lib/audit/write-event";
 import { answerKnowledgeQuery } from "@/lib/knowledge/pipeline";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { enforceAiRateLimit } from "@/lib/redis/rate-limit";
+import { z } from "zod";
+
+const optionalUuid = z.string().uuid().optional();
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
-  const { query, documentType, systemId, assetId, gateId, revision, dateFrom, dateTo } = await request.json().catch(() => ({}));
+  const { query, documentType, documentId, systemId, assetId, gateId, revision, dateFrom, dateTo } = await request.json().catch(() => ({}));
   if (typeof query !== "string" || query.trim().length < 3) return NextResponse.json({ error: "A query of at least three characters is required." }, { status: 400 });
+  const parsedDocumentId = optionalUuid.safeParse(typeof documentId === "string" && documentId ? documentId : undefined);
+  if (!parsedDocumentId.success) return NextResponse.json({ error: "Document scope must be a valid identifier." }, { status: 400 });
   const parsedDateFrom = typeof dateFrom === "string" && !Number.isNaN(Date.parse(dateFrom)) ? new Date(dateFrom) : undefined;
   const parsedDateTo = typeof dateTo === "string" && !Number.isNaN(Date.parse(dateTo)) ? new Date(dateTo) : undefined;
   try {
@@ -18,6 +23,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       projectId,
       query,
       documentType: typeof documentType === "string" ? documentType : undefined,
+      documentId: parsedDocumentId.data,
       systemId: typeof systemId === "string" ? systemId : undefined,
       assetId: typeof assetId === "string" ? assetId : undefined,
       gateId: typeof gateId === "string" ? gateId : undefined,
@@ -41,6 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         droppedClaimCount: result.droppedClaimCount,
         noResults: result.noResults,
         advisory: true
+        ,documentScope: result.documentScope
       }
     });
     return NextResponse.json({
@@ -50,6 +57,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       scopedTo: {
         projectId,
         documentType: documentType ?? "all",
+        documentId: result.documentScope?.id ?? "all",
+        documentTitle: result.documentScope?.title ?? "all",
+        documentScopeSource: result.documentScope?.source ?? "none",
         systemId: typeof systemId === "string" ? systemId : "all",
         assetId: typeof assetId === "string" ? assetId : "all",
         gateId: typeof gateId === "string" ? gateId : "all",

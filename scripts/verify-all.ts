@@ -7,16 +7,19 @@ const devPort = 4273;
 const credentialsPort = 4185;
 const redisPrefix = `pramana-verify-${randomUUID()}`;
 const children: ChildProcess[] = [];
-const shared = { ...process.env, AUTH_ENCRYPTION_KEY: "isolated-verification-key-at-least-32-characters", INFRA_ALLOW_DEGRADED: "false", OBJECT_STORAGE_DRIVER: "local", MODEL_PROVIDER: "mock", EMBEDDING_PROVIDER: "mock" };
+// This matrix deliberately runs without the optional external services. The
+// production Compose configuration sets this false, so a deployment still
+// fails closed when any required dependency is unavailable.
+const shared = { ...process.env, AUTH_ENCRYPTION_KEY: "isolated-verification-key-at-least-32-characters", INFRA_ALLOW_DEGRADED: "true", OBJECT_STORAGE_DRIVER: "local", MODEL_PROVIDER: "mock", EMBEDDING_PROVIDER: "mock" };
 
 function run(label: string, command: string, args: string[], env: NodeJS.ProcessEnv = shared) {
   console.log(`\n=== ${label} ===`);
-  const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
+  const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit", shell: true });
   if (result.status !== 0) throw new Error(`${label} failed with exit code ${result.status ?? "unknown"}.`);
 }
 
 function start(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(command, args, { cwd: root, env, stdio: ["ignore", "pipe", "pipe"], shell: true });
   child.stdout?.on("data", (chunk) => process.stdout.write(`[runtime] ${chunk}`));
   child.stderr?.on("data", (chunk) => process.stderr.write(`[runtime] ${chunk}`));
   children.push(child);
@@ -46,22 +49,27 @@ async function main() {
   run("TypeScript", "npm", ["run", "typecheck"]);
   run("Config targets", "npm", ["run", "verify:config-targets"]);
   run("Model provider foundation", "npm", ["run", "verify:model-provider"]);
+  run("Deep-link targets and public-geocoder safety", "npm", ["run", "verify:deep-links"]);
   // Skips cleanly when EMBEDDING_PROVIDER !== "service" (the offline default),
   // so it never blocks the containerless matrix.
   run("Retrieval service (embed/rerank)", "npm", ["run", "verify:retrieval-service"]);
   run("Production build", "npm", ["run", "build"]);
   run("Seed prerequisites", "npm", ["run", "db:seed"]);
+  run("Relational and cross-feature data integrity", "npm", ["run", "verify:data-integrity"]);
 
   const developmentBase = `http://localhost:${devPort}`;
   const developmentEnv = { ...shared, AUTH_MODE: "development", APP_BASE_URL: developmentBase, REDIS_PREFIX: redisPrefix };
-  const worker = start("node_modules/.bin/tsx", ["scripts/worker.ts"], developmentEnv);
-  const development = start("node_modules/.bin/next", ["start", "-p", String(devPort)], developmentEnv);
+  // The verification environment is supplied explicitly above. Loading a local
+  // .env here is both unnecessary and makes this isolated test fail on clean
+  // checkout/CI workspaces where no developer secrets file exists.
+  const worker = start("npx", ["tsx", "scripts/worker.ts"], developmentEnv);
+  const development = start("npx", ["next", "start", "-p", String(devPort)], developmentEnv);
   await waitFor(`${developmentBase}/api/health`, development);
   if (worker.exitCode !== null) throw new Error("Verification worker failed to start.");
 
   const credentialsBase = `http://localhost:${credentialsPort}`;
   const credentialsEnv = { ...shared, AUTH_MODE: "credentials", APP_BASE_URL: credentialsBase, REDIS_PREFIX: `${redisPrefix}-credentials` };
-  const credentials = start("node_modules/.bin/next", ["start", "-p", String(credentialsPort)], credentialsEnv);
+  const credentials = start("npx", ["next", "start", "-p", String(credentialsPort)], credentialsEnv);
   await waitFor(`${credentialsBase}/api/health`, credentials);
 
   run("Phase 0 contracts", "npm", ["run", "verify:phase0"], developmentEnv);

@@ -67,6 +67,16 @@ class OpenMeteoSignalClient implements SignalClient {
   private readonly client = new OpenMeteoWeatherClient(env.OPEN_METEO_BASE_URL);
   async poll(): Promise<SignalObservation> {
     const forecast = await this.client.forecast({ lat: env.RISK_SITE_LAT, lng: env.RISK_SITE_LNG, mmsi: null });
+    if (!forecast.dataAvailable || forecast.weatherDelayFactor === null) {
+      return {
+        dataAvailable: false,
+        source: new URL(env.OPEN_METEO_BASE_URL).origin,
+        probability: null,
+        estimatedDelayHours: null,
+        value: { forecastSource: forecast.source, reason: forecast.reason },
+        unavailableReason: forecast.reason,
+      };
+    }
     const probability = Math.min(1, forecast.weatherDelayFactor);
     const estimatedDelayHours = Math.round(forecast.weatherDelayFactor * 24);
     return { dataAvailable: true, source: new URL(env.OPEN_METEO_BASE_URL).origin, probability, estimatedDelayHours, value: { weatherDelayFactor: forecast.weatherDelayFactor, forecastSource: forecast.source, reason: forecast.reason }, unavailableReason: null };

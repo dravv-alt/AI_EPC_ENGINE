@@ -1,33 +1,40 @@
 services:
+  # Deployment Compose is intentionally fail-closed. Copy .env.example to
+  # .env, replace every required value, and pin the image tags your release
+  # process has approved before running `docker compose up`.
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to an approved pgvector image tag or digest}
     environment:
-      POSTGRES_DB: pramana
-      POSTGRES_USER: pramana
-      POSTGRES_PASSWORD: pramana
-    ports: ["5432:5432"]
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pramana -d pramana"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
+
   redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
+    image: ${REDIS_IMAGE:?Set REDIS_IMAGE to an approved Redis image tag or digest}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE to an approved MinIO image tag or digest}
     command: server /data --console-address :9001
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports: ["9000:9000", "9001:9001"]
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER to a non-default value}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD to a non-default secret}
     volumes: ["minio_data:/data"]
+
   ingestion:
     build: ./services/ingestion
     environment:
       UPLOAD_ROOT: /data/uploads
-    ports: ["8001:8001"]
     volumes:
       - ./data/uploads:/data/uploads
     healthcheck:
@@ -35,57 +42,101 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
   solver:
     build: ./services/solver
-    ports: ["8002:8002"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 5s
       timeout: 5s
       retries: 20
+
   retrieval:
     build: ./services/retrieval
-    ports: ["8003:8003"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Ollama is an internal-only service. The model bootstrap job below pulls
+  # both the configured generation and embedding models before the API starts.
+  ollama:
+    image: ${OLLAMA_IMAGE:?Set OLLAMA_IMAGE to a tested Ollama image tag or digest}
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes: ["ollama_data:/root/.ollama"]
+    healthcheck:
+      test: ["CMD-SHELL", "OLLAMA_HOST=127.0.0.1:11434 ollama list >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ollama-models:
+    image: ${OLLAMA_IMAGE:?Set OLLAMA_IMAGE to a tested Ollama image tag or digest}
+    environment:
+      OLLAMA_HOST: ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL to an approved generation model}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:?Set OLLAMA_EMBEDDING_MODEL to an approved 768-dimensional embedding model}
+    depends_on:
+      ollama: { condition: service_healthy }
+    entrypoint: ["sh", "-ec"]
+    command: 'ollama pull "$${OLLAMA_MODEL}" && ollama pull "$${OLLAMA_EMBEDDING_MODEL}"'
+    restart: "no"
+
   core-api:
     build: .
     command: sh -c "npm run db:migrate && npm run start -- -p 4173"
     environment: &core_environment
-      DATABASE_URL: postgresql://pramana:pramana@postgres:5432/pramana
-      AUTH_MODE: ${AUTH_MODE:-development}
-      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:-local-compose-key-change-before-production-0001}
-      APP_BASE_URL: http://localhost:4173
+      NODE_ENV: production
+      REQUIRE_PRODUCTION_CONFIG: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB}
+      AUTH_MODE: ${AUTH_MODE:?Set AUTH_MODE to credentials or clerk}
+      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:?Set a random AUTH_ENCRYPTION_KEY of at least 32 characters}
+      APP_BASE_URL: ${APP_BASE_URL:?Set the public HTTPS APP_BASE_URL}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       REDIS_URL: redis://redis:6379
       INFRA_ALLOW_DEGRADED: "false"
       OBJECT_STORAGE_DRIVER: s3
       S3_ENDPOINT: http://minio:9000
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
-      S3_BUCKET: ${S3_BUCKET:-pramana-local}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET}
       INGESTION_SERVICE_URL: http://ingestion:8001
       SOLVER_SERVICE_URL: http://solver:8002
       RETRIEVAL_SERVICE_URL: http://retrieval:8003
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
-      MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:?Set MODEL_PROVIDER to ollama, gemini, or nim}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:?Set EMBEDDING_PROVIDER to ollama, gemini, or service}
+      MODEL_TIMEOUT_MS: ${MODEL_TIMEOUT_MS:-45000}
+      MODEL_PROMPT_MAX_CHARS: ${MODEL_PROMPT_MAX_CHARS:-60000}
+      MODEL_OUTPUT_MAX_TOKENS: ${MODEL_OUTPUT_MAX_TOKENS:-512}
+      MODEL_CONTEXT_TOKENS: ${MODEL_CONTEXT_TOKENS:-8192}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:?Set OLLAMA_EMBEDDING_MODEL}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-text-embedding-004}
+      NIM_BASE_URL: ${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
+      NIM_API_KEY: ${NIM_API_KEY:-}
+      NIM_MODEL: ${NIM_MODEL:-meta/llama-3.3-70b-instruct}
     ports: ["4173:4173"]
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_started }
+      redis: { condition: service_healthy }
       minio: { condition: service_started }
       ingestion: { condition: service_healthy }
       solver: { condition: service_healthy }
       retrieval: { condition: service_healthy }
+      ollama-models: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4173/api/health"]
       interval: 10s
       timeout: 5s
       retries: 12
+
   worker:
     build: .
     command: npm run worker
@@ -93,6 +144,8 @@ services:
     depends_on:
       core-api: { condition: service_healthy }
       retrieval: { condition: service_healthy }
+
 volumes:
   postgres_data:
   minio_data:
+  ollama_data:

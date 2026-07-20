@@ -8,8 +8,9 @@ import { getActiveProjectId } from "@/lib/projects/current";
 
 export const dynamic = "force-dynamic";
 
-export default async function ActionsPage() {
+export default async function ActionsPage({ searchParams }: { searchParams: Promise<{ finding?: string }> }) {
   const projectId = await getActiveProjectId();
+  const { finding } = await searchParams;
   const [data, findingRows, gateRows, memberRows] = await Promise.all([
     getDashboardData(projectId),
     db.select({
@@ -32,6 +33,6 @@ export default async function ActionsPage() {
   ]);
   if (!data) throw new Error("Project not found");
   return <FeatureShell projectName={data.project} eyebrow="Owned work" title="Actions & findings" description="Create accountable blockers, assign due dates, resolve them with evidence-backed notes, and immediately recompute deterministic readiness.">
-    <ActionsWorkbench projectId={projectId} findings={findingRows} gates={gateRows} members={memberRows} />
+    <ActionsWorkbench projectId={projectId} findings={findingRows} gates={gateRows} members={memberRows} initialFindingId={finding} />
   </FeatureShell>;
 }

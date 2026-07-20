@@ -128,7 +128,8 @@ flowchart LR
     Solver --> Postgres
     Domain --> Model
     Worker --> Model
-    Model --> Mock
+    Model --> Ollama
+    Model -. "verification only" .-> Mock
     Model -. "MODEL_PROVIDER=gemini" .-> Gemini
     Model -. "MODEL_PROVIDER=nim" .-> Nim
     Model -. "EMBEDDING_PROVIDER=service" .-> Retrieval
@@ -286,14 +287,14 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue
 - **Document extraction:** lightweight PyMuPDF service accepting PDF, CSV, and XLSX, with page/bounding-box (or sheet/row/cell) and content-hash provenance
 - **Scheduling:** isolated FastAPI OR-Tools CP-SAT service; infeasibility is returned, never hidden
-- **AI:** a split, schema-validated provider boundary — `MODEL_PROVIDER` (`mock`/`gemini`/`nim`) for structured generation, `EMBEDDING_PROVIDER` (`mock`/`service`) for embeddings — with a JSON-repair retry shared by every real (non-mock) provider so one malformed response doesn't fail a job outright. The deterministic mock is the default and keeps the offline verification matrix green regardless of which hosted model is configured; every AI-authored suggestion is labeled with its source and model version in the audit trail and lands `reviewState: "proposed"`, never auto-accepted
+- **AI:** a schema-validated provider boundary for structured generation and embeddings. The application default is local Ollama (`MODEL_PROVIDER=ollama`, `OLLAMA_MODEL=gemma4:e2b`; `EMBEDDING_PROVIDER=ollama`, `OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest`). Every real provider is bounded by prompt, response-token, context, and request-time limits. `mock` exists only for deterministic test runs and must never be selected by a deployment. Every AI-authored suggestion is labeled with provider/model provenance, lands in `reviewState: "proposed"`, and never auto-accepts authoritative changes.
 - **Retrieval:** a third stateless FastAPI service (`services/retrieval`, port 8003) alongside ingestion and the solver, serving `BAAI/bge-base-en-v1.5` embeddings (768-dim, matching the existing `vector(768)` column with no migration) and `BAAI/bge-reranker-base` cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks. Every stored vector is tagged with the model that produced it, so a provider switch degrades to fewer results rather than silently corrupting cosine rankings across incompatible vector spaces
 - **Authentication:** owned credentials/TOTP or Clerk adapter; all authorization remains in project memberships and server-side permissions
 - **Design system:** IBM Plex Serif headings, Hanken Grotesk body, JetBrains Mono labels; primary `#2D463E`, secondary `#B5651D`, tertiary `#583935`, neutral `#FDFBF7`
 
 ## Local operation
 
-### Complete Docker topology
+### Local Docker topology
 
 Docker Desktop must be running before using Compose. If `docker.sock` is missing, start Docker Desktop and wait until `docker info` succeeds.
 
@@ -304,7 +305,17 @@ docker info
 docker compose up --build
 ```
 
-The web application is configured for [http://localhost:4173](http://localhost:4173), not port 3000. Compose starts PostgreSQL/pgvector, Redis, MinIO, ingestion, solver, retrieval, core API, and worker. The retrieval container is only load-bearing when `EMBEDDING_PROVIDER=service`; it is probed for visibility but never forces the platform into a degraded state under the default `EMBEDDING_PROVIDER=mock`.
+The web application is configured for [http://localhost:4173](http://localhost:4173), not port 3000. Compose starts PostgreSQL/pgvector, Redis, MinIO, ingestion, solver, retrieval, core API, and worker. It is a local topology, not an implicitly safe production profile.
+
+For local Ollama, install the model on the machine or deploy an Ollama service reachable by the application; Docker containers cannot reach host-local `127.0.0.1:11434` by default.
+
+```bash
+ollama pull gemma4:e2b
+ollama pull nomic-embed-text:latest
+MODEL_PROVIDER=ollama EMBEDDING_PROVIDER=ollama npm run verify:ollama
+```
+
+`verify:ollama` is a real-provider smoke test: it requires an Ollama server, verifies structured output plus 768-dimensional embeddings, and enforces the configured deadline. It is distinct from the deterministic offline verification matrix.
 
 ### Existing local-service fallback
 
@@ -326,18 +337,34 @@ npm run build
 npm run verify:all
 ```
 
-`verify:all` is the authoritative local matrix — migrations, type-check, production build, seeded prerequisites, isolated development and credentials runtimes, and every `verify:*` script (auth, evidence/turnover, schedule, Cx, compliance, predictive-risk, knowledge, model-provider, audit). It runs entirely under the deterministic mock, so it's offline with no containers or API keys required. `verify:retrieval-service` skips cleanly under the default `EMBEDDING_PROVIDER=mock` and only exercises the real container when `EMBEDDING_PROVIDER=service` is set. Individual `npm run verify:<name>` scripts (see `package.json`) can be run standalone against a running dev server for faster iteration on one area. See [STATUS.md](STATUS.md) for what the last full run actually covered.
+`verify:all` is the broad local matrix — migrations, type-check, production build, seeded prerequisites, isolated development and credentials runtimes, and every `verify:*` script (auth, evidence/turnover, schedule, Cx, compliance, predictive-risk, knowledge, model-provider, audit). It deliberately overrides providers to deterministic mock values so it can validate application contracts without a hosted model. This is not evidence that a real model, live AIS/weather, or production secrets work; run `verify:ollama` and the deployment checks below separately. Individual `npm run verify:<name>` scripts (see `package.json`) can run against a development server for faster iteration. See [STATUS.md](STATUS.md) for what the last full run actually covered.
+
+The 21 July 2026 merge-readiness run also exercised the application in a real browser across every sidebar destination. The supplied TIA-942 PDF produced 26 controlled regions and 26 `nomic-embed-text` vectors; a live `gemma4:e2b` query returned only TIA-labelled citation links. Knowledge now supports an explicit Document filter and deterministic exact-title/standard-name routing, enforced in SQL before vector ranking. A migration backfills previously processed documents that had extraction regions but were missing semantic chunks. The complete post-fix `verify:all` run finished green; production dependency audit reports zero runtime advisories. See [STATUS.md](STATUS.md#what-changed-in-the-merge-readiness-pass-21-july-2026) for the complete change and residual-risk ledger.
+
+## Deployment release gate
+
+Do not deploy with Compose or `.env.example` defaults. Before a production rollout, create a secret-managed environment file and verify every item below:
+
+1. `AUTH_MODE` is `credentials` or `clerk` (never `development`), and `AUTH_ENCRYPTION_KEY`, Clerk keys where applicable, session-cookie configuration, and `APP_BASE_URL` are production values.
+2. `MODEL_PROVIDER` and `EMBEDDING_PROVIDER` are real providers—not `mock`—and their selected endpoints/models are reachable from both the web and worker containers. For Ollama, configure a network-reachable `OLLAMA_BASE_URL`; do not use host loopback from a container.
+3. PostgreSQL has the `vector` extension available before `npm run db:migrate`. Migration success must be checked against the actual deployment database, not merely generated SQL.
+4. Redis, object storage, ingestion, solver, retrieval (if selected), and model-provider health checks are green. Set `INFRA_ALLOW_DEGRADED=false`.
+5. Live risk/AIS/weather integrations are configured and a controlled end-to-end poll records real provenance. Synthetic data must be disabled or visibly labelled outside demo/test environments.
+6. Run `npm run typecheck`, `npm run build`, `npm run verify:deep-links`, the applicable integration matrix, and `npm run verify:ollama` (or an equivalent real Gemini/NIM smoke test) using the release configuration.
+
+Public OpenStreetMap lookup in the shipment form is opt-in. Operators should use the local location catalog for sensitive sites; enabling the checkbox sends the entered query to the public Nominatim service, with a 2.5-second cancellation deadline.
 
 ## Configuration requiring manual credentials
 
-The default local stack uses development authentication, local object storage, and the deterministic mock model. Production-like integrations require values in `.env.local`:
+The example file is for local development. Production-like integrations require secret-managed values outside the repository:
 
 - Clerk publishable/secret keys only if `AUTH_MODE=clerk` is selected
 - a strong `AUTH_ENCRYPTION_KEY` when owned credentials/TOTP are used
+- an Ollama endpoint plus `gemma4:e2b` and `nomic-embed-text:latest` when `MODEL_PROVIDER=ollama` and `EMBEDDING_PROVIDER=ollama` are selected; use a network address reachable from containers
 - Gemini API key only if `MODEL_PROVIDER=gemini` is selected; an NVIDIA `NIM_API_KEY` only if `MODEL_PROVIDER=nim` is selected (hosted by default at `NIM_BASE_URL`, or point it at a self-hosted NIM endpoint)
-- no credential is required for `EMBEDDING_PROVIDER=service` — the retrieval container serves open-weights models locally; only Docker is required
+- no credential is required for `EMBEDDING_PROVIDER=service`, but the retrieval container must be healthy and its model assets available
 - S3/MinIO endpoint, bucket, region, access key, and secret when `OBJECT_STORAGE_DRIVER=s3`
 - procurement, equipment-lead-time, workforce, and weather endpoint URLs when `RISK_POLL_MODE=http`
-- AIS and shipment congestion/weather credentials when real shipment providers replace synthetic estimates
+- AIS and shipment congestion/weather credentials and a non-synthetic `RISK_POLL_MODE` when live shipment/risk data is required
 
 Never commit `.env.local` or credentials.

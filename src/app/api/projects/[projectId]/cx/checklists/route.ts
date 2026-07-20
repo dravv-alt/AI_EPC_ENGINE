@@ -30,6 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       db.select({ version: documentVersions, document: documents }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(and(eq(documents.projectId, projectId), inArray(documents.documentType, ["standard", "procedure"]), inArray(documentVersions.id, parsed.data.standardVersionIds), eq(documentVersions.extractionStatus, "completed")))
     ]);
     if (!system || !gate || !asset || !project) return NextResponse.json({ error: "Checklist scope must belong to this project." }, { status: 422 });
+    if (gate.systemId !== system.id || asset.systemId !== system.id) return NextResponse.json({ error: "The selected gate and asset must belong to the selected system." }, { status: 422 });
     if (standardRows.length !== new Set(parsed.data.standardVersionIds).size) return NextResponse.json({ error: "Every selected standard must be project-scoped and fully extracted." }, { status: 409 });
     const regions = await db.select({ id: sourceRegions.id }).from(sourceRegions).where(inArray(sourceRegions.documentVersionId, parsed.data.standardVersionIds));
     if (!regions.length) return NextResponse.json({ error: "Selected standards do not yet contain extracted citation regions." }, { status: 409 });

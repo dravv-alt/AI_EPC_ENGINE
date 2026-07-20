@@ -54,6 +54,8 @@ export type SemanticCitation = {
   text: string;
   sourceRegionId: string;
   documentVersionId: string | null;
+  documentId: string | null;
+  documentTitle: string | null;
   documentType: string;
   contentHash: string;
   similarity: number;
@@ -69,6 +71,7 @@ export async function retrieveSemanticCitations(options: {
   projectId: string;
   query: string;
   documentType?: string;
+  documentId?: string;
   systemId?: string;
   assetId?: string;
   gateId?: string;
@@ -96,6 +99,7 @@ export async function retrieveSemanticCitations(options: {
     eq(knowledgeChunks.embeddingModel, activeEmbeddingModelTag())
   ];
   if (options.documentType) filters.push(eq(knowledgeChunks.documentType, options.documentType));
+  if (options.documentId) filters.push(eq(documents.id, options.documentId));
   if (options.revision) filters.push(eq(documentVersions.revision, options.revision));
   if (options.dateFrom) filters.push(gte(documentVersions.createdAt, options.dateFrom));
   if (options.dateTo) filters.push(lte(documentVersions.createdAt, options.dateTo));
@@ -114,6 +118,8 @@ export async function retrieveSemanticCitations(options: {
       content: knowledgeChunks.content,
       sourceRegionId: knowledgeChunks.sourceRegionId,
       documentVersionId: sourceRegions.documentVersionId,
+      documentId: documents.id,
+      documentTitle: documents.title,
       documentType: knowledgeChunks.documentType,
       contentHash: knowledgeChunks.contentHash,
       similarity
@@ -134,6 +140,8 @@ export async function retrieveSemanticCitations(options: {
       text: row.content,
       sourceRegionId: row.sourceRegionId,
       documentVersionId: row.documentVersionId ?? null,
+      documentId: row.documentId ?? null,
+      documentTitle: row.documentTitle ?? null,
       documentType: row.documentType,
       contentHash: row.contentHash,
       similarity: Number(row.similarity)

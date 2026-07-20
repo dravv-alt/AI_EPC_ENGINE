@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db/client";
+import { documents } from "@/lib/db/schema";
 import { expandWithGraphContext, type GraphContextEntry } from "@/lib/knowledge/expand";
 import { retrieveSemanticCitations, type SemanticCitation } from "@/lib/knowledge/query";
 import { rerankCitations } from "@/lib/knowledge/rerank";
@@ -35,7 +38,7 @@ const synthesisSchema = z.object({
   claims: z.array(z.object({
     text: z.string().min(1),
     citations: z.array(z.string().uuid()).min(1)
-  }))
+  })).min(1)
 });
 
 export type SynthesisClaim = z.infer<typeof synthesisSchema>["claims"][number];
@@ -45,6 +48,8 @@ export type AnsweredClaim = {
   content: string;
   sourceRegionId: string;
   documentVersionId: string | null;
+  documentId: string | null;
+  documentTitle: string | null;
   documentType: string;
   contentHash: string;
   similarity: number;
@@ -60,7 +65,29 @@ export type AnswerKnowledgeQueryResult = {
   planProvider: string;
   synthesisModel: string;
   synthesisProvider: string;
+  documentScope: { id: string; title: string; source: "explicit" | "query-title" } | null;
 };
+
+function normalizedWords(value: string) {
+  return value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// A named controlled source must be resolved deterministically, never by an
+// LLM. Match complete normalized title/standard-set phrases, prefer the most
+// specific match, and decline to narrow on a tie. A short title such as
+// "TIA" is still safe because it must appear as a complete query token and
+// resolve to exactly one project document.
+export async function resolveExplicitDocumentScope(projectId: string, query: string) {
+  const queryWords = ` ${normalizedWords(query)} `;
+  const projectDocuments = await db.select({ id: documents.id, title: documents.title, standardSet: documents.standardSet }).from(documents).where(eq(documents.projectId, projectId));
+  const matches = projectDocuments.flatMap((document) => {
+    const aliases = [document.title, document.standardSet].filter((value): value is string => Boolean(value)).map(normalizedWords).filter(Boolean);
+    const score = Math.max(0, ...aliases.filter((alias) => queryWords.includes(` ${alias} `)).map((alias) => alias.length));
+    return score > 0 ? [{ id: document.id, title: document.title, score }] : [];
+  }).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  if (!matches.length || (matches[1] && matches[1].score === matches[0].score)) return null;
+  return { id: matches[0].id, title: matches[0].title };
+}
 
 // Deterministic groundedness filter — the load-bearing part, exported
 // standalone so it is independently unit-testable without a live model or
@@ -79,6 +106,7 @@ export async function answerKnowledgeQuery(input: {
   projectId: string;
   query: string;
   documentType?: string;
+  documentId?: string;
   systemId?: string;
   assetId?: string;
   gateId?: string;
@@ -87,6 +115,13 @@ export async function answerKnowledgeQuery(input: {
   dateTo?: Date;
 }): Promise<AnswerKnowledgeQueryResult> {
   const generation = getGenerationProvider();
+  const explicitDocument = input.documentId
+    ? (await db.select({ id: documents.id, title: documents.title }).from(documents).where(and(eq(documents.id, input.documentId), eq(documents.projectId, input.projectId)))).at(0) ?? null
+    : null;
+  const inferredDocument = input.documentId ? null : await resolveExplicitDocumentScope(input.projectId, input.query);
+  const documentScope = input.documentId
+    ? { id: input.documentId, title: explicitDocument?.title ?? "Selected document", source: "explicit" as const }
+    : inferredDocument ? { ...inferredDocument, source: "query-title" as const } : null;
 
   // 1. Planning call. Mock reduces to exactly today's single-query,
   // no-routing behaviour: { documentType: null, subQueries: [query] }.
@@ -104,23 +139,36 @@ export async function answerKnowledgeQuery(input: {
   // mode) must not silently override. Date range is caller-only: it is not
   // threaded through the plan schema since an LLM-proposed date range is not
   // a narrowing a caller can meaningfully be overridden on.
-  const effectiveDocumentType = input.documentType ?? plan.data.documentType ?? undefined;
-  const effectiveSystemId = input.systemId ?? plan.data.systemId ?? undefined;
-  const effectiveAssetId = input.assetId ?? plan.data.assetId ?? undefined;
-  const effectiveGateId = input.gateId ?? plan.data.gateId ?? undefined;
-  const effectiveRevision = input.revision ?? plan.data.revision ?? undefined;
+  // An exact document boundary is more authoritative than the planner's
+  // guessed type. Combining both can create a contradictory scope (for
+  // example, a source titled "Standard" uploaded under procedure) and yield
+  // a false no-result even though the selected document has an exact match.
+  // Metadata scope is authority-bearing: only explicit caller controls and
+  // the deterministic exact-title resolver may narrow it. The LLM planner is
+  // useful for query decomposition, but its guesses must not suppress valid
+  // controlled evidence or silently select a different system/revision.
+  const effectiveDocumentType = input.documentType;
+  const effectiveSystemId = input.systemId;
+  const effectiveAssetId = input.assetId;
+  const effectiveGateId = input.gateId;
+  const effectiveRevision = input.revision;
 
   // 2. Retrieval: run each sub-query, union, dedupe by chunkId (keep the
   // highest-similarity instance), rerank the deduped set against the
   // ORIGINAL query, then graph-expand. In mock mode there is exactly one
   // sub-query (the original), so this reduces to the pre-existing single
   // retrieval pass.
+  // Always retain the exact user query. Planning may add useful facets, but a
+  // weak or over-eager planner must never be able to erase the user's terms
+  // and turn an otherwise exact document match into a false no-result.
+  const retrievalQueries = [...new Set([input.query, ...plan.data.subQueries])].slice(0, 5);
   const perSubQuery = await Promise.all(
-    plan.data.subQueries.map((subQuery) =>
+    retrievalQueries.map((subQuery) =>
       retrieveSemanticCitations({
         projectId: input.projectId,
         query: subQuery,
         documentType: effectiveDocumentType,
+        documentId: documentScope?.id,
         systemId: effectiveSystemId,
         assetId: effectiveAssetId,
         gateId: effectiveGateId,
@@ -150,7 +198,8 @@ export async function answerKnowledgeQuery(input: {
       planModel: plan.model,
       planProvider: plan.provider,
       synthesisModel: "n/a",
-      synthesisProvider: "n/a"
+      synthesisProvider: "n/a",
+      documentScope
     };
   }
 
@@ -165,6 +214,7 @@ export async function answerKnowledgeQuery(input: {
       citations: reranked.map((citation) => ({
         sourceRegionId: citation.sourceRegionId,
         documentType: citation.documentType,
+        documentTitle: citation.documentTitle,
         text: citation.text,
         graphContext: graphContextByChunk.get(citation.chunkId) ?? []
       }))
@@ -191,6 +241,8 @@ export async function answerKnowledgeQuery(input: {
         content: citation.content,
         sourceRegionId: regionId,
         documentVersionId: citation.documentVersionId,
+        documentId: citation.documentId,
+        documentTitle: citation.documentTitle,
         documentType: citation.documentType,
         contentHash: citation.contentHash,
         similarity: citation.similarity,
@@ -207,6 +259,7 @@ export async function answerKnowledgeQuery(input: {
     planModel: plan.model,
     planProvider: plan.provider,
     synthesisModel: synthesis.model,
-    synthesisProvider: synthesis.provider
+    synthesisProvider: synthesis.provider,
+    documentScope
   };
 }

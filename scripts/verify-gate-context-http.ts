@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { edges, gates, projects, scheduleTasks, systems } from "../src/lib/db/schema";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 13: on the readiness/gate view a schedule task that has an AFFECTS edge to
 // a gate must surface as READ-ONLY context so a reviewer sees schedule impact when
@@ -28,7 +29,7 @@ async function main() {
   const taskIds: string[] = [];
   const edgeIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
     const [system] = await db.select({ id: systems.id }).from(systems).where(eq(systems.projectId, project.id)).limit(1);
     assert.ok(system, "A seeded system is required to anchor a gate.");

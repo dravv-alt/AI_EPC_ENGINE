@@ -50,7 +50,7 @@ export interface MitigationContext {
 
 export interface MitigationGenerationResult {
   options: MitigationOption[];
-  provider: "mock" | "gemini" | "nim";
+  provider: "mock" | "ollama" | "gemini" | "nim";
   model: string;
 }
 

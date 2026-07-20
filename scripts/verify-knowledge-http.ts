@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, projects, sourceRegions } from "../src/lib/db/schema";
 import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 16 end-to-end knowledge verification.
 //
@@ -100,14 +101,44 @@ async function assertSemanticQuery(projectId: string, tenantId: string, regionId
 async function assertRfiSimilarity(projectId: string, tenantId: string, regionId: string, provider: ReturnType<typeof getModelProvider>, tag: string) {
   const rfiText = `RFI E2E ${tag}: Clarify chilled-water pump flow tolerance acceptance criteria for L4 integrated test.`;
   const procText = `Procedure E2E ${tag}: Chilled-water pump flow tolerance acceptance criteria for L4 integrated test.`;
-
-  const seeded = await db.insert(knowledgeChunks).values([
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "rfi", content: rfiText, contentHash: `e2e-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
-    { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: procText, contentHash: `e2e-proc-${tag}`, embedding: await provider.embed(procText), embeddingModel: activeEmbeddingModelTag() },
-  ]).returning({ id: knowledgeChunks.id });
-
-  const chunkIds = seeded.map((r) => r.id);
+  let rfiDocumentId: string | undefined;
+  let rfiVersionId: string | undefined;
+  let rfiRegionId: string | undefined;
+  const chunkIds: string[] = [];
   try {
+    // The endpoint must only suggest RFIs that are durably marked resolved on
+    // their owning document.  Make this fixture self-contained so its result
+    // does not depend on another verifier leaving a compatible row behind.
+    const [rfiDocument] = await db.insert(documents).values({
+      projectId,
+      documentType: "rfi",
+      title: `RFI E2E ${tag}`,
+      resolutionState: "resolved",
+      resolvedAt: new Date(),
+    }).returning({ id: documents.id });
+    rfiDocumentId = rfiDocument.id;
+    const [rfiVersion] = await db.insert(documentVersions).values({
+      documentId: rfiDocument.id,
+      revision: "1",
+      sha256: `e2e-rfi-document-${tag}`,
+      objectKey: `verification/rfi/${tag}`,
+      mediaType: "text/plain",
+    }).returning({ id: documentVersions.id });
+    rfiVersionId = rfiVersion.id;
+    const [rfiRegion] = await db.insert(sourceRegions).values({
+      documentVersionId: rfiVersion.id,
+      pageNumber: "1",
+      extractedText: rfiText,
+      contentHash: `e2e-rfi-region-${tag}`,
+    }).returning({ id: sourceRegions.id });
+    rfiRegionId = rfiRegion.id;
+
+    const seeded = await db.insert(knowledgeChunks).values([
+      { tenantId, projectId, sourceRegionId: rfiRegion.id, documentType: "rfi", content: rfiText, contentHash: `e2e-rfi-${tag}`, embedding: await provider.embed(rfiText), embeddingModel: activeEmbeddingModelTag() },
+      { tenantId, projectId, sourceRegionId: regionId, documentType: "procedure", content: procText, contentHash: `e2e-proc-${tag}`, embedding: await provider.embed(procText), embeddingModel: activeEmbeddingModelTag() },
+    ]).returning({ id: knowledgeChunks.id });
+    chunkIds.push(...seeded.map((row) => row.id));
+
     const result = await request(`/api/projects/${projectId}/knowledge/rfi-similar`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -130,6 +161,9 @@ async function assertRfiSimilarity(projectId: string, tenantId: string, regionId
     return top.similarity as number;
   } finally {
     if (chunkIds.length) await db.delete(knowledgeChunks).where(inArray(knowledgeChunks.id, chunkIds));
+    if (rfiRegionId) await db.delete(sourceRegions).where(eq(sourceRegions.id, rfiRegionId));
+    if (rfiVersionId) await db.delete(documentVersions).where(eq(documentVersions.id, rfiVersionId));
+    if (rfiDocumentId) await db.delete(documents).where(eq(documents.id, rfiDocumentId));
   }
 }
 
@@ -139,7 +173,7 @@ async function main() {
   console.log("=====================================================");
 
   const tag = randomUUID().slice(0, 8);
-  const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
+  const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
   assert.ok(project, "A seeded project is required.");
 
   const regionId = await firstSourceRegion(project.id);

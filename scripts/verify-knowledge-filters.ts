@@ -5,6 +5,7 @@ import { db } from "../src/lib/db/client";
 import { assets, documents, documentVersions, edges, evidence, gates, knowledgeChunks, projects, requirements, sourceRegions, systems } from "../src/lib/db/schema";
 import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
 import { developmentProjectId } from "../src/lib/demo";
+import { retrieveSemanticCitations } from "../src/lib/knowledge/query";
 
 // Slice 10 (PRD US-28 / ADR-021): retrieveSemanticCitations only filtered on
 // project + optional documentType. ADR-021 names every dimension of the
@@ -51,8 +52,8 @@ async function main() {
   // Creates one document/version/region/chunk with fully-controlled revision
   // and createdAt (the columns retrieveSemanticCitations filters on for the
   // revision/date dimensions), embedding `text` verbatim.
-  async function makeChunk(opts: { text: string; hashSuffix: string; revision?: string; createdAt?: Date }) {
-    const [document] = await db.insert(documents).values({ projectId, documentType: "procedure", title: `Filter fixture ${opts.hashSuffix}` }).returning();
+  async function makeChunk(opts: { text: string; hashSuffix: string; title?: string; revision?: string; createdAt?: Date }) {
+    const [document] = await db.insert(documents).values({ projectId, documentType: "procedure", title: opts.title ?? `Filter fixture ${opts.hashSuffix}` }).returning();
     documentIds.push(document.id);
     const [version] = await db.insert(documentVersions).values({
       documentId: document.id,
@@ -87,6 +88,22 @@ async function main() {
   }
 
   try {
+    // ── Exact document dimension and deterministic title routing ─────────
+    const documentText = `Document-scoped fixture ${tag}: grounding must never cross a named controlled source boundary.`;
+    const documentChunkA = await makeChunk({ text: documentText, hashSuffix: `doc-a-${tag}`, title: `Named Alpha Standard ${tag}` });
+    const documentChunkB = await makeChunk({ text: documentText, hashSuffix: `doc-b-${tag}`, title: `Named Beta Standard ${tag}` });
+    const directDocumentCitations = await retrieveSemanticCitations({ projectId, query: documentText, documentId: documentChunkA.document.id });
+    assert.ok(directDocumentCitations.some((citation) => citation.contentHash === `hash-doc-a-${tag}`), `Direct document retrieval must return its exact embedded chunk: ${JSON.stringify(directDocumentCitations)}`);
+    const documentQuery = await request(`${base}/api/projects/${projectId}/knowledge/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: documentText, documentId: documentChunkA.document.id }) });
+    assert.ok(documentQuery.claims.some((c: { contentHash: string }) => c.contentHash === `hash-doc-a-${tag}`), `Document-scoped query must return the selected document's chunk: ${JSON.stringify(documentQuery)}`);
+    assert.ok(!documentQuery.claims.some((c: { contentHash: string }) => c.contentHash === `hash-doc-b-${tag}`), "Document-scoped query must never return an identical chunk from another document.");
+    assert.equal(documentQuery.scopedTo.documentId, documentChunkA.document.id, "The response must disclose its enforced document scope.");
+
+    const namedQuery = await request(`${base}/api/projects/${projectId}/knowledge/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: `According to Named Alpha Standard ${tag}, ${documentText}` }) });
+    assert.equal(namedQuery.scopedTo.documentId, documentChunkA.document.id, `A uniquely named document in the query must be auto-scoped: ${JSON.stringify(namedQuery)}`);
+    assert.ok(!namedQuery.claims.some((c: { contentHash: string }) => c.contentHash === `hash-doc-b-${tag}`), "Automatic title routing must not cross into an identical other document.");
+    assert.equal(namedQuery.scopedTo.documentScopeSource, "query-title", "Automatic title routing must be visible to the caller.");
+
     // ── System dimension ──────────────────────────────────────────────────
     const [sysA] = await db.insert(systems).values({ projectId, name: `Filter System A ${tag}`, systemType: "mechanical" }).returning();
     const [sysB] = await db.insert(systems).values({ projectId, name: `Filter System B ${tag}`, systemType: "mechanical" }).returning();
@@ -159,7 +176,7 @@ async function main() {
     assert.ok(!dateQuery.claims.some((c: { contentHash: string }) => c.contentHash === `hash-date-old-${tag}`), "Date-range-scoped query must never return a chunk outside the window, even though it is an identical-text (top-similarity) match.");
     void dateChunkOld; void dateChunkNew;
 
-    console.log(`Slice 10 knowledge metadata filters verified (tag ${tag}): system/asset/gate/revision/date-range each enforced mandatory-first in SQL — an identical-text, top-similarity chunk scoped outside the filter never appeared in any of the five scoped queries.`);
+    console.log(`Knowledge metadata filters verified (tag ${tag}): document/title routing plus system/asset/gate/revision/date-range are mandatory-first in SQL; identical top-similarity chunks outside scope never appeared.`);
   } finally {
     if (chunkIds.length) await db.delete(knowledgeChunks).where(inArray(knowledgeChunks.id, chunkIds));
     if (edgeIds.length) await db.delete(edges).where(inArray(edges.id, edgeIds));

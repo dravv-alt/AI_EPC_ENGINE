@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { auditEvents, edges, projects } from "../src/lib/db/schema";
 import { getProjectGraph } from "../src/lib/graph/entities";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 9: clicking a node on /graph must call a node-expansion endpoint that
 // returns its linked entities so the evidence graph can be traversed. We seed a
@@ -24,7 +25,7 @@ async function main() {
   const edgeIds: string[] = [];
   const auditIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
 
     // Resolve three distinct existing nodes from the live graph: a centre node

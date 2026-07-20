@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { projects, riskSignals, scheduleTasks, shipments } from "../src/lib/db/schema";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 11: the Live Events feed must surface the most recent *polled* signals —
 // AIS positions and weather adjustments from the supply poll, plus risk-signal
@@ -31,7 +32,7 @@ async function main() {
   let savedShipment: typeof shipments.$inferSelect | undefined;
   const riskIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
 
     // AIS + weather: mutate an existing seeded shipment so it looks freshly polled.

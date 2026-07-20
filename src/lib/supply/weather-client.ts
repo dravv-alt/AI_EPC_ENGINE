@@ -7,7 +7,9 @@ export interface WeatherQuery {
 }
 
 export interface WeatherObservation {
-  weatherDelayFactor: number;
+  /** False means a configured live source did not provide a forecast. */
+  dataAvailable: boolean;
+  weatherDelayFactor: number | null;
   source: "synthetic" | "open-meteo";
   reason: string;
 }
@@ -24,15 +26,15 @@ export class SyntheticWeatherClient implements WeatherClient {
   async forecast(query: WeatherQuery): Promise<WeatherObservation> {
     const seed = Math.abs(Math.sin(query.lat * 12.9898 + query.lng * 78.233 + (query.mmsi ? Number(query.mmsi) % 997 : 0)));
     const factor = Number((0.05 + seed * 0.35).toFixed(5));
-    return { weatherDelayFactor: factor, source: "synthetic", reason: `Synthetic marine forecast at ${query.lat.toFixed(2)},${query.lng.toFixed(2)}: ${Math.round(factor * 100)}% transit delay.` };
+    return { dataAvailable: true, weatherDelayFactor: factor, source: "synthetic", reason: `Synthetic marine forecast at ${query.lat.toFixed(2)},${query.lng.toFixed(2)}: ${Math.round(factor * 100)}% transit delay.` };
   }
 }
 
 // Open-Meteo marine driver (opt-in via WEATHER_MODE=open-meteo). Converts live
-// wave height into a transit-delay factor; the synthetic client is the
-// deterministic fallback on any error so the poll loop never blocks.
+// wave height into a transit-delay factor. In live mode, failures are returned
+// explicitly instead of being mislabeled as a live forecast after a synthetic
+// fallback.
 export class OpenMeteoWeatherClient implements WeatherClient {
-  private readonly fallback = new SyntheticWeatherClient();
   constructor(private readonly baseUrl: string) {}
   async forecast(query: WeatherQuery): Promise<WeatherObservation> {
     try {
@@ -45,13 +47,17 @@ export class OpenMeteoWeatherClient implements WeatherClient {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json() as { hourly?: { wave_height?: Array<number | null> } };
       const heights = (data.hourly?.wave_height ?? []).filter((value): value is number => typeof value === "number");
-      if (!heights.length) return this.fallback.forecast(query);
+      if (!heights.length) return this.unavailable("Open-Meteo returned no usable wave-height forecast.");
       const peak = Math.max(...heights);
       const factor = Number(Math.min(0.6, peak * 0.06).toFixed(5));
-      return { weatherDelayFactor: factor, source: "open-meteo", reason: `Open-Meteo peak wave height ${peak.toFixed(1)}m → ${Math.round(factor * 100)}% transit delay.` };
-    } catch {
-      return this.fallback.forecast(query);
+      return { dataAvailable: true, weatherDelayFactor: factor, source: "open-meteo", reason: `Open-Meteo peak wave height ${peak.toFixed(1)}m → ${Math.round(factor * 100)}% transit delay.` };
+    } catch (error) {
+      return this.unavailable(error instanceof Error ? `Open-Meteo marine forecast unavailable: ${error.message}` : "Open-Meteo marine forecast unavailable.");
     }
+  }
+
+  private unavailable(reason: string): WeatherObservation {
+    return { dataAvailable: false, weatherDelayFactor: null, source: "open-meteo", reason };
   }
 }
 

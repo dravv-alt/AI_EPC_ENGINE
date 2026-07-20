@@ -113,6 +113,34 @@
       "when": 1784549054541,
       "tag": "0015_slice_8_9_teachback_and_rfi_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784576516954,
+      "tag": "0016_merged_shipment_transport_and_threats",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784581173986,
+      "tag": "0017_aromatic_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784581339692,
+      "tag": "0018_reconcile_development_seed_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784581800000,
+      "tag": "0019_backfill_controlled_source_chunks",
+      "breakpoints": true
     }
   ]
 }

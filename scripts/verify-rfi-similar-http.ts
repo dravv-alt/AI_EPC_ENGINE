@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { knowledgeChunks, documents, documentVersions, sourceRegions, projects } from "../src/lib/db/schema";
 import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 8: entering RFI text must surface "previously resolved similar RFI"
 // suggestions via a documentType=rfi-scoped cosine-threshold vector search. We
@@ -43,7 +44,7 @@ async function main() {
   let rfiDocumentVersionId: string | undefined;
   let rfiSourceRegionId: string | undefined;
   try {
-    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
     const provider = getModelProvider();
 

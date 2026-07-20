@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { knowledgeChunks, projects } from "../src/lib/db/schema";
 import { activeEmbeddingModelTag, getModelProvider } from "../src/lib/model/provider";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 7: the /knowledge query must be *semantic*. The query text is embedded,
 // a mandatory project + documentType SQL metadata filter runs first, then
@@ -32,7 +33,7 @@ async function main() {
   const wrongTypeText = `Standard-scoped chunk ${tag}: motor efficiency shall be at least ninety-two percent at full load.`;
   const chunkIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
     const provider = getModelProvider();
     // Seed three chunks directly with populated embeddings so retrieval is

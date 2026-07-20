@@ -12,6 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
     "worker": "tsx scripts/worker.ts",
+    "ais:worker": "tsx scripts/ais-worker.ts",
     "system:run": "tsx scripts/run-system.ts",
     "system:start": "npm run db:migrate && npm run build && npm run system:run",
     "verify:audit": "tsx scripts/verify-audit-chain.ts",
@@ -40,6 +41,11 @@
     "verify:polling-http": "tsx scripts/verify-polling-http.ts",
     "verify:knowledge-http": "tsx scripts/verify-knowledge-http.ts",
     "verify:model-provider": "tsx scripts/verify-model-provider.ts",
+    "verify:provider-safety": "tsx scripts/verify-provider-safety.ts",
+    "verify:ollama": "tsx scripts/verify-ollama-provider.ts",
+    "verify:deep-links": "tsx scripts/verify-deep-links.ts",
+    "verify:data-integrity": "tsx scripts/verify-data-integrity.ts",
+    "verify:live-providers": "tsx scripts/verify-live-providers-fail-closed.ts",
     "verify:retrieval-service": "tsx scripts/verify-retrieval-service.ts",
     "verify:knowledge-rerank": "tsx scripts/verify-knowledge-rerank-http.ts",
     "verify:knowledge-synthesis": "tsx scripts/verify-knowledge-synthesis-http.ts",
@@ -68,10 +74,12 @@
     "@fontsource/hanken-grotesk": "^5.1.1",
     "@fontsource/ibm-plex-serif": "^5.1.1",
     "@fontsource/jetbrains-mono": "^5.1.1",
+    "@turf/bezier-spline": "^7.3.5",
     "@turf/great-circle": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.80.7",
+    "csv-parse": "^7.0.1",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^5.11.1",
     "leaflet": "^1.9.4",
@@ -82,6 +90,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-leaflet": "^5.0.0-rc.2",
+    "searoute-js": "^0.1.0",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.2"
   },
@@ -90,9 +99,12 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
-    "drizzle-kit": "^0.30.1",
+    "drizzle-kit": "^0.31.10",
     "redis-memory-server": "^0.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "postcss": "8.5.20"
   }
 }

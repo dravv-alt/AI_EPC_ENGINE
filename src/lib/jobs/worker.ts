@@ -8,7 +8,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis/client";
 import { objectStorage } from "@/lib/storage/service";
 import { createScheduleVersion } from "@/lib/schedule/create-version";
-import { proposeDocumentRecords } from "@/lib/ingestion/proposals";
+import { indexDocumentKnowledgeChunks, proposeDocumentRecords } from "@/lib/ingestion/proposals";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
@@ -24,6 +24,7 @@ export async function extractDocument(input: { documentVersionId: string; object
   const existing = await db.select().from(sourceRegions).where(eq(sourceRegions.documentVersionId, documentVersionId));
   if (existing.length) {
     await db.update(documentVersions).set({ extractionStatus: "completed", extractionError: null, updatedAt: new Date() }).where(eq(documentVersions.id, documentVersionId));
+    await indexDocumentKnowledgeChunks(documentVersionId);
     return { regionCount: existing.length, idempotent: true };
   }
   const version = await db.query.documentVersions.findFirst({ where: eq(documentVersions.id, documentVersionId) });
@@ -32,13 +33,14 @@ export async function extractDocument(input: { documentVersionId: string; object
   const bytes = await objectStorage.read(objectKey);
   const form = new FormData();
   form.set("file", new Blob([bytes], { type: mediaType }), `controlled-source.${extension}`);
-  const response = await fetch(`${env.INGESTION_SERVICE_URL}/parse-upload`, { method: "POST", body: form });
+  const response = await fetch(`${env.INGESTION_SERVICE_URL}/parse-upload`, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
   if (!response.ok) throw new Error(`Ingestion service returned ${response.status}.`);
   const parsed = await response.json() as { chunks: Array<{ page_number: number; text: string; bbox?: unknown; content_hash?: string }> };
   await db.transaction(async (tx) => {
     if (parsed.chunks.length) await tx.insert(sourceRegions).values(parsed.chunks.map((chunk) => ({ documentVersionId, pageNumber: String(chunk.page_number), bbox: chunk.bbox ?? null, extractedText: chunk.text, contentHash: chunk.content_hash ?? createHash("sha256").update(chunk.text).digest("hex") })));
     await tx.update(documentVersions).set({ extractionStatus: "completed", extractionError: null, updatedAt: new Date() }).where(eq(documentVersions.id, documentVersionId));
   });
+  await indexDocumentKnowledgeChunks(documentVersionId);
   return { regionCount: parsed.chunks.length };
 }
 
@@ -85,6 +87,7 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
     const aisClient = getAisClient();
     const weatherClient = getWeatherClient();
     let polled = 0;
+    let unavailable = 0;
     let transitioned = 0;
     for (const shipment of tracked) {
       if (shipment.originLat === null || shipment.originLng === null || shipment.destinationLat === null || shipment.destinationLng === null) continue;
@@ -98,7 +101,28 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
         plannedEta: shipment.plannedEta,
         now
       });
+      if (!observation.dataAvailable || observation.lat === null || observation.lng === null) {
+        await db.update(shipments).set({
+          telemetryReason: observation.reason,
+          lastPolledAt: now,
+          updatedAt: now
+        }).where(eq(shipments.id, shipment.id));
+        unavailable += 1;
+        continue;
+      }
       const weather = await weatherClient.forecast({ lat: observation.lat, lng: observation.lng, mmsi: shipment.mmsi });
+      if (!weather.dataAvailable || weather.weatherDelayFactor === null) {
+        await db.update(shipments).set({
+          currentLat: String(observation.lat),
+          currentLng: String(observation.lng),
+          positionSource: observation.positionSource,
+          telemetryReason: `${observation.reason} ${weather.reason}`,
+          lastPolledAt: now,
+          updatedAt: now
+        }).where(eq(shipments.id, shipment.id));
+        unavailable += 1;
+        continue;
+      }
       const calculated = calculateShipmentStatus({ plannedEta: shipment.plannedEta, requiredOnSite: shipment.requiredOnSite, portCongestion: shipment.portCongestion, weatherDelayFactor: weather.weatherDelayFactor, now });
       await db.update(shipments).set({
         currentLat: String(observation.lat),
@@ -128,7 +152,7 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
         } catch { /* a project without a current schedule baseline cannot accept task-linked events yet; status is still persisted */ }
       }
     }
-    return { tracked: tracked.length, polled, transitioned };
+    return { tracked: tracked.length, polled, unavailable, transitioned };
   },
   "knowledge.embed": async (job) => {
     const projectId = job.data.projectId ? String(job.data.projectId) : null;

@@ -5,6 +5,7 @@ import { db } from "../src/lib/db/client";
 import { evidence, projects, systems } from "../src/lib/db/schema";
 import { env } from "../src/lib/env";
 import { objectStorage } from "../src/lib/storage/service";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 15 — rate limits and offline/storage hardening. Three independent
 // behaviours, each asserted against the real running stack (Postgres, Redis,
@@ -100,7 +101,7 @@ async function verifyS3RoundTrip(projectId: string) {
 
 async function main() {
   const base = process.env.HARDENING_TEST_URL ?? "http://localhost:3000";
-  const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
   assert.ok(project, "A seeded project is required.");
   let createdEvidenceId: string | undefined;
   try {

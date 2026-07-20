@@ -19,13 +19,33 @@ const environmentSchema = z.object({
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   REDIS_PREFIX: z.string().min(1).default("pramana"),
   INFRA_ALLOW_DEGRADED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
-  MODEL_PROVIDER: z.enum(["mock", "gemini", "nim"]).default("mock"),
+  // This is deliberately opt-in so local builds and deterministic tests keep
+  // working without deployment credentials. Deployment manifests must set it
+  // to true, which turns insecure fallbacks into startup errors.
+  REQUIRE_PRODUCTION_CONFIG: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  // Local Ollama is the normal runtime. Mock remains available only for
+  // deterministic tests and explicitly opted-in development scenarios.
+  MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim"]).default("ollama"),
+  OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
+  OLLAMA_MODEL: z.string().min(1).default("gemma4:e2b"),
+  OLLAMA_EMBEDDING_MODEL: z.string().min(1).default("nomic-embed-text:latest"),
+  // One deadline applies to every generation/embedding provider. The
+  // Ollama-named setting is retained as a backwards-compatible override for
+  // existing local installations.
+  MODEL_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(180_000).default(45_000),
+  OLLAMA_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(180_000).optional(),
+  MODEL_PROMPT_MAX_CHARS: z.coerce.number().int().min(1_000).max(250_000).default(60_000),
+  MODEL_OUTPUT_MAX_TOKENS: z.coerce.number().int().min(16).max(4_096).default(512),
+  MODEL_CONTEXT_TOKENS: z.coerce.number().int().min(512).max(32_768).default(8_192),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
+  GEMINI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-004"),
   NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NIM_API_KEY: z.string().optional(),
   NIM_MODEL: z.string().min(1).default("meta/llama-3.3-70b-instruct"),
-  EMBEDDING_PROVIDER: z.enum(["mock", "service"]).default("mock"),
+  // Embeddings intentionally remain independently selected. Choosing Gemini
+  // for generation must never silently change an existing vector space.
+  EMBEDDING_PROVIDER: z.enum(["mock", "ollama", "gemini", "service"]).default("ollama"),
   RETRIEVAL_SERVICE_URL: z.string().url().default("http://localhost:8003"),
   SHIPMENT_STATUS_BUFFER_HOURS: z.coerce.number().min(0).max(720).default(72),
   POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
@@ -90,9 +110,19 @@ export const env = environmentSchema.parse({
   REDIS_URL: process.env.REDIS_URL,
   REDIS_PREFIX: process.env.REDIS_PREFIX,
   INFRA_ALLOW_DEGRADED: process.env.INFRA_ALLOW_DEGRADED,
+  REQUIRE_PRODUCTION_CONFIG: process.env.REQUIRE_PRODUCTION_CONFIG,
   MODEL_PROVIDER: process.env.MODEL_PROVIDER,
+  OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL,
+  OLLAMA_MODEL: process.env.OLLAMA_MODEL,
+  OLLAMA_EMBEDDING_MODEL: process.env.OLLAMA_EMBEDDING_MODEL,
+  MODEL_TIMEOUT_MS: process.env.MODEL_TIMEOUT_MS,
+  OLLAMA_TIMEOUT_MS: process.env.OLLAMA_TIMEOUT_MS,
+  MODEL_PROMPT_MAX_CHARS: process.env.MODEL_PROMPT_MAX_CHARS,
+  MODEL_OUTPUT_MAX_TOKENS: process.env.MODEL_OUTPUT_MAX_TOKENS,
+  MODEL_CONTEXT_TOKENS: process.env.MODEL_CONTEXT_TOKENS,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
+  GEMINI_EMBEDDING_MODEL: process.env.GEMINI_EMBEDDING_MODEL,
   NIM_BASE_URL: process.env.NIM_BASE_URL,
   NIM_API_KEY: process.env.NIM_API_KEY,
   NIM_MODEL: process.env.NIM_MODEL,
@@ -135,5 +165,29 @@ export const env = environmentSchema.parse({
   SOLVER_TIMEOUT_MS: process.env.SOLVER_TIMEOUT_MS,
   SOLVER_MAX_ATTEMPTS: process.env.SOLVER_MAX_ATTEMPTS
 });
+
+// Keep the legacy Ollama-specific name as an effective override while every
+// generation and embedding path consumes this provider-agnostic deadline.
+export const modelRequestTimeoutMs = env.OLLAMA_TIMEOUT_MS ?? env.MODEL_TIMEOUT_MS;
+
+if (env.REQUIRE_PRODUCTION_CONFIG) {
+  const hasPlaceholder = (value: string | undefined) => Boolean(value && /replace[ _-]?(me|with)|change[ _-]?before|example\.com/i.test(value));
+  if (env.AUTH_MODE === "development") throw new Error("AUTH_MODE=development is not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
+  if (!env.AUTH_ENCRYPTION_KEY) throw new Error("AUTH_ENCRYPTION_KEY is required when REQUIRE_PRODUCTION_CONFIG=true.");
+  if ([env.DATABASE_URL, env.AUTH_ENCRYPTION_KEY, env.APP_BASE_URL, env.S3_ACCESS_KEY, env.S3_SECRET_KEY, env.S3_BUCKET].some(hasPlaceholder)) {
+    throw new Error("Placeholder deployment values are not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
+  }
+  if (!env.APP_BASE_URL.startsWith("https://")) throw new Error("APP_BASE_URL must use https when REQUIRE_PRODUCTION_CONFIG=true.");
+  if ([env.S3_ACCESS_KEY, env.S3_SECRET_KEY].includes("minioadmin")) throw new Error("Default MinIO credentials are not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
+  if (env.MODEL_PROVIDER === "mock" || env.EMBEDDING_PROVIDER === "mock") {
+    throw new Error("Mock generation and embedding providers are not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
+  }
+  if (env.MODEL_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when MODEL_PROVIDER=gemini.");
+  if (env.MODEL_PROVIDER === "nim" && !env.NIM_API_KEY) throw new Error("NIM_API_KEY is required when MODEL_PROVIDER=nim.");
+  if (env.EMBEDDING_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini.");
+  if (env.AUTH_MODE === "clerk" && !(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY)) {
+    throw new Error("Clerk keys are required when AUTH_MODE=clerk and REQUIRE_PRODUCTION_CONFIG=true.");
+  }
+}
 
 export const clerkIsConfigured = env.AUTH_MODE === "clerk" && Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Finding = { id: string; gateId: string | null; title: string; description: string | null; severity: string; status: string; ownerId: string | null; ownerName: string | null; dueAt: Date | string | null; resolutionNote: string | null; resolvedAt: Date | string | null; version: number; updatedAt: Date | string };
@@ -13,11 +13,17 @@ function isOverdue(finding: Finding): boolean {
   return new Date(finding.dueAt).getTime() < Date.now();
 }
 
-export function ActionsWorkbench({ projectId, findings, gates, members }: { projectId: string; findings: Finding[]; gates: Array<{ id: string; name: string }>; members: Array<{ id: string; name: string }> }) {
+export function ActionsWorkbench({ projectId, findings, gates, members, initialFindingId }: { projectId: string; findings: Finding[]; gates: Array<{ id: string; name: string }>; members: Array<{ id: string; name: string }>; initialFindingId?: string }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!initialFindingId) return;
+    const target = document.getElementById(`finding-${initialFindingId}`);
+    target?.closest("details")?.setAttribute("open", "");
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [initialFindingId]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,7 +68,7 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
     {message && <p className="surface inline-feedback" role="status">{message}</p>}
     <section className="section-heading"><div><p className="eyebrow">Requires attention</p><h2>{active.length} active finding{active.length === 1 ? "" : "s"}</h2></div></section>
     <section className="workflow-grid">
-      {active.map((finding) => <article className="surface workflow-card finding-card" key={finding.id}>
+      {active.map((finding) => <article id={`finding-${finding.id}`} className={`surface workflow-card finding-card ${finding.id === initialFindingId ? "is-selected" : ""}`} key={finding.id}>
         <span className={`severity ${finding.severity}`} /><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>{isOverdue(finding) && <span className="status-pill blocked">overdue</span>}
         <h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p>
         <small>{finding.ownerName ?? "Unassigned"} · Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small>
@@ -72,6 +78,6 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
       </article>)}
       {!active.length && <article className="surface empty-state"><h2>No active findings</h2><p>This is not a readiness claim. Gate state still depends on accepted requirements and current evidence.</p></article>}
     </section>
-    {closed.length > 0 && <details className="surface history-panel"><summary>Resolved history ({closed.length})</summary>{closed.map((finding) => <article className="entity-row" key={finding.id}><div><b>{finding.title}</b><span>{finding.resolutionNote}</span></div><small>{finding.resolvedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(finding.resolvedAt)) : "Resolved"}</small></article>)}</details>}
+    {closed.length > 0 && <details className="surface history-panel"><summary>Resolved history ({closed.length})</summary>{closed.map((finding) => <article id={`finding-${finding.id}`} className={`entity-row ${finding.id === initialFindingId ? "is-selected" : ""}`} key={finding.id}><div><b>{finding.title}</b><span>{finding.resolutionNote}</span></div><small>{finding.resolvedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(finding.resolvedAt)) : "Resolved"}</small></article>)}</details>}
   </div>;
 }

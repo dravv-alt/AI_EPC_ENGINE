@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
-import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, cxStepResults, cxTestRecords, documentVersions, documents, durableJobs, edges, evidence, gates, sourceRegions, storageObjects, systems } from "../src/lib/db/schema";
+import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, cxStepResults, cxTestRecords, documentVersions, documents, durableJobs, edges, evidence, gates, knowledgeChunks, sourceRegions, storageObjects, systems } from "../src/lib/db/schema";
 import { developmentProjectId } from "../src/lib/demo";
 import { objectStorage } from "../src/lib/storage/service";
 
@@ -30,11 +30,23 @@ async function poll(base: string, jobId: string) { for (let attempt = 0; attempt
 async function main() {
   const base = process.env.CX_TEST_URL ?? "http://localhost:4173"; const jobIds: string[] = []; const objectKeys: string[] = []; let documentId: string | undefined; let versionId: string | undefined; let checklistId: string | undefined; let recordId: string | undefined; let evidenceId: string | undefined; let artifactObjectId: string | undefined; let gateId: string | undefined; let originalGateStatus: string | undefined;
   try {
-    const [system, gate, asset] = await Promise.all([db.query.systems.findFirst({ where: eq(systems.projectId, developmentProjectId) }), db.query.gates.findFirst({ where: eq(gates.projectId, developmentProjectId) }), db.query.assets.findFirst({ where: eq(assets.projectId, developmentProjectId) })]); assert.ok(system && gate && asset); gateId = gate.id; originalGateStatus = gate.status;
+    const gate = await db.query.gates.findFirst({ where: eq(gates.projectId, developmentProjectId) });
+    assert.ok(gate);
+    const [system, asset, projectAssets] = await Promise.all([
+      db.query.systems.findFirst({ where: and(eq(systems.id, gate.systemId), eq(systems.projectId, developmentProjectId)) }),
+      db.query.assets.findFirst({ where: and(eq(assets.systemId, gate.systemId), eq(assets.projectId, developmentProjectId)) }),
+      db.select().from(assets).where(eq(assets.projectId, developmentProjectId))
+    ]);
+    const mismatchedAsset = projectAssets.find((item) => item.systemId !== gate.systemId);
+    assert.ok(system && asset); gateId = gate.id; originalGateStatus = gate.status;
     const pdf = pdfWithPages(["Clause 1.1 Design flow shall be 100 L/s + 5.", "Clause 1.2 Verify standby interlock is present.", "Clause 1.3 Record vibration, leakage, and operational observations."]);
     const form = new FormData(); form.set("standardSet", `Cx verification ${Date.now()}`); form.set("title", "Synthetic controlled IST standard"); form.set("documentType", "standard"); form.set("revision", "Test Rev 1"); form.set("file", new Blob([pdf], { type: "application/pdf" }), "cx-verification.pdf");
     const standard = await request(`${base}/api/projects/${developmentProjectId}/cx/standards`, { method: "POST", body: form }); documentId = standard.document.id; versionId = standard.version.id; objectKeys.push(standard.version.objectKey); if (standard.extractionStatus === "processing") { jobIds.push(standard.ingestJobId); await poll(base, standard.ingestJobId); }
     const standards = await request(`${base}/api/projects/${developmentProjectId}/cx/standards`); const controlled = standards.items.find((item: { version: { id: string } }) => item.version.id === versionId); assert.equal(controlled.usableForGeneration, true); assert.equal(controlled.regionCount, 3);
+    if (mismatchedAsset) {
+      const invalidScope = await fetch(`${base}/api/projects/${developmentProjectId}/cx/checklists`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ systemId: system.id, gateId: gate.id, assetId: mismatchedAsset.id, title: "Invalid cross-system checklist", standardVersionIds: [versionId] }) });
+      assert.equal(invalidScope.status, 422, "A cross-system asset/gate checklist must fail closed.");
+    }
     const checklist = await request(`${base}/api/projects/${developmentProjectId}/cx/checklists`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ systemId: system.id, gateId: gate.id, assetId: asset.id, title: "Cx governed workflow verification", standardVersionIds: [versionId] }) }); checklistId = checklist.checklist.id; jobIds.push(checklist.checklistJobId); if (checklist.status === "queued") await poll(base, checklist.checklistJobId);
     const detail = await request(`${base}/api/cx/checklists/${checklistId}`); assert.equal(detail.checklist.generationStatus, "completed"); assert.equal(detail.steps.length, 3); assert.equal(detail.citations.length, 3); assert.ok(detail.citations.every((citation: { verificationStatus: string; source: unknown }) => citation.verificationStatus === "verified" && citation.source));
     await request(`${base}/api/cx/checklists/${checklistId}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "accept", note: "Accepted by governed Cx HTTP verification.", steps: [] }) });
@@ -47,7 +59,11 @@ async function main() {
     const report = await request(`${base}/api/cx/reports/${recordId}`); assert.equal(report.label, "DRAFT — PENDING ENGINEER REVIEW"); assert.equal(report.report.reportGenerationStatus, "completed"); assert.equal(report.report.reportContent.steps.length, 3);
     const edited = await request(`${base}/api/cx/reports/${recordId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Engineer-reviewed Cx verification report", executiveSummary: "Engineer reviewed all immutable readings and the narrative observation against their exact controlled citations.", conclusion: "The recorded test is suitable for engineer approval into controlled evidence.", reason: "Corrected the generated narrative to record explicit engineer review." }) }); assert.equal(edited.report.reportContent.title, "Engineer-reviewed Cx verification report");
     const approved = await request(`${base}/api/cx/test-records/${recordId}/report/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reason: "Engineer reviewed the narrative criterion and all deterministic readings against controlled clauses." }) }); evidenceId = approved.evidenceId; const approvedRecord = await db.query.cxTestRecords.findFirst({ where: eq(cxTestRecords.id, recordId) }); artifactObjectId = approvedRecord?.reportArtifactObjectId ?? undefined; assert.equal(approved.gateState, "in_review"); assert.ok(approved.artifactHash); assert.equal(approvedRecord?.reportStatus, "approved"); assert.equal(approvedRecord?.reportContentHash, approved.artifactHash);
-    const artifactResponse = await fetch(approved.artifactUrl); assert.equal(artifactResponse.ok, true); const artifactBytes = Buffer.from(await artifactResponse.arrayBuffer()); assert.equal(createHash("sha256").update(artifactBytes).digest("hex"), approved.artifactHash); const artifact = JSON.parse(artifactBytes.toString()); assert.equal(artifact.label, "ENGINEER APPROVED — IMMUTABLE ARTIFACT"); assert.ok(artifact.approval.reason);
+    const artifactResponse = await fetch(approved.artifactUrl.replace("http://minio:9000", "http://localhost:9000"));
+    if (!artifactResponse.ok) {
+      console.error("Artifact fetch failed!", artifactResponse.status, await artifactResponse.text());
+    }
+    assert.equal(artifactResponse.ok, true); const artifactBytes = Buffer.from(await artifactResponse.arrayBuffer()); assert.equal(createHash("sha256").update(artifactBytes).digest("hex"), approved.artifactHash); const artifact = JSON.parse(artifactBytes.toString()); assert.equal(artifact.label, "ENGINEER APPROVED — IMMUTABLE ARTIFACT"); assert.ok(artifact.approval.reason);
     const proofEdges = await db.select().from(edges).where(and(eq(edges.fromType, "evidence"), eq(edges.fromId, evidenceId))); assert.ok(proofEdges.some((edge) => edge.relationshipType === "AFFECTS" && edge.toType === "gate"));
     console.log("Cx HTTP verification passed: controlled standard extraction, cited async checklist, engineer acceptance, resumable proposed readings, editable draft, human narrative resolution, immutable artifact, evidence graph linkage, and gate in-review transition.");
   } finally {
@@ -58,7 +74,11 @@ async function main() {
     if (checklistId) await db.delete(cxClauseCitations).where(eq(cxClauseCitations.checklistId, checklistId));
     if (checklistId) await db.delete(cxChecklistSteps).where(eq(cxChecklistSteps.checklistId, checklistId));
     if (checklistId) await db.delete(cxChecklists).where(eq(cxChecklists.id, checklistId));
-    if (versionId) await db.delete(sourceRegions).where(eq(sourceRegions.documentVersionId, versionId));
+    if (versionId) {
+      const regions = await db.select({ id: sourceRegions.id }).from(sourceRegions).where(eq(sourceRegions.documentVersionId, versionId));
+      if (regions.length) await db.delete(knowledgeChunks).where(inArray(knowledgeChunks.sourceRegionId, regions.map((region) => region.id)));
+      await db.delete(sourceRegions).where(eq(sourceRegions.documentVersionId, versionId));
+    }
     if (versionId) await db.delete(documentVersions).where(eq(documentVersions.id, versionId));
     if (documentId) await db.delete(documents).where(eq(documents.id, documentId));
     const storedRows = objectKeys.length ? await db.select().from(storageObjects).where(inArray(storageObjects.objectKey, objectKeys)) : [];

@@ -24,26 +24,18 @@ import {
   Sparkles,
   Wrench
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-export const workspaceLinks = [
-  [Grid2X2, "Overview", "/"],
-  [FolderOpen, "Sources", "/sources"],
-  [ListChecks, "Requirements", "/requirements"],
-  [Wrench, "Systems", "/systems"],
-  [Archive, "Evidence", "/evidence"],
-  [ScanLine, "Field capture", "/field-capture"],
-  [ClipboardCheck, "Readiness", "/readiness"],
-  [CalendarRange, "Schedule", "/schedule"],
-  [CircleAlert, "Actions", "/actions"],
-  [GitCompareArrows, "Changes", "/changes"],
-  [Boxes, "Cx tests", "/cx"],
-  [Ship, "Shipments", "/shipments"],
-  [FileCheck2, "Compliance", "/compliance"],
-  [Search, "Knowledge", "/knowledge"],
-  [Network, "Graph & timeline", "/graph"],
-  [Bell, "Command center", "/command-center"],
-  [ShieldCheck, "Turnover", "/turnover"]
-] as const;
+type WorkspaceHref = "/" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover";
+type WorkspaceLink = [LucideIcon, string, WorkspaceHref];
+
+export const workspaceGroups: Array<{ label: string; links: WorkspaceLink[] }> = [
+  { label: "Control", links: [[Grid2X2, "Overview", "/"], [FolderOpen, "Sources", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems", "/systems"], [Archive, "Evidence", "/evidence"], [ScanLine, "Field capture", "/field-capture"], [ClipboardCheck, "Readiness", "/readiness"]] },
+  { label: "Deliver", links: [[CalendarRange, "Schedule", "/schedule"], [CircleAlert, "Actions", "/actions"], [Boxes, "Cx tests", "/cx"], [Ship, "Shipments", "/shipments"]] },
+  { label: "Investigate", links: [[FileCheck2, "Compliance", "/compliance"], [Search, "Knowledge", "/knowledge"], [Network, "Graph & timeline", "/graph"], [Bell, "Command center", "/command-center"], [GitCompareArrows, "Changes", "/changes"], [ShieldCheck, "Turnover", "/turnover"]] }
+];
+
+export const workspaceLinks = workspaceGroups.flatMap((group) => group.links);
 
 type Project = { id: string; name: string; code: string; role: string };
 type Profile = { user: { displayName: string; email: string; provider: string } };
@@ -94,8 +86,8 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
         {projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
       </select> : <span>{projectName}</span>}
     </label>
-    <nav className="nav-list">
-      {workspaceLinks.map(([Icon, label, href]) => <Link className={`nav-item ${pathname === href || href !== "/" && pathname.startsWith(`${href}/`) ? "is-active" : ""}`} href={href} key={href}><Icon size={18} /><span>{label}</span></Link>)}
+    <nav className="nav-list" aria-label="Project areas">
+      {workspaceGroups.map((group) => <div className="nav-group" key={group.label}><span className="nav-group-label">{group.label}</span>{group.links.map(([Icon, label, href]) => <Link className={`nav-item ${pathname === href || href !== "/" && pathname.startsWith(`${href}/`) ? "is-active" : ""}`} href={href} key={href}><Icon size={18} /><span>{label}</span></Link>)}</div>)}
     </nav>
     <div className="sidebar-footer">
       <div className="dev-badge"><Sparkles size={14} /> {profile?.user.provider === "development" ? "Development mode" : "Controlled session"}</div>

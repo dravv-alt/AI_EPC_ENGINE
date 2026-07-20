@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { env } from "../src/lib/env";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 1: the stateless services/retrieval Python service. This check must
 // never block the offline (EMBEDDING_PROVIDER=mock) verification matrix, so it
@@ -92,7 +93,7 @@ async function main() {
   const { getEmbeddingProvider } = await import("../src/lib/model/provider");
   const { activeEmbeddingModelTag } = await import("../src/lib/model/provider");
 
-  const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).limit(1);
+  const [project] = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
   assert.ok(project, "A seeded project is required for the mixed-model guard check.");
   const [region] = await db
     .select({ id: sourceRegions.id })

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { RedisMemoryServer } from "redis-memory-server";
+import { developmentProjectId } from "../src/lib/demo";
 
 async function main() {
   const redisServer = await RedisMemoryServer.create();
@@ -26,7 +27,7 @@ async function main() {
   assert.equal(decryptSecret(ciphertext), totp.secret.base32);
 
   const [project] = await db.select().from(await import("../src/lib/db/schema").then(m => m.projects)).limit(1);
-  const testProjectId = project ? project.id : "10000000-0000-4000-8000-000000000010";
+  const testProjectId = project ? project.id : developmentProjectId;
 
   const event = scheduleEventSchema.parse({ eventId: randomUUID(), projectId: testProjectId, occurredAt: new Date().toISOString(), transitionId: "transition-1", eventType: "SHIPMENT_DELAYED", payload: { shipmentId: randomUUID(), status: "amber", availableAt: new Date(Date.now() + 3_600_000).toISOString(), affectedTaskIds: [], estimate: true } });
   assert.match(eventDedupKey(event), /^SHIPMENT_DELAYED:/);

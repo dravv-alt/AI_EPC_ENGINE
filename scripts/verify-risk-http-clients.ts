@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 5: with RISK_POLL_MODE=http, risk signals must come from real configured
 // HTTP endpoints, and the weather_forecast signal must be sourced from the
@@ -13,7 +14,7 @@ import { createServer, type Server } from "node:http";
 // Env must be set before any module that reads it is imported, so the app
 // modules are pulled in dynamically after configuration.
 
-const SEEDED_PROJECT = "10000000-0000-4000-8000-000000000010";
+const SEEDED_PROJECT = developmentProjectId;
 const SEEDED_ACTOR = "10000000-0000-4000-8000-000000000002";
 
 function signalPayload() {

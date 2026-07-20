@@ -68,7 +68,9 @@ const T = {
   user_field:   "10000000-0000-4000-8000-000000000003",
   user_approver:"10000000-0000-4000-8000-000000000004",
 
-  project:      "10000000-0000-4000-8000-000000000010",
+  // This is the original Refinement project UUID. Changing it would cause the
+  // project-code conflict to skip insertion and leave every later FK invalid.
+  project:      "10000000-0000-4000-8000-000000000003",
 
   // Systems
   sys_chw:      "10000000-0000-4000-8000-000000000020",

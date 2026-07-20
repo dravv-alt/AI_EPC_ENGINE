@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { findings, gates, projectMembers, projects, systems } from "../src/lib/db/schema";
 import { getGateReadinessDetail } from "../src/lib/readiness/project-readiness";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 5 (PRD US-05): an overdue finding must be visible in its gate's blocker
 // view at ANY severity, flagged distinctly from severity-driven blockers, while
@@ -44,7 +45,7 @@ async function main() {
   const gateIds: string[] = [];
   const findingIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
     const [system] = await db.select({ id: systems.id }).from(systems).where(eq(systems.projectId, project.id)).limit(1);
     assert.ok(system, "A seeded system is required to anchor a gate.");

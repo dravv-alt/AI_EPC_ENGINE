@@ -64,7 +64,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
             <article className="surface readiness-card">
               <div className="section-heading"><div><p className="eyebrow">Readiness board</p><h2>Gate status</h2></div><Link className="text-button" href="/readiness">Open board <ArrowUpRight size={15} /></Link></div>
               <div className="gate-list">
-                {data.readiness.map((item) => <div className="gate-row" key={item.gate}><span className={`status-dot ${item.state}`} /><div><b>{item.gate}</b><small>{item.system}</small></div><div className="gate-state"><span className={`status-pill ${item.state}`}>{toneLabel[item.state]}</span><small>{item.detail}</small></div></div>)}
+                {data.readiness.map((item) => <div className="gate-row" key={item.gateId}><span className={`status-dot ${item.state}`} /><div><b>{item.gate}</b><small>{item.system}</small></div><div className="gate-state"><span className={`status-pill ${item.state}`}>{toneLabel[item.state]}</span><small>{item.detail}</small></div></div>)}
               </div>
               <div className="readiness-note"><ShieldCheck size={18} /><span>Readiness is deterministic. Every state is backed by controlled evidence and review history.</span></div>
             </article>
@@ -72,7 +72,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
             <article className="surface action-card" id="actions">
               <div className="section-heading"><div><p className="eyebrow">Action queue</p><h2>Needs attention</h2></div><Link className="text-button" href="/actions">All actions <ArrowUpRight size={15} /></Link></div>
               <div className="action-list">
-                {data.actions.map((action) => <div className="action-row" key={action.title}><span className={`severity ${action.severity}`} /><div><b>{action.title}</b><small>{action.owner} · Due {action.due}</small></div></div>)}
+                {data.actions.map((action) => <div className="action-row" key={action.id}><span className={`severity ${action.severity}`} /><div><b>{action.title}</b><small>{action.owner} · Due {action.due}</small></div></div>)}
               </div>
             </article>
           </section>
@@ -80,7 +80,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
           <section className="two-column" id="sources">
             <article className="surface source-card">
               <div className="section-heading"><div><p className="eyebrow">Source library</p><h2>Recent controlled sources</h2></div><Link className="text-button" href="/sources">Open library <ArrowUpRight size={15} /></Link></div>
-              <div className="table-wrap"><table><thead><tr><th>Source</th><th>Revision</th><th>Processing</th></tr></thead><tbody>{data.sources.map((source) => <tr key={`${source.title}-${source.revision}`}><td><b>{source.title}</b><small>{source.detail}</small></td><td><span className="mono">{source.revision}</span></td><td><span className={`source-status ${source.status === "Processed" ? "processed" : "pending"}`}>{source.status}</span></td></tr>)}</tbody></table></div>
+              <div className="table-wrap"><table><thead><tr><th>Source</th><th>Revision</th><th>Processing</th></tr></thead><tbody>{data.sources.map((source) => <tr key={source.id}><td><b>{source.title}</b><small>{source.detail}</small></td><td><span className="mono">{source.revision}</span></td><td><span className={`source-status ${source.status === "Processed" ? "processed" : "pending"}`}>{source.status}</span></td></tr>)}</tbody></table></div>
               <SourceUploadForm projectId={data.projectId} />
             </article>
 

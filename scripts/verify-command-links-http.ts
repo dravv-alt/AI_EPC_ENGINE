@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { alerts, findings, gates, projects, scheduleRisks, scheduleTasks, scheduleVersions } from "../src/lib/db/schema";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 10: every Command Center alert must deep-link to its related record.
 // We seed one alert of each cross-linked type (TEST_FAILED -> finding + gate,
@@ -18,7 +19,7 @@ async function main() {
   const insertedAlertIds: string[] = [];
   const insertedRiskIds: string[] = [];
   try {
-    const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
 
     // Resolve real seeded records to link against.

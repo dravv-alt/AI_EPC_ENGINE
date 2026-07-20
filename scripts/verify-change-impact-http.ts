@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { inArray, like } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   documentVersions,
@@ -14,6 +14,7 @@ import {
   sourceRegions,
   systems
 } from "../src/lib/db/schema";
+import { developmentProjectId } from "../src/lib/demo";
 
 // Slice 14: assessing a document revision must return the FULL blast-radius
 // traversal as an impact list, not just direct neighbours. We seed an isolated
@@ -50,7 +51,7 @@ async function main() {
   const systemIds: string[] = [];
 
   try {
-    const [project] = await db.select({ id: projects.id }).from(projects).limit(1);
+    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, developmentProjectId)).limit(1);
     assert.ok(project, "A seeded project is required.");
 
     // A dedicated system to anchor the gate + evidence (avoids touching seed rows).

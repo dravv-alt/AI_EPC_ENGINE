@@ -144,7 +144,7 @@ export const systems = pgTable("systems", {
   name: varchar("name", { length: 200 }).notNull(),
   systemType: varchar("system_type", { length: 40 }).notNull(),
   ...timestamps
-});
+}, (table) => [uniqueIndex("systems_project_name_unique").on(table.projectId, table.name)]);
 
 export const assets = pgTable("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -165,7 +165,7 @@ export const gates = pgTable("gates", {
   approvalRole: memberRole("approval_role").notNull().default("approver"),
   status: gateStatus("status").notNull().default("not_started"),
   ...timestamps
-});
+}, (table) => [uniqueIndex("gates_project_system_name_unique").on(table.projectId, table.systemId, table.name)]);
 
 export const requirements = pgTable("requirements", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -338,7 +338,34 @@ export const knowledgeChunks = pgTable("knowledge_chunks", {
 ]);
 
 export const shipments = pgTable("shipments", {
-  id: uuid("id").primaryKey().defaultRandom(), tenantId: uuid("tenant_id").notNull().references(() => tenants.id), projectId: uuid("project_id").notNull().references(() => projects.id), equipmentId: uuid("equipment_id").references(() => assets.id), name: varchar("name", { length: 200 }).notNull(), originName: varchar("origin_name", { length: 200 }), originLat: numeric("origin_lat", { precision: 9, scale: 6 }), originLng: numeric("origin_lng", { precision: 9, scale: 6 }), destinationName: varchar("destination_name", { length: 200 }), destinationLat: numeric("destination_lat", { precision: 9, scale: 6 }), destinationLng: numeric("destination_lng", { precision: 9, scale: 6 }), currentLat: numeric("current_lat", { precision: 9, scale: 6 }), currentLng: numeric("current_lng", { precision: 9, scale: 6 }), positionSource: varchar("position_source", { length: 20 }).notNull().default("simulated"), mmsi: varchar("mmsi", { length: 20 }), plannedEta: timestamp("planned_eta", { withTimezone: true }).notNull(), weatherAdjustedEta: timestamp("weather_adjusted_eta", { withTimezone: true }), weatherDelayFactor: numeric("weather_delay_factor", { precision: 8, scale: 5 }).notNull().default("0"), telemetryReason: text("telemetry_reason"), lastPolledAt: timestamp("last_polled_at", { withTimezone: true }), requiredOnSite: timestamp("required_on_site", { withTimezone: true }).notNull(), portCongestion: boolean("port_congestion").notNull().default(false), status: varchar("status", { length: 10 }).notNull().default("green"), lastNotifiedStatus: varchar("last_notified_status", { length: 10 }), createdBy: uuid("created_by").notNull().references(() => users.id), ...timestamps
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  equipmentId: uuid("equipment_id").references(() => assets.id),
+  name: varchar("name", { length: 200 }).notNull(),
+  transportMode: varchar("transport_mode", { length: 10 }).notNull().default("sea"),
+  originName: varchar("origin_name", { length: 200 }),
+  originLat: numeric("origin_lat", { precision: 9, scale: 6 }),
+  originLng: numeric("origin_lng", { precision: 9, scale: 6 }),
+  destinationName: varchar("destination_name", { length: 200 }),
+  destinationLat: numeric("destination_lat", { precision: 9, scale: 6 }),
+  destinationLng: numeric("destination_lng", { precision: 9, scale: 6 }),
+  currentLat: numeric("current_lat", { precision: 9, scale: 6 }),
+  currentLng: numeric("current_lng", { precision: 9, scale: 6 }),
+  positionSource: varchar("position_source", { length: 20 }).notNull().default("simulated"),
+  mmsi: varchar("mmsi", { length: 20 }),
+  plannedEta: timestamp("planned_eta", { withTimezone: true }).notNull(),
+  weatherAdjustedEta: timestamp("weather_adjusted_eta", { withTimezone: true }),
+  weatherDelayFactor: numeric("weather_delay_factor", { precision: 8, scale: 5 }).notNull().default("0"),
+  telemetryReason: text("telemetry_reason"),
+  lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+  requiredOnSite: timestamp("required_on_site", { withTimezone: true }).notNull(),
+  portCongestion: boolean("port_congestion").notNull().default(false),
+  status: varchar("status", { length: 10 }).notNull().default("green"),
+  lastNotifiedStatus: varchar("last_notified_status", { length: 10 }),
+  assessedThreats: jsonb("assessed_threats").default([]),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  ...timestamps
 }, (table) => [index("shipments_project_status_idx").on(table.projectId, table.status)]);
 
 export const alerts = pgTable("alerts", {

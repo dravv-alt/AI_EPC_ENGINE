@@ -63,12 +63,13 @@ async function evaluateProject(projectId: string): Promise<GateReadiness[]> {
   const evaluatedAt = new Date();
 
   return projectGates.map((gate) => {
-    const acceptedRequirements = allEdges
+    const acceptedRequirements = [...new Map(allEdges
       .filter((edge) => edge.fromType === "requirement" && edge.relationshipType === "AFFECTS" && edge.toType === "gate" && edge.toId === gate.id)
       .map((edge) => requirementById.get(edge.fromId))
-      .filter((item): item is typeof requirements.$inferSelect => item?.reviewState === "accepted");
+      .filter((item): item is typeof requirements.$inferSelect => item?.reviewState === "accepted")
+      .map((requirement) => [requirement.id, requirement] as const)).values()];
     const proofDetails = acceptedRequirements.map((requirement) => {
-      const evidenceIds = allEdges.filter((edge) => edge.fromType === "evidence" && edge.relationshipType === "PROVES" && edge.toType === "requirement" && edge.toId === requirement.id).map((edge) => edge.fromId);
+      const evidenceIds = [...new Set(allEdges.filter((edge) => edge.fromType === "evidence" && edge.relationshipType === "PROVES" && edge.toType === "requirement" && edge.toId === requirement.id).map((edge) => edge.fromId))];
       const records = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is typeof evidence.$inferSelect => Boolean(item));
       return { requirementId: requirement.id, statement: requirement.statement, state: proofState(records), evidenceIds: records.map((item) => item.id) } satisfies RequirementProofDetail;
     });
