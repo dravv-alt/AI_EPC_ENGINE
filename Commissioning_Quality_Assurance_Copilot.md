@@ -4,6 +4,8 @@
 **Date:** July 15, 2026
 **Status:** Committed MVP Scope (Hackathon Build)
 
+> **Scope specification, retained as written (15 July 2026).** This is one of the two agent specifications folded into [PLANNER/StructuredPlan.md](PLANNER/StructuredPlan.md) and reconciled by [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md). It states intended scope, not shipped state, and it names Gemini 2.5 Flash directly — generation is now swappable across `mock | gemini | nim` via `MODEL_PROVIDER`, defaulting to a deterministic offline mock. For what is built and verified, see [STATUS.md](STATUS.md).
+
 ---
 
 ## 1. Agent Overview
@@ -29,7 +31,7 @@ The Commissioning Quality Assurance Copilot guides engineers through Integrated 
 
 ### 1.4 Relation to Existing Plan
 
-This agent implements the **Commissioning Quality Assurance Copilot** described in [StructuredPlan.md](file:///e:/Projects/ET_AI_Hack(2.0)/AI_EPC_ENGINE-Bhavik/AI_EPC_ENGINE-Bhavik/PLANNER/StructuredPlan.md) under the Planned Agent Suite:
+This agent implements the **Commissioning Quality Assurance Copilot** described in [StructuredPlan.md](PLANNER/StructuredPlan.md) under the Planned Agent Suite:
 
 > *"Commissioning Quality Assurance Copilot — trained on data-centre commissioning standards (TIA-942, BICSI, Uptime Institute Tier specifications); guides engineers through integrated system testing sequences; auto-generates test records; flags non-conformances against acceptance criteria; builds the as-commissioned quality documentation package."*
 

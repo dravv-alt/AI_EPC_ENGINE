@@ -1,6 +1,8 @@
 # Implementation Plan
 
-> Completion roadmap taking Pramana Cx from current status (per `remaining_work.md`) to a fully working system. Each slice is vertical and independently deliverable. Slices are ordered so that infrastructure a later slice needs is delivered by an earlier one. Areas already marked ✅ in `remaining_work.md` are out of scope and appear only where a later slice wires into them.
+> **Status: complete.** Every slice below has landed and is covered by `npm run verify:all`. Retained as the historical record of the completion pass — see [../STATUS.md](../STATUS.md) for current status.
+>
+> Completion roadmap taking Pramana Cx from its then-current status to a fully working system. Each slice is vertical and independently deliverable. Slices are ordered so that infrastructure a later slice needs is delivered by an earlier one. Areas already complete at the time of writing were out of scope and appear only where a later slice wires into them. (The `remaining_work.md` gap list this plan was written against has since been removed — every gap it tracked is closed, and STATUS.md is now the single source of truth for open work.)
 
 ---
 

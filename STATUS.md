@@ -6,7 +6,7 @@ This is the status ledger for Pramana Cx: what's verified, what's built-but-unve
 
 The Phase 0 platform, Phase 1 evidence-to-turnover tracer, and Phase 2 deterministic schedule tracer are implemented and locally verified. Governed Cx, compliance, and the predictive-risk pipeline are also verified end to end. The remaining Phase 3–4 depth is listed below without treating planned work as shipped.
 
-The three retrieval-backed agents (Specification & Quality Compliance, Predictive Schedule Risk, Project Knowledge & RFI) have completed the remediation sequenced in [agentFixingPlan.md](agentFixingPlan.md): semantic candidate discovery and an LLM-owned verdict for compliance, a lively synthetic signal formula with model-written mitigations for predictive risk, and a two-call plan-then-synthesize pipeline with code-enforced groundedness for knowledge. All three now run in TypeScript inside the core app, generation is swappable between a deterministic mock, Gemini, and NVIDIA NIM, and embeddings/reranking run through a third stateless Python service alongside ingestion and the solver.
+The three retrieval-backed agents (Specification & Quality Compliance, Predictive Schedule Risk, Project Knowledge & RFI) have completed the remediation sequenced in [agentFixingPlan.md](PLANNER/agentFixingPlan.md): semantic candidate discovery and an LLM-owned verdict for compliance, a lively synthetic signal formula with model-written mitigations for predictive risk, and a two-call plan-then-synthesize pipeline with code-enforced groundedness for knowledge. All three now run in TypeScript inside the core app, generation is swappable between a deterministic mock, Gemini, and NVIDIA NIM, and embeddings/reranking run through a third stateless Python service alongside ingestion and the solver.
 
 The 10-slice remediation sequenced in [PLANNER/final_fix_plans.md](PLANNER/final_fix_plans.md) is also complete: named/overridable target constants, solver timeout+bounded-retry+`SOLVE_FAILED` degradation, rate-limit coverage across auth/upload/schedule/export/knowledge endpoints, owner/due-date on compliance-generated findings, overdue-finding visibility in blocker views (kept separate from the readiness verdict), CP-SAT solver/model provenance in the turnover manifest, an advisory evidence-entropy score, teach-back generalized from compliance-only to all seven review routes, RFI resolution state, and mandatory-first metadata filters (system/asset/gate/revision/date) on knowledge retrieval.
 
@@ -23,6 +23,7 @@ The 10-slice remediation sequenced in [PLANNER/final_fix_plans.md](PLANNER/final
 | Governed Cx workflow | Verified | Standard ingestion, cited checklist generation/review, deterministic readings, human-routed narrative steps, editable draft, approved immutable report |
 | Shipments | Built | Asset-linked legs, estimate provenance, delayed/recovered events, graph-derived schedule mappings, map UI |
 | Compliance | Verified | Metadata-filtered semantic candidate discovery across submittals/POs/shop-drawings/drawings, LLM-owned verdict with the deterministic comparator retained as mock-supplier and recorded cross-check, code-enforced grounding validation, unchanged exact-citation precedent semantics, AI-suggestion labeling, source-hierarchy conflict panel, scan-triggered review queue |
+| Compliance modality tiering | Verified | A requirement carries a stored `comparisonModality` (numeric/boolean/categorical/narrative) set at extraction; a tagged requirement routes to that one comparator branch only. When the branch's own precondition isn't met it returns `needs_engineering_judgment` of that same comparison type rather than silently falling through to a different branch's heuristic — a mis-tagged clause degrades to human judgment instead of a wrong-comparator verdict |
 | Teach-back (generalized) | Verified | Reusable, cited, attributed correction capture on edit/reject (never on plain accept) across all seven generic review routes, surfaced as read-only advisory context on similar future reviews, never auto-applied; the specialized `compliancePrecedents` exact-hash path is untouched |
 | Knowledge and RFI similarity | Verified | Mandatory-first, in-SQL metadata filters (project/doc-type plus system/asset/gate/revision/date) enforced before ranking, cross-encoder reranking, deterministic graph-context expansion, a two-call plan-then-synthesize pipeline with a code-enforced groundedness filter, citation-chip UI, explicit "no results in scope" state, explicit RFI `resolutionState` so only actually-resolved RFIs surface under the "previously resolved" heading |
 | Predictive risk | Verified | Swappable procurement/lead-time/workforce/weather clients, a lively hash-seeded synthetic formula that organically crosses materiality thresholds, LLM-generated mitigation proposals with a static fallback on any failure, durable polls, deterministic materiality, task/type deduplication, self-resolution, alerts, recurring BullMQ orchestration, project-scoped event validation, APIs, and schedule UI |
@@ -45,7 +46,9 @@ The complete local matrix passed against a newly built production artifact. It a
 | Deterministic schedule | Passed | Reviewed inputs, resource/dependency constraints, CP-SAT optimum, immutable versions, shipment-triggered warm-start re-solve |
 | Solver resilience | Passed | Timeout aborts rather than hangs, bounded backed-off retry, prior schedule version byte-identical after exhaustion, `SOLVE_FAILED` recorded with an audit event, resubmission requeues, a recovering stub still succeeds |
 | Governed Cx | Passed | Controlled standard extraction, cited checklist, readings, editable report, immutable approved evidence artifact |
+| Ingestion formats | Passed | PDF, CSV, and XLSX resolve by content-type with extension fallback, each producing hashed immutable originals and typed extraction regions |
 | Governed compliance | Passed | Unit normalization, semantic candidate discovery, LLM-owned verdict with recorded deterministic cross-check, non-authoritative proposed finding, human blocker promotion, exact-citation precedent, cross-project rejection |
+| Compliance modality tiering | Passed | Extraction stores a `comparisonModality`; a tagged requirement routes to that branch only, and an unmet precondition degrades to `needs_engineering_judgment` of the same comparison type instead of falling through to another comparator |
 | Compliance finding owner/due-date | Passed | Both the proposal and human-acceptance paths derive a real, project-scoped owner (never fabricated/cross-project) and a severity-scaled due date |
 | Teach-back (generalized) | Passed | Reject/edit capture rationale with before/after values, plain accept captures nothing, cross-project notes never leak, surfaced notes never mutate the reviewed record's state, `compliancePrecedents` untouched |
 | Predictive risk | Passed | Four-source poll, lively synthetic signal formula, LLM-generated mitigations with static fallback, explicit unavailable state, materiality/deduplication, self-resolution, advisory alert, review, solver isolation |
@@ -74,7 +77,7 @@ The items above are intentional gaps, not hidden failures in the passing local m
 
 ## Documentation precedence
 
-When old documents conflict, implementation follows this order:
+When documents conflict, implementation follows this order:
 
 1. [PLANNER/Human.md](PLANNER/Human.md) for explicit human safety and authority constraints
 2. [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md) for the reconciled execution baseline
@@ -83,3 +86,18 @@ When old documents conflict, implementation follows this order:
 5. Current migrations, tests, and this status ledger for actual shipped state
 
 No AI-generated proposal may bypass human acceptance merely because an older planning document implies automation.
+
+### Which document to read for what
+
+Every document falls into exactly one of three roles. A document's role determines whether it may be trusted as current.
+
+| Role | Documents | Trust as |
+| --- | --- | --- |
+| **Live state** — updated as the build changes | [README.md](README.md), [CAPABILITIES.md](CAPABILITIES.md), this file, [local_dev_guide.md](local_dev_guide.md), [PLANNER/Tracker.md](PLANNER/Tracker.md), [PLANNER/RetrievalArchitecture.md](PLANNER/RetrievalArchitecture.md), plus the git-ignored local `Testing_mock.md` walkthrough | Current |
+| **Approved planning baseline** — frozen intent, still authoritative for *what should be true* | [PLANNER/PRD.md](PLANNER/PRD.md), [PLANNER/StructuredPlan.md](PLANNER/StructuredPlan.md), [PLANNER/TRD.md](PLANNER/TRD.md), [PLANNER/Schema.md](PLANNER/Schema.md), [PLANNER/DesignDecisions.md](PLANNER/DesignDecisions.md), [PLANNER/AppFlow.md](PLANNER/AppFlow.md), [PLANNER/Rules.md](PLANNER/Rules.md), [PLANNER/Features.md](PLANNER/Features.md), [PLANNER/Human.md](PLANNER/Human.md), [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md), [PLANNER/FoundationBuildPlan.md](PLANNER/FoundationBuildPlan.md), the three `ImplementationPlan*.md` files | Intent, not shipped state |
+| **Historical record** — completed plans and original strategy, retained unedited | [PLANNER/completion_Plan.md](PLANNER/completion_Plan.md), [PLANNER/agentFixingPlan.md](PLANNER/agentFixingPlan.md), [PLANNER/final_fix_plans.md](PLANNER/final_fix_plans.md), [PLANNER/Phase3Phase4Verification.md](PLANNER/Phase3Phase4Verification.md), [docs/PRODUCT_BLUEPRINT.md](docs/PRODUCT_BLUEPRINT.md), [Commissioning_Quality_Assurance_Copilot.md](Commissioning_Quality_Assurance_Copilot.md), [Supply_Chain_Visibility_Risk_Agent.md](Supply_Chain_Visibility_Risk_Agent.md) | Closed; superseded by this file |
+
+Two conventions matter when reading the historical plans:
+
+- **"Slice N" is not a shared numbering scheme.** `completion_Plan.md` (Slices 1–16), `agentFixingPlan.md` (Slices 0–9), and `final_fix_plans.md` (Slices 1–10) each number independently. A slice number is only meaningful together with its plan.
+- **The chronological build ledger is git history.** No Markdown file tracks commit-by-commit progress; this status table plus `PLANNER/Tracker.md` cover current state.

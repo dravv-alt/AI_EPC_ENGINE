@@ -14,6 +14,20 @@ The test fixture is synthetic only. `Mumbai DC-07` is the authorized project; `I
 | Audit integrity | All canonical-v2 audit events form a valid hash chain | `npm run verify:audit`. |
 | Build quality | TypeScript and production build are clean | `npm run typecheck && npm run build`. |
 
-## Explicitly not claimed complete yet
+## Status of the previously-deferred scope
 
-The current branch does **not** yet implement the full prior schedule/CP-SAT pipeline, live AIS/weather polling, background jobs, pgvector embeddings, RFI similarity, grounded standards/precedent lookup, or the dedicated frontend screens for every Phase 3 surface. Those are preconditions/dependencies named in the Phase 3 plan, not features that can be honestly marked verified from the current foundation.
+Everything this section formerly listed as not-yet-implemented has since been built and is covered by the local verification matrix:
+
+| Formerly deferred | Now |
+|---|---|
+| Schedule / CP-SAT pipeline | Built — reviewed inputs, dependency validation, CP-SAT solve, immutable versions, warm-start re-solve, bounded timeout + retry degrading to `SOLVE_FAILED` (`verify:schedule-http`, `verify:solver-resilience`) |
+| Background jobs | Built — BullMQ + `durable_jobs`, recurring poll registered as repeatable jobs in `src/lib/jobs/scheduler.ts` (`verify:polling-http`, `verify:risk-autopoll-http`) |
+| Weather / external signal polling | Built — swappable procurement, lead-time, workforce, and weather clients; all four source outcomes recorded, including explicit data-unavailable (`verify:weather-poll-http`, `verify:risk-http-clients`) |
+| pgvector embeddings | Built — `knowledge_chunks` embeddings via the `services/retrieval` embed/rerank service (`verify:knowledge-embed`, `verify:knowledge-rerank`) |
+| RFI similarity | Built — scoped similarity restricted to `resolutionState = resolved` (`verify:rfi-similar-http`, `verify:rfi-resolution`) |
+| Grounded standards / precedent lookup | Built — code-enforced groundedness filter plus exact-citation `compliance_precedents` (`verify:compliance-llm-http`, `verify:knowledge-synthesis`) |
+| Phase 3 frontend surfaces | Built — compliance review queue, knowledge citation chips, graph explorer, Command Center, schedule/risk boards |
+
+AIS vessel tracking is behind a swappable client (`src/lib/supply/ais-client.ts`): a real `aisstream.io` WebSocket driver is opt-in via `AIS_MODE=aisstream` plus an API key, and a synthetic great-circle driver is the offline default. Every position carries an explicit `live` vs. `simulated` label through to the UI, so a seeded position is never presented as a real one.
+
+See [STATUS.md](../STATUS.md) for the authoritative, continuously-updated verification ledger.

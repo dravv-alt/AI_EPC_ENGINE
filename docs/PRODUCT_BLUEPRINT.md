@@ -1,5 +1,14 @@
 # Pramana Cx: Production Product Blueprint
 
+> **Status: original strategy document, retained as written (13 July 2026). Not a description of the current build.**
+>
+> This blueprint records the market reasoning and product wedge that motivated the project. Two things in it have since been superseded and should not be read as current architecture:
+>
+> - **Hosting/stack.** The blueprint costs the MVP against Cloudflare free allowances. The build was subsequently de-Cloudflared to a fully local stack (Next.js, PostgreSQL + pgvector, Redis/BullMQ, MinIO, and three Python sidecars). See [PLANNER/DesignDecisions.md](../PLANNER/DesignDecisions.md) and [PLANNER/TRD.md](../PLANNER/TRD.md).
+> - **Scope sequencing.** Phase/feature ordering here predates the reconciled execution baseline in [PLANNER/CanonicalBuildPlan.md](../PLANNER/CanonicalBuildPlan.md).
+>
+> For what actually exists and is verified, see [STATUS.md](../STATUS.md) and [CAPABILITIES.md](../CAPABILITIES.md).
+
 **Tagline:** Every commissioning claim, proven.
 
 **Decision date:** 13 July 2026

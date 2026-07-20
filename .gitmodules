@@ -1,6 +1,3 @@
 [submodule "pramana-reference"]
 	path = AI_EPC_ENGINE
 	url = https://github.com/dravv-alt/AI_EPC_ENGINE.git
-[submodule "planboard-plugin"]
-	path = planner board ka output/PlanBoard-plugin
-	url = https://github.com/Bhavik-Sheth/PlanBoard-plugin.git

@@ -4,6 +4,8 @@
 **Date:** July 15, 2026
 **Status:** Committed MVP Scope (Hackathon Build)
 
+> **Scope specification, retained as written (15 July 2026).** This is one of the two agent specifications folded into [PLANNER/StructuredPlan.md](PLANNER/StructuredPlan.md) and reconciled by [PLANNER/CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md). It states intended scope, not shipped state. Both the AIS and weather drivers are swappable and default to synthetic offline behaviour (`AIS_MODE`, `WEATHER_MODE`); every position carries an explicit `live` vs. `simulated` label. For what is built and verified, see [STATUS.md](STATUS.md).
+
 ---
 
 ## 1. Agent Overview
@@ -28,7 +30,7 @@ The Supply Chain Visibility & Risk Agent tracks all critical equipment shipments
 
 ### 1.4 Relation to Existing Plan
 
-This agent implements the **Supply Chain Visibility & Risk Agent** described in [StructuredPlan.md](file:///e:/Projects/ET_AI_Hack(2.0)/AI_EPC_ENGINE-Bhavik/AI_EPC_ENGINE-Bhavik/PLANNER/StructuredPlan.md) under the Planned Agent Suite:
+This agent implements the **Supply Chain Visibility & Risk Agent** described in [StructuredPlan.md](PLANNER/StructuredPlan.md) under the Planned Agent Suite:
 
 > *"Supply Chain Visibility & Risk Agent — geospatial AI tracking critical equipment shipments (UPS systems, generators, cooling towers, switchgear) across multi-tier suppliers; alerts on at-risk deliveries; models procurement alternatives before they become critical-path issues."*
 

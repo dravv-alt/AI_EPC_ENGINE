@@ -12,11 +12,11 @@ This application must not use a generic chatbot-style RAG pipeline. Its retrieva
 
 ## Scale path
 
-- **Now:** Postgres is authoritative. Source regions, requirements, evidence, relationships and audit history remain transactional tables. The parser service is stateless and can be replicated.
-- **Candidate retrieval:** use PostgreSQL full-text search and metadata filters for the first candidate set. Add `pgvector` embeddings after the controlled source workflow is stable; do not add a separate graph database yet because the `edges` table already provides governed relationship traversal.
-- **Hybrid rank:** retrieve top 50 lexical candidates and top 50 semantic candidates, deduplicate with reciprocal-rank fusion, then apply a cross-encoder reranker to the top 20. Provide the best 8 source regions to generation, diversified by document version.
-- **Large files:** upload directly to object storage in production, publish a durable parse job to Redis, and record `pending → processing → completed | failed`. The synchronous local route exists only for a small, inspectable foundation release; it is deliberately capped at 20 MB.
-- **Observability:** record source/version identifiers, parser version, region count, retrieval candidates, reranking score, user, and final citations. Build an evaluation set from accepted/rejected requirement reviews before tuning chunk or reranking parameters.
+- **Now:** Postgres is authoritative. Source regions, requirements, evidence, relationships and audit history remain transactional tables. The parser service is stateless and can be replicated. Ingestion accepts PDF, CSV, and XLSX.
+- **Candidate retrieval — built.** `pgvector` embeddings over `knowledge_chunks` are in place alongside metadata filters. Mandatory filters (project and doc-type, plus system/asset/gate/revision/date when supplied) are enforced **in SQL before ranking**, never as a post-filter. No separate graph database was introduced; the `edges` table provides governed relationship traversal, and `src/lib/knowledge/expand.ts` uses it for deterministic graph-context expansion.
+- **Hybrid rank — built.** Cross-encoder reranking runs in the stateless `services/retrieval` Python service (port 8003), swappable against a deterministic mock via `EMBEDDING_PROVIDER`. Generation is a two-call plan-then-synthesize pipeline (`src/lib/knowledge/pipeline.ts`) with a **code-enforced** groundedness filter: a claim without a resolvable source-region id is dropped by the application layer, not trusted from the model.
+- **Large files:** upload publishes a durable parse job (`durable_jobs` + BullMQ) recording `pending → processing → completed | failed`. The synchronous local route remains capped at 20 MB.
+- **Observability:** source/version identifiers, parser version, region count, retrieval candidates, reranking score, user, and final citations are recorded. Named accuracy targets live in `src/lib/config/targets.ts`, validated through `src/lib/env.ts` so an out-of-range override is rejected at startup. A golden-set evaluation harness is still outstanding — the targets are declared but not yet measured against a curated set.
 
 ## Non-negotiable safeguards
 

@@ -6,17 +6,19 @@ The product is **advisory by design**. AI may extract, retrieve, rank, draft, an
 
 **Where to go from here:**
 
+- **[CAPABILITIES.md](CAPABILITIES.md)** — a one-page summary of what the application does, with a walkthrough user flow
 - **[STATUS.md](STATUS.md)** — what's verified, what's a known gap, and the latest local verification result
-- **[agentFixingPlan.md](agentFixingPlan.md)** — the completed remediation plan for the three retrieval-backed agents (compliance, predictive risk, knowledge/RFI)
-- **[PLANNER/](PLANNER)** — product intent ([PRD.md](PLANNER/PRD.md)), technical constraints ([TRD.md](PLANNER/TRD.md)), and the reconciled execution baseline ([CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md))
-- **[what I have built.md](what%20I%20have%20built.md)** — the chronological build ledger
+- **[local_dev_guide.md](local_dev_guide.md)** — prerequisites, environment keys, and how to bring the stack up
+- **[PLANNER/](PLANNER)** — product intent ([PRD.md](PLANNER/PRD.md)), technical constraints ([TRD.md](PLANNER/TRD.md)), and the reconciled execution baseline ([CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md)); [Tracker.md](PLANNER/Tracker.md) records the state of every planning document
+
+The chronological build record lives in git history. STATUS.md is the single source of truth for what is shipped and what is still open.
 
 ## How the application works
 
 The normal project journey is intentionally governed rather than a single AI chat:
 
 1. **Select a project:** project membership determines every record and action the user can see.
-2. **Control sources:** upload a PDF in Sources or a standard in Cx. The system validates its bytes, hashes the immutable object, extracts page regions, and records exact citations.
+2. **Control sources:** upload a PDF, CSV, or XLSX in Sources, or a standard in Cx. The system validates its bytes, hashes the immutable object, extracts page or row/cell regions, and records exact citations.
 3. **Review proposals:** AI may propose requirements, schedule inputs, or cited Cx steps. A reviewer must accept, edit, or reject each proposal before it gains authority.
 4. **Model the facility:** create systems, assets, and approval gates, then connect records through typed provenance edges.
 5. **Collect evidence:** capture online or offline field evidence. New evidence starts pending; an authorized reviewer decides whether it proves an accepted requirement.
@@ -282,7 +284,7 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 - **Graph:** typed relational `edges` table, avoiding a second operational database until traversal evidence proves it necessary
 - **Jobs:** Redis and BullMQ with durable database job state and idempotency keys
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue
-- **Document extraction:** lightweight PyMuPDF service with page, bounding-box, and content-hash provenance
+- **Document extraction:** lightweight PyMuPDF service accepting PDF, CSV, and XLSX, with page/bounding-box (or sheet/row/cell) and content-hash provenance
 - **Scheduling:** isolated FastAPI OR-Tools CP-SAT service; infeasibility is returned, never hidden
 - **AI:** a split, schema-validated provider boundary — `MODEL_PROVIDER` (`mock`/`gemini`/`nim`) for structured generation, `EMBEDDING_PROVIDER` (`mock`/`service`) for embeddings — with a JSON-repair retry shared by every real (non-mock) provider so one malformed response doesn't fail a job outright. The deterministic mock is the default and keeps the offline verification matrix green regardless of which hosted model is configured; every AI-authored suggestion is labeled with its source and model version in the audit trail and lands `reviewState: "proposed"`, never auto-accepted
 - **Retrieval:** a third stateless FastAPI service (`services/retrieval`, port 8003) alongside ingestion and the solver, serving `BAAI/bge-base-en-v1.5` embeddings (768-dim, matching the existing `vector(768)` column with no migration) and `BAAI/bge-reranker-base` cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks. Every stored vector is tagged with the model that produced it, so a provider switch degrades to fewer results rather than silently corrupting cosine rankings across incompatible vector spaces
