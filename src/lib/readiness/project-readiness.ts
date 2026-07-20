@@ -18,10 +18,22 @@ export interface GateReadiness {
   blockingFindings: number;
   unmetPrerequisites: number;
   proofDetails: RequirementProofDetail[];
-  blockingFindingDetails: Array<{ id: string; title: string; severity: string; ownerId: string | null; dueAt: Date | null }>;
+  blockingFindingDetails: Array<{ id: string; title: string; severity: string; ownerId: string | null; dueAt: Date | null; isOverdue: boolean; reasons: Array<"severity" | "overdue"> }>;
   prerequisiteDetails: Array<{ id: string; name: string; status: string }>;
   evaluatedAt: Date;
   ruleVersion: string;
+}
+
+// Statuses that mean a finding is no longer actionable, so it can never be
+// "overdue" regardless of dueAt. "resolved" is included for forward
+// compatibility even though only "closed" is emitted today.
+const CLOSED_FINDING_STATUSES = new Set(["resolved", "closed"]);
+
+// Deterministic: a finding is overdue only by its own dueAt/status, never by
+// severity. Severity decides whether it blocks the gate; overdue decides
+// whether it's visible in the blocker view regardless of severity (US-05).
+function isOverdueFinding(finding: typeof findings.$inferSelect, now: Date): boolean {
+  return finding.dueAt !== null && finding.dueAt.getTime() < now.getTime() && !CLOSED_FINDING_STATUSES.has(finding.status);
 }
 
 // Fixed, versioned constant — not computed per-record — so it's referenced
@@ -60,7 +72,25 @@ async function evaluateProject(projectId: string): Promise<GateReadiness[]> {
       const records = evidenceIds.map((id) => evidenceById.get(id)).filter((item): item is typeof evidence.$inferSelect => Boolean(item));
       return { requirementId: requirement.id, statement: requirement.statement, state: proofState(records), evidenceIds: records.map((item) => item.id) } satisfies RequirementProofDetail;
     });
-    const blockingFindingDetails = projectFindings.filter((finding) => finding.gateId === gate.id && ["open", "in_progress"].includes(finding.status) && ["high", "critical"].includes(finding.severity)).map((finding) => ({ id: finding.id, title: finding.title, severity: finding.severity, ownerId: finding.ownerId, dueAt: finding.dueAt }));
+    // Two independent reasons a finding surfaces in the blocker view: severity
+    // (high/critical, open) drives the readiness verdict below; overdue (past
+    // dueAt, not closed) surfaces at ANY severity purely for visibility and
+    // must never change `blockingFindings` — that count feeds computeReadiness
+    // and must stay exactly what it was before this reason existed.
+    const gateFindings = projectFindings.filter((finding) => finding.gateId === gate.id);
+    const severityBlockingFindings = gateFindings.filter((finding) => ["open", "in_progress"].includes(finding.status) && ["high", "critical"].includes(finding.severity));
+    const blockingFindingDetails = gateFindings
+      .map((finding) => {
+        const isSeverityBlocking = ["open", "in_progress"].includes(finding.status) && ["high", "critical"].includes(finding.severity);
+        const overdue = isOverdueFinding(finding, evaluatedAt);
+        if (!isSeverityBlocking && !overdue) return null;
+        const reasons: Array<"severity" | "overdue"> = [];
+        if (isSeverityBlocking) reasons.push("severity");
+        if (overdue) reasons.push("overdue");
+        return { id: finding.id, title: finding.title, severity: finding.severity, ownerId: finding.ownerId, dueAt: finding.dueAt, isOverdue: overdue, reasons };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => (a.isOverdue === b.isOverdue ? 0 : a.isOverdue ? -1 : 1));
     const prerequisiteDetails = projectGates.filter((candidate) => candidate.systemId === gate.systemId && Number(candidate.sequenceNumber) < Number(gate.sequenceNumber) && candidate.status !== "approved").map((candidate) => ({ id: candidate.id, name: candidate.name, status: candidate.status }));
     const input = {
       acceptedRequirements: acceptedRequirements.length,
@@ -70,7 +100,7 @@ async function evaluateProject(projectId: string): Promise<GateReadiness[]> {
       unapprovedEvidence: proofDetails.filter((item) => item.state === "unapproved").length,
       staleEvidence: proofDetails.filter((item) => item.state === "stale").length,
       failedEvidence: proofDetails.filter((item) => item.state === "failed").length,
-      blockingFindings: blockingFindingDetails.length,
+      blockingFindings: severityBlockingFindings.length,
       unmetPrerequisites: prerequisiteDetails.length
     };
     return { gateId: gate.id, state: computeReadiness(input), ...input, proofDetails, blockingFindingDetails, prerequisiteDetails, evaluatedAt, ruleVersion };

@@ -5,6 +5,14 @@ import { useRouter } from "next/navigation";
 
 type Finding = { id: string; gateId: string | null; title: string; description: string | null; severity: string; status: string; ownerId: string | null; ownerName: string | null; dueAt: Date | string | null; resolutionNote: string | null; resolvedAt: Date | string | null; version: number; updatedAt: Date | string };
 
+// Mirrors the deterministic overdue rule in project-readiness.ts: past dueAt
+// and not resolved/closed, regardless of severity (PRD US-05). Computed
+// client-side from fields already on the row — no extra fetch.
+function isOverdue(finding: Finding): boolean {
+  if (!finding.dueAt || finding.status === "closed") return false;
+  return new Date(finding.dueAt).getTime() < Date.now();
+}
+
 export function ActionsWorkbench({ projectId, findings, gates, members }: { projectId: string; findings: Finding[]; gates: Array<{ id: string; name: string }>; members: Array<{ id: string; name: string }> }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -38,7 +46,7 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
     if (response.ok) router.refresh();
   }
 
-  const active = findings.filter((finding) => finding.status !== "closed");
+  const active = findings.filter((finding) => finding.status !== "closed").sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
   const closed = findings.filter((finding) => finding.status === "closed");
   return <div className="workflow-stack">
     <form className="surface finding-form" onSubmit={create}>
@@ -55,7 +63,7 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
     <section className="section-heading"><div><p className="eyebrow">Requires attention</p><h2>{active.length} active finding{active.length === 1 ? "" : "s"}</h2></div></section>
     <section className="workflow-grid">
       {active.map((finding) => <article className="surface workflow-card finding-card" key={finding.id}>
-        <span className={`severity ${finding.severity}`} /><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>
+        <span className={`severity ${finding.severity}`} /><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>{isOverdue(finding) && <span className="status-pill blocked">overdue</span>}
         <h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p>
         <small>{finding.ownerName ?? "Unassigned"} · Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small>
         {finding.gateId && <a className="finding-gate-link" href={`/readiness?gate=${finding.gateId}`}>View gate readiness</a>}
