@@ -1,11 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { scheduleAssignments, scheduleDependencies, scheduleEvents, scheduleResources, scheduleTaskResources, scheduleTasks, scheduleVersions } from "@/lib/db/schema";
 import { getModelProvider } from "@/lib/model/provider";
-import { assertAcyclic, solveSchedule, type SolverInput } from "@/lib/schedule/solver";
+import { assertAcyclic, solveSchedule, SolverUnavailableError, type SolverInput } from "@/lib/schedule/solver";
 
 const explanationSchema = z.object({ explanation: z.string().min(10).max(2000) });
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -27,8 +27,21 @@ function activeShipmentAvailability(events: Array<typeof scheduleEvents.$inferSe
   return byTask;
 }
 
-export async function createScheduleVersion(input: { projectId: string; actorId: string; horizonStart: Date; reason: string; triggerEventId?: string }) {
-  const deterministic = await db.transaction(async (tx) => {
+// Rules.md line 33: the solver is an external service that can hang or fail.
+// solveSchedule() (called below) is bounded by its own timeout/retry loop, but
+// that is not enough on its own — a slow or failing external call must never
+// hold a DB transaction open, or it turns an external outage into a stuck
+// transaction and, eventually, a stuck connection pool. So this function reads
+// everything it needs inside a short transaction, calls solveSchedule()
+// entirely OUTSIDE any transaction, and only opens a second short transaction
+// to persist once a solver result already exists in hand. If the solve fails
+// after its bounded retries, nothing between "read" and "solve" is ever
+// written: the prior schedule_version and every task's reviewState are left
+// completely untouched, and the failure is recorded as an explicit
+// SOLVE_FAILED outcome (schedule_events.processingStatus + an audit event)
+// instead of a partial or inconsistent version.
+async function prepareSolve(input: { projectId: string; horizonStart: Date }) {
+  return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`schedule:${input.projectId}`}))`);
     const tasks = await tx.select().from(scheduleTasks).where(and(eq(scheduleTasks.projectId, input.projectId), eq(scheduleTasks.reviewState, "accepted")));
     if (!tasks.length) throw new Error("At least one accepted task is required.");
@@ -64,16 +77,51 @@ export async function createScheduleVersion(input: { projectId: string; actorId:
       hints: previousAssignments.filter((item) => taskIds.includes(item.taskId)).map((item) => ({ task_id: item.taskId, start_offset: Math.max(0, Math.round((item.startAt.getTime() - input.horizonStart.getTime()) / 3_600_000)) }))
     };
     const inputHash = hash(constraints);
-    const solved = await solveSchedule(solverInput);
+    return { tasks, parent, solverInput, inputHash, activeShipmentConstraintCount: availability.size };
+  });
+}
+
+export async function createScheduleVersion(input: { projectId: string; actorId: string; horizonStart: Date; reason: string; triggerEventId?: string }) {
+  const prepared = await prepareSolve(input);
+
+  let solved;
+  try {
+    solved = await solveSchedule(prepared.solverInput);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Schedule solve failed.";
+    if (input.triggerEventId) {
+      await db.update(scheduleEvents).set({ processingStatus: "SOLVE_FAILED", processingError: message, processedAt: new Date(), updatedAt: new Date() }).where(eq(scheduleEvents.id, input.triggerEventId));
+    }
+    await writeAuditEvent({
+      projectId: input.projectId,
+      actorId: input.actorId,
+      action: "schedule.solve_failed",
+      entityType: "schedule_version",
+      entityId: input.triggerEventId ?? prepared.parent?.id ?? randomUUID(),
+      before: prepared.parent ? { versionNumber: prepared.parent.versionNumber, solverStatus: prepared.parent.solverStatus } : null,
+      after: { outcome: "SOLVE_FAILED", reason: input.reason, error: message, triggerEventId: input.triggerEventId ?? null, attemptedInputHash: prepared.inputHash, attempts: error instanceof SolverUnavailableError ? error.attempts : null }
+    });
+    throw error instanceof SolverUnavailableError ? error : new SolverUnavailableError(1, error);
+  }
+
+  const deterministic = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`schedule:${input.projectId}`}))`);
+    // Re-read the parent version inside the persist transaction: the read that
+    // produced `prepared` happened before the (potentially slow) solver call,
+    // so another writer could have landed a new version in between. If so,
+    // this solve is against stale hints/inputs — refuse to persist a version
+    // whose parent lineage has moved rather than silently overwriting it.
+    const currentParent = await tx.select().from(scheduleVersions).where(eq(scheduleVersions.projectId, input.projectId)).orderBy(desc(scheduleVersions.versionNumber)).limit(1).then((rows) => rows[0]);
+    if ((currentParent?.id ?? null) !== (prepared.parent?.id ?? null)) throw new Error("The schedule changed while this solve was running; retry to solve against the current version.");
     const [version] = await tx.insert(scheduleVersions).values({
       projectId: input.projectId,
-      parentVersionId: parent?.id ?? null,
+      parentVersionId: prepared.parent?.id ?? null,
       triggerEventId: input.triggerEventId ?? null,
-      versionNumber: (parent?.versionNumber ?? 0) + 1,
+      versionNumber: (prepared.parent?.versionNumber ?? 0) + 1,
       reason: input.reason,
       solverStatus: solved.status,
       solverVersion: "ortools-cp-sat-v1",
-      inputHash,
+      inputHash: prepared.inputHash,
       objectiveHours: solved.objective_hours,
       criticalTaskIds: solved.critical_task_ids,
       bottlenecks: solved.bottlenecks,
@@ -81,7 +129,7 @@ export async function createScheduleVersion(input: { projectId: string; actorId:
       createdBy: input.actorId
     }).returning();
     if (solved.assignments.length) await tx.insert(scheduleAssignments).values(solved.assignments.map((item) => ({ versionId: version.id, taskId: item.task_id, startAt: new Date(input.horizonStart.getTime() + item.start_offset * 3_600_000), endAt: new Date(input.horizonStart.getTime() + item.end_offset * 3_600_000), isCritical: solved.critical_task_ids.includes(item.task_id) })));
-    return { tasks, version, solved, inputHash, warmStartHintCount: solverInput.hints?.length ?? 0, activeShipmentConstraintCount: availability.size };
+    return { tasks: prepared.tasks, version, solved, inputHash: prepared.inputHash, warmStartHintCount: prepared.solverInput.hints?.length ?? 0, activeShipmentConstraintCount: prepared.activeShipmentConstraintCount };
   });
 
   await writeAuditEvent({ projectId: input.projectId, actorId: input.actorId, action: "schedule.version_saved", entityType: "schedule_version", entityId: deterministic.version.id, after: { versionNumber: deterministic.version.versionNumber, solverStatus: deterministic.solved.status, inputHash: deterministic.inputHash, objectiveHours: deterministic.solved.objective_hours, overrunHours: deterministic.solved.overrun_hours, warmStartHints: deterministic.warmStartHintCount, activeShipmentConstraints: deterministic.activeShipmentConstraintCount } });

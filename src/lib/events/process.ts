@@ -34,8 +34,19 @@ export async function processScheduleEvent(event: ScheduleEvent, actorId: string
   await assertCurrentTaskScope(event);
   await assertPredictedRiskScope(event);
   const dedupKey = eventDedupKey(event);
-  const [stored] = await db.insert(scheduleEvents).values({ projectId: event.projectId, eventId: event.eventId, eventType: event.eventType, dedupKey, occurredAt: new Date(event.occurredAt), payload: event.payload, processingStatus: "queued" }).onConflictDoNothing().returning();
-  if (!stored) return { duplicate: true, dedupKey };
+  const [inserted] = await db.insert(scheduleEvents).values({ projectId: event.projectId, eventId: event.eventId, eventType: event.eventType, dedupKey, occurredAt: new Date(event.occurredAt), payload: event.payload, processingStatus: "queued" }).onConflictDoNothing().returning();
+  let stored = inserted;
+  if (!stored) {
+    // A conflict on the dedup key is normally an inert duplicate. The one
+    // exception is a row a prior solve attempt left as SOLVE_FAILED: that
+    // status exists specifically so the same event can be resubmitted for a
+    // manual retry (Rules.md line 33/88) instead of being silently absorbed
+    // as a no-op, which would strand the event unprocessed forever.
+    const existing = await db.query.scheduleEvents.findFirst({ where: and(eq(scheduleEvents.projectId, event.projectId), eq(scheduleEvents.dedupKey, dedupKey)) });
+    if (existing?.processingStatus !== "SOLVE_FAILED") return { duplicate: true, dedupKey };
+    const [retried] = await db.update(scheduleEvents).set({ processingStatus: "queued", processingError: null, processedAt: null, durableJobId: null, resultVersionId: null, updatedAt: new Date() }).where(eq(scheduleEvents.id, existing.id)).returning();
+    stored = retried;
+  }
 
   if (event.eventType === "TEST_FAILED") await raiseAlert({ projectId: event.projectId, eventType: event.eventType, dedupKey: `test:${event.payload.testRecordId}:${event.payload.stepId}`, title: "Commissioning test step requires action", payload: event.payload });
   if (event.eventType === "SHIPMENT_DELAYED") await raiseAlert({ projectId: event.projectId, eventType: event.eventType, dedupKey: `shipment:${event.payload.shipmentId}`, title: `Shipment is ${event.payload.status}`, payload: event.payload });
