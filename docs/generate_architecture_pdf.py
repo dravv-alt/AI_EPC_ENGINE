@@ -1,5 +1,7 @@
 """Generate the print-safe Pramana Cx A4 technical architecture dossier."""
 from pathlib import Path
+import json
+import re
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -159,6 +161,46 @@ def shot(filename, caption):
     image.drawWidth = CONTENT_W
     image.drawHeight = CONTENT_W * 720 / 1280
     return KeepTogether([image, Spacer(1, 3 * mm), p(f"<b>{caption}</b>", "small")])
+
+
+def env_inventory():
+    """Read the real example configuration so this appendix stays current."""
+    rows, seen = [], set()
+    for raw in (ROOT / ".env.example").read_text().splitlines():
+        if not raw or raw.startswith("#") or "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        if key in seen or not re.match(r"^[A-Z][A-Z0-9_]*$", key):
+            continue
+        seen.add(key)
+        if key.startswith(("DATABASE", "POSTGRES", "REDIS", "S3", "MINIO", "OBJECT", "LOCAL_UPLOAD")):
+            group = "data/infrastructure"
+        elif key.startswith(("MODEL", "OLLAMA", "GEMINI", "NIM", "EMBEDDING", "RETRIEVAL")):
+            group = "AI/retrieval"
+        elif key.startswith(("AUTH", "SESSION", "CLERK", "APP_BASE")):
+            group = "identity/application"
+        elif key.startswith(("RISK", "SHIPMENT", "SOLVER", "INGESTION", "COMPLIANCE", "RFI", "HIGH", "PACK")):
+            group = "domain/targets"
+        else:
+            group = "runtime"
+        rows.append((key, group, value or "required/optional by selected mode"))
+    return rows
+
+
+def endpoint_inventory():
+    routes = []
+    for route in sorted((ROOT / "src" / "app" / "api").rglob("route.ts")):
+        value = "/api" + str(route.parent.relative_to(ROOT / "src" / "app" / "api")).replace("\\", "/")
+        if value.endswith("/."):
+            value = "/api"
+        top = value.split("/")[2] if len(value.split("/")) > 2 else "root"
+        routes.append((top, value))
+    return routes
+
+
+def verification_inventory():
+    scripts = json.loads((ROOT / "package.json").read_text())["scripts"]
+    return [(name, scripts[name]) for name in scripts if name.startswith("verify:")]
 
 
 def cover(canvas, doc):
@@ -352,7 +394,119 @@ def build_story():
         "Internal services: ingestion, solver and retrieval health checks are green; TLS/internal network restrictions and non-degraded infrastructure are active.",
         "Live signals: AIS/weather/congestion/procurement provenance and failure semantics are validated; synthetic paths are disabled or visibly labelled outside test/demo environments.",
         "Operations: CI, structured logs/correlation IDs, metrics, traces, queue dashboards, alerting, incident ownership, accessibility and load testing are present before release.",
-    ]) + [p("Explicit non-claims", "subsection"), callout("Engineering authority remains human.", "Pramana Cx assists engineering judgement. It does not independently certify a facility, replace the commissioning authority or engineer of record, issue Tier/TIA/BICSI/statutory approval, autonomously close findings/waivers or represent simulated operational feeds as live evidence.", True), p("Maintenance references", "subsection"), p("<b>README.md</b> - implementation map, diagrams, defect audit and configuration. <b>STATUS.md</b> - authoritative shipped/open ledger. <b>PLANNER/PRD.md</b> and <b>PLANNER/TRD.md</b> - product scope and technical contracts. <b>PLANNER/Schema.md</b>, <b>AppFlow.md</b>, <b>DesignDecisions.md</b> and <b>RetrievalArchitecture.md</b> - data model, flows, decisions and retrieval safeguards.", "small")]
+    ]) + [p("Explicit non-claims", "subsection"), callout("Engineering authority remains human.", "Pramana Cx assists engineering judgement. It does not independently certify a facility, replace the commissioning authority or engineer of record, issue Tier/TIA/BICSI/statutory approval, autonomously close findings/waivers or represent simulated operational feeds as live evidence.", True), p("Maintenance references", "subsection"), p("<b>README.md</b> - implementation map, diagrams, defect audit and configuration. <b>STATUS.md</b> - authoritative shipped/open ledger. <b>PLANNER/PRD.md</b> and <b>PLANNER/TRD.md</b> - product scope and technical contracts. <b>PLANNER/Schema.md</b>, <b>AppFlow.md</b>, <b>DesignDecisions.md</b> and <b>RetrievalArchitecture.md</b> - data model, flows, decisions and retrieval safeguards.", "small"), PageBreak()]
+
+    # The following appendices deliberately preserve the complete technical inventory rather
+    # than compressing the architecture into an executive summary.
+    story += [p("APPENDIX A / COMPLETE COMPONENT ARCHITECTURE", "kicker"), p("Full component and responsibility map", "section"), p("This appendix records the implementation-level architecture omitted by an executive summary. It identifies every major runtime boundary, its state, its caller and the rule that prevents it from becoming an unauthorized decision-maker."), table(["Layer", "Components", "Responsibility", "Hard boundary"], [
+        ("Experience", "Next.js server-rendered pages; responsive browser shell; mobile navigation; field-capture PWA; Three.js 404.", "Project workbenches for Overview, Sources, Requirements, Systems, Evidence, Field Capture, Readiness, Schedule, Actions, Cx, Shipments, Compliance, Knowledge, Graph, Command Center, Changes and Turnover.", "UI only requests project-scoped APIs; it does not make authority decisions locally."),
+        ("Core API", "Next.js route handlers; Zod contracts; permission middleware; model-provider facade; presentation helpers.", "Authenticates, authorizes, validates, persists domain commands, returns read models and controls provider selection.", "No direct unscoped data access or direct vendor-model bypass."),
+        ("Business authority", "Requirements/evidence/gates/findings/decisions; readiness rules; Cx deterministic verdicts; audit chain; typed edges.", "Makes relational state authoritative and invokes deterministic calculations over accepted records.", "LLM output has proposed state only; no AI can mark a gate ready."),
+        ("Durable execution", "Redis, BullMQ, durable_jobs, idempotency_records, worker and bounded retry wrappers.", "Handles parse, embed, solve, polling, report and other retryable work with stable job identity.", "Jobs cannot bypass review/permission checks; retries are bounded and observable."),
+        ("Ingestion", "PyMuPDF service on 8001; PDF/CSV/XLSX parser; source-region extraction; object-storage boundary.", "Creates page/box/row/cell provenance and structured extraction output from immutable source versions.", "Never becomes a source of business truth without core validation and human review."),
+        ("Scheduling", "FastAPI OR-Tools CP-SAT service on 8002; accepted task/resource inputs; delta detector; immutable versions; explainer.", "Solves feasibility/optimization and returns explicit result or bottleneck report; carries completed work as fixed input on warm start.", "Solver is stateless, has no database credentials and never changes a date without a reviewed command."),
+        ("Retrieval", "Postgres FTS + pgvector; knowledge_chunks; graph context expansion; retrieval service on 8003; cross-encoder reranker.", "Retrieves project-scoped controlled regions and ranks candidates before cited synthesis.", "Mandatory tenant/project/metadata filters happen before rank; service has no database credentials."),
+        ("Operational signals", "Shipments, AIS/weather/congestion, procurement/lead-time/workforce, schedule_events, risks and alerts.", "Persists observations, calculates materiality/deduplication and exposes advisory impact.", "All sources explicitly label live, synthetic or unavailable; no signal directly changes readiness/schedule."),
+        ("Object and security", "PostgreSQL, pgvector, local/MinIO/S3 objects, signed URLs, credentials/TOTP or Clerk, rate limits.", "Owns transactional state, immutable artifacts and controlled access.", "Cross-project IDs rejected; audit is append-only/hash-linked; production secrets are external."),
+    ], [27 * mm, 45 * mm, 67 * mm, CONTENT_W - 139 * mm]), p("Full agent event contract", "subsection"), table(["Event", "Producer", "Trigger", "Persisted impact"], [
+        ("TEST_FAILED", "Cx workflow", "Deterministic numeric/threshold or boolean/presence proposed failure only.", "Finding/NCR proposal and blocked gate flow; narrative observations stay human review."),
+        ("shipment_delayed", "Shipment assessment", "Status transition into at-risk/delayed, never a repeated poll state.", "One event per affected task fan-out; delta detector assesses schedule impact."),
+        ("shipment_recovered", "Shipment assessment", "Prior delay recovers to on-time.", "Clears stale active alert and may enter the same delta assessment."),
+        ("predicted_risk_delay", "Predictive risk poll", "Task + risk-type materiality threshold crosses or changes materially.", "Advisory risk/mitigation event; no direct re-solve or schedule mutation."),
+    ], [30 * mm, 37 * mm, 61 * mm, CONTENT_W - 128 * mm]), PageBreak()]
+
+    adr_rows = [
+        ("ADR-001", "Local modular monolith", "One typed core for MVP authority; isolated services only for extraction, solve and retrieval."),
+        ("ADR-002", "Postgres + Drizzle", "Normalized relational source of truth with migrations and constrained traversal."),
+        ("ADR-003", "Object-store bytes", "Immutable originals and exports live behind one local/S3-compatible boundary."),
+        ("ADR-004", "Hybrid lexical + semantic retrieval", "Exact FTS plus project-scoped vector candidates and reranking."),
+        ("ADR-005", "Durable asynchronous ingestion", "Long work runs through retryable jobs and human checkpoints."),
+        ("ADR-006", "Deterministic readiness", "AI can propose; rules and authorized humans decide authority-bearing state."),
+        ("ADR-007", "Project-scoped RBAC + strong approval", "Server-side membership with TOTP gate protection."),
+        ("ADR-008", "Offline-capable field PWA", "Idempotent local queue supports site capture without authorizing offline decisions."),
+        ("ADR-009", "Dedicated CP-SAT service", "Official OR-Tools backend avoids unstable WASM and Node event-loop blocking."),
+        ("ADR-010", "ModelProvider for schedule extraction", "Ambiguous extracted tasks/resources require human review."),
+        ("ADR-011", "Deterministic solver objective order", "Deadline overrun first, idle time second; never delegated to an LLM."),
+        ("ADR-012", "Immutable schedule versions", "No in-place schedule mutation; every solve produces inspectable history."),
+        ("ADR-013", "Delta-gated re-solves", "Only critical/downstream impact invokes CP-SAT."),
+        ("ADR-014", "Internal agent-service pattern", "Domain services integrate through the same controlled boundary as solver."),
+        ("ADR-015", "Pinned event contract", "Event payload/dedup semantics are defined while a general orchestrator remains deferred."),
+        ("ADR-016", "Cx proposed verdict + draft report", "Narrative remains human-routed; report must be approved before evidence authority."),
+        ("ADR-017", "Leaflet shipment navigator", "Route geometry, click-to-zoom and explicit live/simulated labels."),
+        ("ADR-018", "LLM confined to drafting", "Acceptance/shipment classification remain deterministic or human reviewed."),
+        ("ADR-019", "Compliance proposed-findings queue", "Modality-tiered flags and clause-vs-line evidence diffs require disposition."),
+        ("ADR-020", "Predictive risk as advisory poll", "Dedicated live-events/risk surfaces cross-link critical path but do not reschedule."),
+        ("ADR-021", "Scoped knowledge + edges graph", "User-facing cited RAG and graph/timeline reuse project data, no parallel graph authority."),
+        ("ADR-022", "Command Center as read/cross-link surface", "Unified deduplicated alerts, recovery clearing and no direct state mutation."),
+    ]
+    story += [p("APPENDIX B / ARCHITECTURE DECISION RECORDS", "kicker"), p("All committed architecture decisions", "section"), table(["ID", "Decision", "Implementation consequence"], adr_rows, [22 * mm, 55 * mm, CONTENT_W - 77 * mm]), PageBreak()]
+
+    schema_rows = [
+        ("Scope and identity", "tenants, users, auth_sessions, projects, project_members", "Tenant/project ownership, membership, sessions and RBAC."),
+        ("Object/source control", "storage_objects, documents, document_versions, source_regions", "Immutable objects, revision lineage and exact extraction provenance."),
+        ("Facility and authority", "systems, assets, gates, requirements, evidence, findings, decisions", "Controlled requirements, proof, blockers and authorized decisions."),
+        ("Graph and audit", "edges, audit_events, durable_jobs, idempotency_records, alerts", "Typed traversal, hash chain, job lifecycle, dedupe and alert state."),
+        ("Commissioning", "cx_checklists, cx_checklist_steps, cx_clause_citations, cx_test_records, cx_step_results", "Cited checklist execution, deterministic readings and report evidence."),
+        ("Compliance and knowledge", "compliance_precedents, compliance_checks, knowledge_chunks", "Proposed deviations, exact precedents, model-tagged hybrid retrieval units."),
+        ("Logistics/turnover", "shipments, turnover_packs", "Asset-linked delivery observations and approved manifest artifacts."),
+        ("Scheduling", "schedule_tasks, schedule_resources, schedule_task_resources, schedule_dependencies, schedule_versions, schedule_assignments", "Reviewed DAG/capacity inputs, immutable versions and assignments."),
+        ("Risk and learning", "schedule_events, risk_signals, schedule_risks, teachback_notes", "Validated event history, source observations, advisory risks and reviewed teach-back."),
+    ]
+    story += [p("APPENDIX C / COMPLETE DATABASE INVENTORY", "kicker"), p("Schema domains and real table inventory", "section"), p("The current Drizzle schema defines 45 tables. The following inventory preserves every authoritative domain rather than reducing the database to a generic ER picture."), table(["Domain", "Tables", "Authority and relationship role"], schema_rows, [37 * mm, 78 * mm, CONTENT_W - 115 * mm]), p("Relationship rules", "subsection")] + bullet([
+        "Tenant owns projects; project membership authorizes every project-scoped command and read.",
+        "Document versions own source regions; source regions ground requirements, evidence, Cx citations, knowledge chunks and compliance comparisons.",
+        "Systems contain assets; gates govern requirements; evidence can prove requirements and affect assets; findings block gates.",
+        "Edges represent typed relationships such as PROVES, AFFECTS, REQUIRES and PRECEDES, but normalized tables remain business authority.",
+        "Schedule versions contain assignments; tasks have dependencies/resources and are observed by risk signals/events without folding advisory risk into readiness.",
+        "Business-key uniqueness, exact-row reconciliation and relational integrity checks protect merged/seeded data from duplicate identity corruption.",
+    ]) + [PageBreak()]
+
+    story += [p("APPENDIX D / COMPLETE API ENDPOINT CATALOG", "kicker"), p("All route-handler surfaces", "section"), p("The following catalog is generated from the current <font name='Courier'>src/app/api/**/route.ts</font> tree at PDF-build time. Dynamic route segments remain visible so contract owners can identify the entity scope."), table(["Group", "Endpoint"], endpoint_inventory(), [40 * mm, CONTENT_W - 40 * mm]), PageBreak()]
+
+    env_rows = env_inventory()
+    story += [p("APPENDIX E / ENVIRONMENT AND CONFIGURATION INVENTORY", "kicker"), p("Every example configuration key", "section"), p("The environment appendix is generated from the current <font name='Courier'>.env.example</font> file at PDF-build time. Values shown are examples only; production values must be secret-managed and individually validated."), table(["Key", "Group", "Example/default"], env_rows, [62 * mm, 32 * mm, CONTENT_W - 94 * mm]), PageBreak()]
+
+    verify_rows = verification_inventory()
+    story += [p("APPENDIX F / VERIFICATION COMMAND INVENTORY", "kicker"), p("Every verification script currently declared", "section"), p("The complete test command catalog below is generated from <font name='Courier'>package.json</font>. It makes the release matrix auditable and prevents a single green build from being mistaken for end-to-end verification."), table(["Command", "Runner"], verify_rows, [73 * mm, CONTENT_W - 73 * mm]), PageBreak()]
+
+    defect_rows = [
+        ("01", "Mock output could look like a real LLM.", "Explicit real provider configuration, Ollama default, production mock rejection and provenance."),
+        ("02", "AI paths bypassed provider architecture.", "Shared schema-validated provider boundary across generation, vision, compliance, risk and knowledge."),
+        ("03", "Generation and embeddings could select contradictory providers.", "Independent explicit provider configuration plus embedding-model tagging and mismatch exclusion."),
+        ("04", "Long model work could freeze the frontend.", "Prompt/context/token limits, server deadline, client abort, progress and bounded retry."),
+        ("05", "Deep links opened a generic page.", "Query-ID consumption/validation and focused destination record state."),
+        ("06", "Duplicate React keys could omit or duplicate cards.", "Authoritative-id dedupe and composite stable UI keys."),
+        ("07", "Duplicate systems/gates/edges/chunks/alerts were possible.", "Business-key constraints, seed reconciliation and integrity verifier."),
+        ("08", "Two branch migration sequences conflicted.", "Final schema reconciliation, ordered migration history and replay validation."),
+        ("09", "Processed PDFs could be absent from RAG.", "Extraction-to-indexing contract and historical semantic-chunk backfill."),
+        ("10", "RAG could attribute another standard to named document.", "Document selection, exact title routing and SQL filtering before ranking."),
+        ("11", "LLM planner could narrow authority scope incorrectly.", "Only explicit filters/deterministic title resolution may narrow metadata."),
+        ("12", "Fallback text could masquerade as grounded synthesis.", "Structured cited synthesis or explicit no-results; unsupported claims dropped."),
+        ("13", "Cx could mix cross-scope gate/system/asset.", "Project/system relationship validation and 422 rejection."),
+        ("14", "Raw hashes/JSON/placeholder characters leaked into UI.", "Presentation helpers, labels, bounded precision and contextual provenance links."),
+        ("15", "Long operations had inconsistent feedback.", "Per-operation busy state, status messages and disabled conflicting controls."),
+        ("16", "UI navigation was crowded and weakly structured.", "Task-oriented groups, responsive navigation and contextual actions."),
+        ("17", "Shipment map could lack route/position context.", "Saved-coordinate routes, markers, fit bounds and explicit no-coordinate state."),
+        ("18", "Land-routing fallback could mislead.", "HTTPS/deadline routing, mode-aware provenance and safe fallback labels."),
+        ("19", "Synthetic signals could look operational.", "Live/synthetic/unavailable provenance and fail-closed client behaviour."),
+        ("20", "No trustworthy release gate existed.", "Full verification matrix, audit/dependency checks and explicit production prerequisites."),
+    ]
+    story += [p("APPENDIX G / FULL TOP-20 DEFECT AND RESOLUTION LEDGER", "kicker"), p("Complete merged-branch remediation record", "section"), table(["#", "Defect", "Resolution"], defect_rows, [10 * mm, 65 * mm, CONTENT_W - 75 * mm]), p("Source of truth", "subsection"), p("The complete narrative, original branch attribution and verification references remain in README.md under 'Top 20 defects found across Refinement and Updated-Refinement'. This appendix preserves every remedial category in the printable architecture reference."), PageBreak()]
+
+    story += [p("APPENDIX H / FEATURE AND USER-STORY COVERAGE", "kicker"), p("Full planned-to-implemented product map", "section"), table(["Stories", "Capability group", "Controlled outcome"], [
+        ("US-01 to US-08", "Project access, source ingestion, requirement review, readiness, actions, change impact, decisions and turnover", "A project-scoped evidence trail from controlled source to approved, verifiable pack."),
+        ("US-09 to US-12", "Baseline schedule, event-triggered rescheduling, explanation and gate schedule context", "Accepted task/resource inputs lead to immutable CP-SAT versions and cross-linked context, not automatic readiness changes."),
+        ("US-13 to US-18", "Standards checklist, IST execution, deterministic checks, failures, reports and evidence linkage", "Cited Cx workflow keeps numerical/boolean verdicts deterministic and narrative judgement human-routed."),
+        ("US-19 to US-23", "Shipment tracking, weather ETA, risk status, map navigator and schedule events", "Asset-linked visibility with explicit provenance and delta-gated schedule influence."),
+        ("US-24 to US-25", "Specification compliance and approved-equal grounding", "Proposed deviations are exact-citation grounded and require human disposition."),
+        ("US-26 to US-27", "Predictive risk and live-event surfaces", "Advisory material risks cross-link critical path but never autonomously alter a plan."),
+        ("US-28 to US-31", "Knowledge query, similar RFI, project graph/timeline and unified Command Center", "Project-scoped cited intelligence, typed graph navigation and deduplicated operational alerts."),
+    ], [32 * mm, 62 * mm, CONTENT_W - 94 * mm]), p("Explicit product boundaries", "subsection")] + bullet([
+        "No general cross-project chatbot, autonomous commissioning authority, independent certification, auto-closure of NCRs/waivers/tests or AI-issued gate state.",
+        "No hidden substitution of synthetic AIS/weather/model output for verified live operations.",
+        "No unlicensed standards/client/vendor content in reusable demos, prompts, embeddings or training material.",
+        "No second authoritative graph/vector store: Postgres/pgvector/edges remain authority; service-local working state cannot override it.",
+    ])
     return story
 
 
