@@ -13,6 +13,26 @@ The product is **advisory by design**. AI may extract, retrieve, rank, draft, an
 
 The chronological build record lives in git history. STATUS.md is the single source of truth for what is shipped and what is still open.
 
+## About the application
+
+Pramana Cx is not a general document chatbot. It is a governed commissioning workspace: controlled project sources become cited records, human-reviewed requirements, linked systems/assets/gates, reviewed evidence, deterministic readiness, and verifiable turnover artefacts. AI can help extract, retrieve, rank, draft, and explain, but it cannot approve compliance, close a finding, certify a facility, or decide a gate.
+
+## Current status
+
+The reconciled application is a locally verified release candidate. The evidence-to-turnover, deterministic schedule, governed Cx, compliance, shipment, predictive-risk, and cited knowledge workflows have local verification coverage. Production rollout still requires the live-integration, observability, backup, and deployment controls listed in **What remains** and the release gate below.
+
+| Area | State | What exists now |
+| --- | --- | --- |
+| Platform, tenancy, auth, RBAC | Verified | Project membership enforcement, credential sessions, optional Clerk adapter, TOTP, session revocation, rate limits, audit chain |
+| Controlled sources and provenance | Verified | Hash-controlled PDF/CSV/XLSX storage, region citations, revision blast radius, semantic indexing |
+| Evidence, readiness, gate approval | Verified | Pending-to-accepted evidence review, deterministic readiness, fresh-TOTP gate approval, immutable decision baseline |
+| Turnover | Verified | Approved-gate-only manifests, canonical hashes, signed artefact URLs, independent verification |
+| Scheduling and predictive risk | Verified core | Reviewed inputs, CP-SAT versions, bounded risk polling, advisory mitigations, explicit unavailable/synthetic provenance |
+| Governed Cx and compliance | Verified | Cited checklists, deterministic readings, human-routed narrative review, proposed-only deviations, exact-citation precedents |
+| Knowledge and RFI similarity | Verified | Project-scoped, citation-grounded hybrid retrieval with document filters, provider provenance, and model deadlines |
+| Shipments and Command Center | Verified core | Asset-linked legs, route/position display, provenance notices, stable alerts and deep links |
+| Production hardening | Release candidate | Builds, integrity checks, and local verification matrix pass; CI, accessibility, load, backups, observability, and live-provider acceptance remain deployment gates |
+
 ## How the application works
 
 The normal project journey is intentionally governed rather than a single AI chat:
@@ -48,6 +68,18 @@ The Graph and Changes surfaces are supporting views across this journey: Graph a
 - Command Center alerts
 - Turnover packs and independent verification
 - Project/member/security Settings and Profile
+
+## What remains before production deployment
+
+The verified foundation is usable locally, but it must not be represented as a completed production service until these operational gates are satisfied:
+
+1. **Live-provider acceptance:** run the release configuration against the chosen Ollama, Gemini, or NIM provider, with reachable endpoints, real credentials, bounded failure behaviour, and documented data-processing approval.
+2. **Infrastructure validation:** rehearse an empty-database migration, S3/MinIO object lifecycle, Redis/worker recovery, TLS, secret rotation, and backup/restore in the target environment.
+3. **Operational controls:** add CI enforcement, structured logs with correlation IDs, metrics, traces, queue monitoring, alerting, retention execution, and an incident/runbook process.
+4. **Experience and scale gates:** complete accessibility/keyboard/contrast checks, representative-load testing, failure injection, and a pilot with controlled project data and named human approval authorities.
+5. **Live operational data:** configure production AIS, weather, congestion, procurement, and location services only where their provenance, licensing, and failure states are acceptable; otherwise retain clear synthetic/unavailable labels.
+
+These are explicit release prerequisites—not hidden failures in the local verification matrix.
 
 ## End-to-end system architecture
 
@@ -139,8 +171,7 @@ flowchart LR
 
 The Next.js process owns authentication, authorization, validation, and synchronous domain commands. Expensive or retryable work crosses the durable BullMQ boundary. PostgreSQL is the business authority; object storage contains immutable source/evidence/report/turnover bytes; the relational `edges` table supplies graph traversal without introducing a second operational database.
 
-<details>
-<summary><strong>Authority and evidence flow</strong></summary>
+### Authority and evidence flow
 
 ```mermaid
 flowchart LR
@@ -167,10 +198,7 @@ flowchart LR
     Stale --> Readiness
 ```
 
-</details>
-
-<details>
-<summary><strong>Runtime request and job lifecycle</strong></summary>
+### Runtime request and job lifecycle
 
 ```mermaid
 sequenceDiagram
@@ -199,10 +227,7 @@ sequenceDiagram
     Web-->>User: Render completed result and authority label
 ```
 
-</details>
-
-<details>
-<summary><strong>Predictive-risk flow and solver safety boundary</strong></summary>
+### Predictive-risk flow and solver safety boundary
 
 ```mermaid
 flowchart TD
@@ -228,10 +253,7 @@ flowchart TD
 
 Predictive risk can observe, explain, and propose. It cannot apply a mitigation, change a dependency/resource constraint, invoke a re-solve, or alter dates. A scheduler must make a separate reviewed schedule change before the deterministic solver can create another immutable version.
 
-</details>
-
-<details>
-<summary><strong>Authoritative data model</strong></summary>
+## Authoritative data model
 
 ```mermaid
 erDiagram
@@ -275,8 +297,6 @@ erDiagram
 ```
 
 Every authoritative record is tenant/project scoped. Cross-project IDs are rejected at the API boundary. `edges` hold traversable provenance, while normalized relational tables remain the authority for permissions and business state. Audit events are append-only and hash-linked per project.
-
-</details>
 
 ## Technology and authority choices
 
