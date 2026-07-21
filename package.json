@@ -91,6 +91,7 @@
     "react-dom": "^19.0.0",
     "react-leaflet": "^5.0.0-rc.2",
     "searoute-js": "^0.1.0",
+    "three": "^0.185.1",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.25.2"
   },
@@ -99,6 +100,7 @@
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.185.1",
     "drizzle-kit": "^0.31.10",
     "redis-memory-server": "^0.17.0",
     "tsx": "^4.19.2",
