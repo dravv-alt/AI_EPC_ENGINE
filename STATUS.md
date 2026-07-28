@@ -8,6 +8,18 @@ The merged application is a locally verified release candidate, not yet a produc
 
 The three retrieval-backed agents (Specification & Quality Compliance, Predictive Schedule Risk, Project Knowledge & RFI) have completed the remediation sequenced in [agentFixingPlan.md](PLANNER/agentFixingPlan.md): semantic candidate discovery and a governed model verdict for compliance, provenance-labelled risk mitigations with deterministic failure fallback, and a plan/decompose-then-synthesize knowledge pipeline with code-enforced citation grounding. They share one provider boundary: local Ollama Gemma 4 e2b by default, Gemini or NVIDIA NIM for structured generation, and Ollama/Gemini/the stateless retrieval service for embeddings. Mock mode is confined to deterministic verification and is rejected by production configuration validation.
 
+## What changed in the reported-QA pass (28 July 2026)
+
+- Added Clerk-native sign-in/sign-up/account controls and persisted verified-email linking to local project membership, with an explicit pending-access state instead of an ambiguous authorization failure.
+- Connected header search, notifications, help, View brief, source regions, Knowledge citations, and other previously display-only controls to real routes.
+- Added deterministic Knowledge fallback over controlled extracted text and explicit citation/no-result/error states.
+- Reworked cramped Actions/Cx/Turnover layouts and added bounded scrolling to the authority graph and audit timeline.
+- Seeded a real previous controlled source version so Changes can demonstrate blast-radius comparison rather than failing its only available test path.
+- Added database-derived dashboard charts, audit activity, operational summaries, direct controls, and replayed presentation-only motion.
+- Corrected in-transit marine routing so offshore vessel fixes cannot be snapped into a cross-country road route.
+- Separated the Weather monitor visually with current Open-Meteo waypoint conditions, larger condition zones, peak wind/rain, observation time, and a clear operational-delay threshold.
+- Added a cross-feature [backend authority audit](docs/BACKEND_AUTHORITY_AUDIT.md), a [reported error ledger](docs/ERRORS_AND_FIXES.md), and a reproducible [Windows/Linux setup](docs/LOCAL_SETUP_WINDOWS_LINUX.md).
+
 ## What changed in the merge-readiness pass (21 July 2026)
 
 - Fixed duplicate React identities in Readiness and duplicate system/gate business keys at the database boundary. Migrations repair historical exact duplicates, preserve conflicting historical rows with explicit legacy labels, and add unique indexes.

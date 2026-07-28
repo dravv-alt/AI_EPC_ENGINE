@@ -1,0 +1,111 @@
+name: pramana-cx-dev
+
+# Host-development dependencies for Windows, WSL2, and Linux. The Next.js app
+# and BullMQ worker run with Node on the host; every dependency is reachable on
+# localhost. The production-oriented docker-compose.yml remains fail-closed.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: pramana
+      POSTGRES_USER: pramana
+      POSTGRES_PASSWORD: pramana
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pramana -d pramana"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_dev_data:/data
+
+  ingestion:
+    build: ./services/ingestion
+    environment:
+      UPLOAD_ROOT: /data/uploads
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/uploads:/data/uploads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  solver:
+    build: ./services/solver
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  retrieval:
+    build: ./services/retrieval
+    ports:
+      - "8003:8003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Native Ollama is faster on most developer laptops. This profile is a
+  # portable CPU fallback when installing Ollama on the host is not possible.
+  ollama:
+    profiles: ["container-ollama"]
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_dev_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ollama-models:
+    profiles: ["container-ollama"]
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["sh", "-ec"]
+    command: 'ollama pull gemma4:e2b && ollama pull nomic-embed-text:latest'
+    restart: "no"
+
+volumes:
+  postgres_dev_data:
+  minio_dev_data:
+  ollama_dev_data:

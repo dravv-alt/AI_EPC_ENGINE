@@ -1,5 +1,5 @@
 services:
-  # Deployment Compose is intentionally fail-closed. Copy .env.example to
+  # Deployment Compose is intentionally fail-closed. Copy .env.compose.example to
   # .env, replace every required value, and pin the image tags your release
   # process has approved before running `docker compose up`.
   postgres:

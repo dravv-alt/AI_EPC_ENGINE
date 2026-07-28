@@ -10,7 +10,9 @@ The product is **advisory by design**. AI may extract, retrieve, rank, draft, an
 - **[STATUS.md](STATUS.md)** — what's verified, what's a known gap, and the latest local verification result
 - **[Technical Architecture (HTML)](docs/pramana-cx-technical-architecture.html)** — standalone end-to-end architecture, data, AI, security, operations, verification, and release specification
 - **[Technical Architecture (A4 PDF)](output/pdf/pramana-cx-technical-architecture.pdf)** — print-verified A4 dossier with fixed borders, margins, page numbering, diagrams, and application screenshots
-- **[local_dev_guide.md](local_dev_guide.md)** — prerequisites, environment keys, and how to bring the stack up
+- **[Windows/Linux setup](docs/LOCAL_SETUP_WINDOWS_LINUX.md)** — Docker, Ollama, Clerk, database, worker, ports, and troubleshooting
+- **[Errors and fixes](docs/ERRORS_AND_FIXES.md)** — the reported QA failures, root causes, implemented fixes, and verification
+- **[Backend authority audit](docs/BACKEND_AUTHORITY_AUDIT.md)** — which controls persist to PostgreSQL and where those changes propagate
 - **[PLANNER/](PLANNER)** — product intent ([PRD.md](PLANNER/PRD.md)), technical constraints ([TRD.md](PLANNER/TRD.md)), and the reconciled execution baseline ([CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md)); [Tracker.md](PLANNER/Tracker.md) records the state of every planning document
 
 The chronological build record lives in git history. STATUS.md is the single source of truth for what is shipped and what is still open.
@@ -316,40 +318,44 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 
 ## Local operation
 
-### Local Docker topology
+### Developer laptop topology
 
-Docker Desktop must be running before using Compose. If `docker.sock` is missing, start Docker Desktop and wait until `docker info` succeeds.
+The supported Windows/WSL2 and Linux workflow runs infrastructure in the
+developer Compose file, with Ollama, Next.js, and the worker on the host:
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
-docker info
-docker compose up --build
-```
-
-The web application is configured for [http://localhost:4173](http://localhost:4173), not port 3000. Compose starts PostgreSQL/pgvector, Redis, MinIO, ingestion, solver, retrieval, core API, and worker. It is a local topology, not an implicitly safe production profile.
-
-For local Ollama, install the model on the machine or deploy an Ollama service reachable by the application; Docker containers cannot reach host-local `127.0.0.1:11434` by default.
-
-```bash
+docker compose -f docker-compose.dev.yml up -d --build postgres redis minio ingestion solver retrieval
 ollama pull gemma4:e2b
 ollama pull nomic-embed-text:latest
-MODEL_PROVIDER=ollama EMBEDDING_PROVIDER=ollama npm run verify:ollama
-```
-
-`verify:ollama` is a real-provider smoke test: it requires an Ollama server, verifies structured output plus 768-dimensional embeddings, and enforces the configured deadline. It is distinct from the deterministic offline verification matrix.
-
-### Existing local-service fallback
-
-The application can also run against separately started PostgreSQL, Redis, ingestion, and solver processes. After those dependencies are healthy:
-
-```bash
+clerk auth login
+clerk init --app app_3H8hkjTJXpa5w987cCoDFNSCmcU
 npm run db:migrate
 npm run db:seed
-npm run system:start
+npm run dev:clerk
 ```
 
-`system:start` applies migrations, creates a production build, checks PostgreSQL, Redis, ingestion, and solver health, and then supervises the web process and BullMQ worker together on port 4173. Use `Ctrl+C` to stop both application processes cleanly.
+Run `npm run worker` in a second terminal, then open
+[http://localhost:3000](http://localhost:3000). See the
+[complete Windows/Linux setup](docs/LOCAL_SETUP_WINDOWS_LINUX.md) for
+prerequisites, native PowerShell commands, Clerk project access, health checks,
+containerized Ollama fallback, ports, and troubleshooting.
+
+`docker-compose.yml` is not the developer quick start. It is a fail-closed
+deployment topology requiring `.env.compose.example`, managed secrets, an HTTPS
+public URL, and approved image tags or digests.
+
+### Ollama verification
+
+```bash
+npm run verify:ollama
+```
+
+`verify:ollama` is a real-provider smoke test: it requires an Ollama server,
+verifies structured output plus 768-dimensional embeddings, and enforces the
+configured deadline. It is distinct from the deterministic offline verification
+matrix.
 
 ### Verification
 
