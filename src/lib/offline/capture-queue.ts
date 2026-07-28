@@ -88,7 +88,8 @@ export async function queueCapture(input: CaptureInput) {
     const artifact = input.artifact ? await encrypt(key, await input.artifact.arrayBuffer()) : undefined;
     stored = { ...base, encrypted: true, notesData: notes.data, notesIv: notes.iv, artifactData: artifact?.data, artifactIv: artifact?.iv, artifactName: input.artifact?.name, artifactType: input.artifact?.type };
   } catch {
-    stored = { ...base, encrypted: false, notesData: input.notes, artifactData: input.artifact ? await input.artifact.arrayBuffer() : undefined, artifactName: input.artifact?.name, artifactType: input.artifact?.type };
+    db.close();
+    throw new Error("Secure local encryption is unavailable in this browser. Nothing was queued or saved.");
   }
   await transactionRequest(db.transaction("captures", "readwrite").objectStore("captures").put(stored));
   db.close(); window.dispatchEvent(new Event("pramana-queue-change"));

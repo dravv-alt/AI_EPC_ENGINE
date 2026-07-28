@@ -57,7 +57,7 @@ async function main() {
   process.env.SOLVER_SERVICE_URL = `http://127.0.0.1:${port}`;
 
   const { db } = await import("../src/lib/db/client");
-  const { alerts, auditEvents, durableJobs, projects, projectMembers, riskSignals, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions } = await import("../src/lib/db/schema");
+  const { alerts, auditEvents, durableJobs, projects, projectMembers, riskSignals, scheduleAssignments, scheduleEvents, scheduleRisks, scheduleTasks, scheduleVersions } = await import("../src/lib/db/schema");
   const { createScheduleVersion } = await import("../src/lib/schedule/create-version");
   const { SolverUnavailableError } = await import("../src/lib/schedule/solver");
   const { processScheduleEvent } = await import("../src/lib/events/process");
@@ -174,6 +174,7 @@ async function main() {
       await db.delete(durableJobs).where(eq(durableJobs.projectId, testProjectId));
       await db.delete(alerts).where(eq(alerts.projectId, testProjectId));
       await db.delete(auditEvents).where(eq(auditEvents.projectId, testProjectId));
+      await db.delete(scheduleRisks).where(eq(scheduleRisks.projectId, testProjectId));
       if (taskIdForStub) await db.delete(riskSignals).where(eq(riskSignals.taskId, taskIdForStub));
       if (taskIdForStub) await db.delete(scheduleTasks).where(eq(scheduleTasks.id, taskIdForStub));
       await db.delete(projectMembers).where(eq(projectMembers.projectId, testProjectId));
