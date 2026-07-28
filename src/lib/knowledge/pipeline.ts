@@ -125,12 +125,17 @@ export async function answerKnowledgeQuery(input: {
 
   // 1. Planning call. Mock reduces to exactly today's single-query,
   // no-routing behaviour: { documentType: null, subQueries: [query] }.
+  const fallbackPlan = {
+    data: planSchema.parse({ documentType: null, systemId: null, assetId: null, gateId: null, revision: null, subQueries: [input.query] }),
+    provider: "retrieval-fallback",
+    model: "deterministic-query-v1"
+  };
   const plan = await generation.generateStructured({
     system: PLAN_SYSTEM_PROMPT,
     prompt: JSON.stringify({ query: input.query }),
     schema: planSchema,
-    mock: { documentType: null, systemId: null, assetId: null, gateId: null, revision: null, subQueries: [input.query] }
-  });
+    mock: fallbackPlan.data
+  }).catch(() => fallbackPlan);
 
   // An explicit caller-supplied filter (the pre-existing request-body
   // documentType filter, plus the new systemId/assetId/gateId/revision
@@ -207,6 +212,11 @@ export async function answerKnowledgeQuery(input: {
 
   // 3. Synthesis call. Mock reproduces one claim per retrieved chunk, citing
   // its own region — today's raw-concatenation output.
+  const fallbackSynthesis = {
+    data: synthesisSchema.parse({ claims: reranked.map((citation) => ({ text: citation.text, citations: [citation.sourceRegionId] })) }),
+    provider: "retrieval-fallback",
+    model: "citation-extract-v1"
+  };
   const synthesis = await generation.generateStructured({
     system: SYNTHESIS_SYSTEM_PROMPT,
     prompt: JSON.stringify({
@@ -220,8 +230,8 @@ export async function answerKnowledgeQuery(input: {
       }))
     }),
     schema: synthesisSchema,
-    mock: { claims: reranked.map((citation) => ({ text: citation.text, citations: [citation.sourceRegionId] })) }
-  });
+    mock: fallbackSynthesis.data
+  }).catch(() => fallbackSynthesis);
 
   // 4. Deterministic groundedness filter — never trust a model-returned
   // region id. Drop (do not throw) any claim citing a region outside the

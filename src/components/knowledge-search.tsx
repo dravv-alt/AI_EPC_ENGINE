@@ -106,8 +106,8 @@ function KnowledgeFilterControls({ projectId, filters, onChange }: { projectId: 
     onChange({ ...filters, [key]: value });
   }
   return (
-    <fieldset className="filter-row" style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", border: "none", padding: 0, margin: "0.5rem 0" }}>
-      <legend style={{ fontSize: "0.8rem", opacity: 0.75 }}>Scope filter (mandatory, applied before ranking)</legend>
+    <fieldset className="knowledge-filter-grid">
+      <legend>Scope filters · applied before ranking</legend>
       <select aria-label="Document" value={filters.documentId} onChange={(event) => update("documentId", event.target.value)}>
         <option value="">All documents (named documents auto-scope)</option>
         {documents.map((document) => <option key={document.id} value={document.id}>{document.label}</option>)}
@@ -125,10 +125,10 @@ function KnowledgeFilterControls({ projectId, filters, onChange }: { projectId: 
         {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.label}</option>)}
       </select>
       <input aria-label="Revision" placeholder="Revision (e.g. Rev C)" value={filters.revision} onChange={(event) => update("revision", event.target.value)} />
-      <label style={{ fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+      <label>
         From <input aria-label="Date from" type="date" value={filters.dateFrom} onChange={(event) => update("dateFrom", event.target.value)} />
       </label>
-      <label style={{ fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+      <label>
         To <input aria-label="Date to" type="date" value={filters.dateTo} onChange={(event) => update("dateTo", event.target.value)} />
       </label>
     </fieldset>
@@ -156,9 +156,17 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
   const [filters, setFilters] = useState<KnowledgeFilters>(EMPTY_FILTERS);
 
   async function runQuery(value: string) {
+    const normalized = value.trim();
+    if (normalized.length < 3) return;
     setStatus("loading");
+    setMessage("");
+    setAnswer(null);
+    setGroups([]);
+    const url = new URL(window.location.href);
+    url.searchParams.set("q", normalized);
+    window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
     try {
-      const response = await fetch(`/api/projects/${projectId}/knowledge/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: value, ...filtersToBody(filters) }), signal: AbortSignal.timeout(45_000) });
+      const response = await fetch(`/api/projects/${projectId}/knowledge/query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query: normalized, ...filtersToBody(filters) }), signal: AbortSignal.timeout(45_000) });
       const result = await response.json();
       if (!response.ok) { setStatus("error"); setMessage(result.error ?? "Query failed."); return; }
       const claims: Claim[] = result.claims ?? [];
@@ -171,9 +179,9 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
       setAnswer(result.answer ?? null);
       setGroups(groupClaimsByText(claims));
       setStatus("results");
-    } catch {
+    } catch (error) {
       setStatus("error");
-      setMessage("Search timed out after 45 seconds. Narrow the scope or try again; the page remains usable.");
+      setMessage(error instanceof DOMException && error.name === "TimeoutError" ? "Search timed out after 45 seconds. Narrow the scope or try again." : "Knowledge search is temporarily unavailable. Check provider health or try again.");
     }
   }
 

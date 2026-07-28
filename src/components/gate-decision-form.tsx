@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export function GateDecisionForm({ gateId, readinessState, affectingTasks = [] }: { gateId: string; readinessState: string; affectingTasks?: Array<{ id: string; name: string; reviewState: string; relationshipType: string }> }) {
   const router = useRouter();
@@ -9,6 +10,7 @@ export function GateDecisionForm({ gateId, readinessState, affectingTasks = [] }
   const [action, setAction] = useState<"approve" | "reject" | "waive">(readinessState === "ready" ? "approve" : "reject");
   const [token, setToken] = useState("");
   const [needsMfa, setNeedsMfa] = useState(false);
+  const [enrollmentRequired, setEnrollmentRequired] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -21,9 +23,16 @@ export function GateDecisionForm({ gateId, readinessState, affectingTasks = [] }
     }
     const response = await fetch(`/api/gates/${gateId}/decisions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: action, reason }) });
     const body = await response.json();
-    if (response.status === 428) { setNeedsMfa(true); setMessage("Enter a fresh six-digit authenticator code, then submit again."); setSaving(false); return; }
+    if (response.status === 428) {
+      const requiresEnrollment = typeof body.error === "string" && body.error.toLowerCase().includes("enrollment");
+      setEnrollmentRequired(requiresEnrollment);
+      setNeedsMfa(!requiresEnrollment);
+      setMessage(requiresEnrollment ? "Set up an authenticator in your profile before using approval authority." : "Enter the current six-digit code from your authenticator app, then submit again.");
+      setSaving(false);
+      return;
+    }
     setMessage(response.ok ? `Gate decision “${action}” recorded against an immutable evidence baseline.` : body.error);
     setSaving(false); if (response.ok) router.refresh();
   }
-  return <div className="decision-form">{affectingTasks.length > 0 && <div className="schedule-impact" role="note"><h4>Schedule impact — read only</h4><p>These schedule tasks affect this gate. Shown for context; they cannot be changed here.</p><ul>{affectingTasks.map((task) => <li key={task.id}><b>{task.name}</b> <small>{task.relationshipType} · {task.reviewState.replaceAll("_", " ")}</small></li>)}</ul></div>}<label>Decision<select value={action} onChange={(event) => setAction(event.target.value as typeof action)}><option value="approve" disabled={readinessState !== "ready"}>Approve</option><option value="reject">Reject</option><option value="waive">Waive with authority</option></select></label><textarea aria-label="Decision reason" placeholder="Explain this decision against the displayed evidence baseline…" minLength={12} value={reason} onChange={(event) => setReason(event.target.value)} />{needsMfa && <input aria-label="Six-digit authenticator code" inputMode="numeric" pattern="[0-9]{6}" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Authenticator code" />}<button className="button button-primary" disabled={saving || reason.trim().length < 12 || needsMfa && token.length !== 6} onClick={submit}>{saving ? "Recording…" : "Record controlled decision"}</button>{message && <small role="status">{message}</small>}</div>;
+  return <div className="decision-form">{affectingTasks.length > 0 && <div className="schedule-impact" role="note"><h4>Schedule impact — read only</h4><p>These schedule tasks affect this gate. Shown for context; they cannot be changed here.</p><ul>{affectingTasks.map((task) => <li key={task.id}><b>{task.name}</b> <small>{task.relationshipType} · {task.reviewState.replaceAll("_", " ")}</small></li>)}</ul></div>}<label>Decision<select value={action} onChange={(event) => setAction(event.target.value as typeof action)}><option value="approve" disabled={readinessState !== "ready"}>Approve</option><option value="reject">Reject</option><option value="waive">Waive with authority</option></select></label><textarea aria-label="Decision reason" placeholder="Explain this decision against the displayed evidence baseline…" minLength={12} value={reason} onChange={(event) => setReason(event.target.value)} />{needsMfa && <label>Authenticator code<input aria-label="Six-digit authenticator code" autoComplete="one-time-code" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" value={token} onChange={(event) => setToken(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit code" /><span className="field-help">Open the authenticator app used during Profile enrollment. Codes refresh every 30 seconds.</span></label>}{enrollmentRequired && <Link className="button button-secondary" href="/profile">Set up authenticator in Profile</Link>}<button className="button button-primary" disabled={saving || enrollmentRequired || reason.trim().length < 12 || needsMfa && token.length !== 6} onClick={submit}>{saving ? "Recording…" : "Record controlled decision"}</button>{message && <small role="status">{message}</small>}</div>;
 }

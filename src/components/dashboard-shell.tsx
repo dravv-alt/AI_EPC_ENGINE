@@ -13,7 +13,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react";
 import type { DashboardData, ReadinessTone } from "@/lib/dashboard-data";
 import { RequirementReviewActions } from "@/components/requirement-review-actions";
@@ -21,6 +20,10 @@ import { SourceUploadForm } from "@/components/source-upload-form";
 import Link from "next/link";
 import { WorkspaceNavigation } from "@/components/workspace-navigation";
 import { MobileRouteMenu } from "@/components/mobile-route-menu";
+import { ProjectSearchForm } from "@/components/project-search-form";
+import { DashboardInsights } from "@/components/dashboard-insights";
+import { ClerkAccountControl } from "@/components/clerk-account-control";
+import { clerkIsConfigured } from "@/lib/env";
 
 const navigation = [
   [Grid2X2, "Overview"],
@@ -46,19 +49,17 @@ export function DashboardShell({ data }: { data: DashboardData }) {
       <section className="workspace">
         <header className="topbar">
           <MobileRouteMenu />
-          <form className="search-box" action="/knowledge"><Search size={18} /><input name="q" aria-label="Search this project" placeholder="Search sources, assets, findings…" /></form>
-          <div className="topbar-actions"><button className="icon-button" aria-label="Notifications"><Bell size={19} /><span className="notification-dot" /></button><button className="help-button">?</button><span className="sync-state"><span />Synced</span></div>
+          <ProjectSearchForm />
+          <div className="topbar-actions"><Link className="icon-button" href="/command-center" aria-label="Open notifications"><Bell size={19} /><span className="notification-dot" /></Link><Link className="help-button" href={{ pathname: "/help" }} aria-label="Open help">?</Link>{clerkIsConfigured && <ClerkAccountControl />}<span className="sync-state"><span />Synced</span></div>
         </header>
 
         <div className="content">
           <section className="page-heading">
             <div><p className="eyebrow">Commissioning control room</p><h1>Project overview</h1><p className="subhead">Evidence-backed readiness for <b>{data.gate}</b>.</p></div>
-            <div className="heading-actions"><button className="button button-secondary"><BookOpen size={17} /> View brief</button><a className="button button-primary" href="#source-upload"><FileUp size={17} /> Upload source</a></div>
+            <div className="heading-actions"><Link className="button button-secondary" href={{ pathname: "/brief" }}><BookOpen size={17} /> View brief</Link><a className="button button-primary" href="#source-upload"><FileUp size={17} /> Upload source</a></div>
           </section>
 
-          <section className="metric-grid" aria-label="Project metrics">
-            {data.metrics.map((metric) => <article className={`metric-card metric-${metric.tone}`} key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></article>)}
-          </section>
+          <DashboardInsights data={data} />
 
           <section className="readiness-layout" id="readiness">
             <article className="surface readiness-card">
@@ -80,13 +81,13 @@ export function DashboardShell({ data }: { data: DashboardData }) {
           <section className="two-column" id="sources">
             <article className="surface source-card">
               <div className="section-heading"><div><p className="eyebrow">Source library</p><h2>Recent controlled sources</h2></div><Link className="text-button" href="/sources">Open library <ArrowUpRight size={15} /></Link></div>
-              <div className="table-wrap"><table><thead><tr><th>Source</th><th>Revision</th><th>Processing</th></tr></thead><tbody>{data.sources.map((source) => <tr key={source.id}><td><b>{source.title}</b><small>{source.detail}</small></td><td><span className="mono">{source.revision}</span></td><td><span className={`source-status ${source.status === "Processed" ? "processed" : "pending"}`}>{source.status}</span></td></tr>)}</tbody></table></div>
+              <div className="table-wrap"><table><thead><tr><th>Source</th><th>Revision</th><th>Processing</th></tr></thead><tbody>{data.sources.map((source) => <tr key={source.id}><td>{source.firstRegionId ? <Link className="source-table-link" href={`/sources/regions/${source.firstRegionId}`}><b>{source.title}</b><small>{source.detail} · open first citation</small></Link> : <><b>{source.title}</b><small>{source.detail}</small></>}</td><td><span className="mono">{source.revision}</span></td><td><span className={`source-status ${source.status === "Processed" ? "processed" : "pending"}`}>{source.status}</span></td></tr>)}</tbody></table></div>
               <SourceUploadForm projectId={data.projectId} />
             </article>
 
             <article className="surface review-card" id="requirements">
               <div className="section-heading"><div><p className="eyebrow">Requirement review</p><h2>{data.proposal ? "One proposal needs you" : "Review queue clear"}</h2></div><span className="review-count">{data.proposal ? "01" : "00"}</span></div>
-              {data.proposal ? <><div className="requirement"><span className="mono clause">Proposed</span><p>{data.proposal.statement}</p><div className="citation"><BookOpen size={15} /> {data.proposal.citation}</div></div><RequirementReviewActions requirement={{ id: data.proposal.id, statement: data.proposal.statement, numericValue: null, unit: null, tolerance: null }} acceptedTargets={[]} /></> : <p className="empty-copy">All extracted requirements have been reviewed.</p>}
+              {data.proposal ? <><div className="requirement"><span className="mono clause">Proposed requirement</span><div className="requirement-statement"><ListChecks size={18} aria-hidden="true" /><p>{data.proposal.statement}</p></div><div className="citation"><BookOpen size={15} /> {data.proposal.citation}</div></div><RequirementReviewActions requirement={{ id: data.proposal.id, statement: data.proposal.statement, numericValue: null, unit: null, tolerance: null }} acceptedTargets={[]} /></> : <p className="empty-copy">All extracted requirements have been reviewed.</p>}
             </article>
           </section>
         </div>

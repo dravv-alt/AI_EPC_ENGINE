@@ -61,6 +61,78 @@ export type SemanticCitation = {
   similarity: number;
 };
 
+const LEXICAL_STOP_WORDS = new Set(["about", "and", "are", "does", "for", "from", "into", "the", "this", "what", "with"]);
+
+function lexicalTokens(value: string) {
+  return [...new Set(value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length >= 3 && !LEXICAL_STOP_WORDS.has(token)).map((token) => token.endsWith("ies") ? `${token.slice(0, -3)}y` : token.endsWith("s") && token.length > 4 ? token.slice(0, -1) : token))];
+}
+
+async function retrieveLexicalCitations(options: {
+  projectId: string;
+  query: string;
+  documentType?: string;
+  documentId?: string;
+  systemId?: string;
+  assetId?: string;
+  gateId?: string;
+  revision?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  limit: number;
+}): Promise<SemanticCitation[]> {
+  const filters = [eq(knowledgeChunks.projectId, options.projectId)];
+  if (options.documentType) filters.push(eq(knowledgeChunks.documentType, options.documentType));
+  if (options.documentId) filters.push(eq(documents.id, options.documentId));
+  if (options.revision) filters.push(eq(documentVersions.revision, options.revision));
+  if (options.dateFrom) filters.push(gte(documentVersions.createdAt, options.dateFrom));
+  if (options.dateTo) filters.push(lte(documentVersions.createdAt, options.dateTo));
+  if (options.systemId) filters.push(scopeFilterSql(options.projectId, "system", options.systemId));
+  if (options.assetId) filters.push(scopeFilterSql(options.projectId, "asset", options.assetId));
+  if (options.gateId) filters.push(scopeFilterSql(options.projectId, "gate", options.gateId));
+
+  const rows = await db
+    .select({
+      chunkId: knowledgeChunks.id,
+      content: knowledgeChunks.content,
+      sourceRegionId: knowledgeChunks.sourceRegionId,
+      documentVersionId: sourceRegions.documentVersionId,
+      documentId: documents.id,
+      documentTitle: documents.title,
+      documentType: knowledgeChunks.documentType,
+      contentHash: knowledgeChunks.contentHash
+    })
+    .from(knowledgeChunks)
+    .leftJoin(sourceRegions, eq(knowledgeChunks.sourceRegionId, sourceRegions.id))
+    .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+    .leftJoin(documents, eq(documentVersions.documentId, documents.id))
+    .where(and(...filters))
+    .limit(500);
+
+  const queryTokens = lexicalTokens(options.query);
+  if (!queryTokens.length) return [];
+  return rows
+    .map((row) => {
+      const contentTokens = new Set(lexicalTokens(`${row.documentTitle ?? ""} ${row.content}`));
+      const overlap = queryTokens.filter((token) => contentTokens.has(token)).length;
+      const similarity = overlap ? 0.35 + 0.65 * (overlap / queryTokens.length) : 0;
+      return {
+        chunkId: row.chunkId,
+        content: row.content,
+        text: row.content,
+        sourceRegionId: row.sourceRegionId,
+        documentVersionId: row.documentVersionId ?? null,
+        documentId: row.documentId ?? null,
+        documentTitle: row.documentTitle ?? null,
+        documentType: row.documentType,
+        contentHash: row.contentHash,
+        similarity
+      };
+    })
+    .filter((row) => row.similarity > 0)
+    .sort((left, right) => right.similarity - left.similarity || left.chunkId.localeCompare(right.chunkId))
+    .slice(0, options.limit);
+}
+
 // Metadata-filter-first semantic retrieval: a mandatory SQL filter on project
 // (and optional documentType/systemId/assetId/gateId/revision/date range)
 // runs before ranking, then pgvector cosine similarity (1 - cosine distance)
@@ -84,7 +156,12 @@ export async function retrieveSemanticCitations(options: {
   const threshold = options.threshold ?? env.KNOWLEDGE_SIMILARITY_THRESHOLD;
   const limit = options.limit ?? 8;
   const provider = getModelProvider();
-  const embedding = await provider.embed(options.query);
+  let embedding: number[];
+  try {
+    embedding = await provider.embed(options.query);
+  } catch {
+    return retrieveLexicalCitations({ ...options, limit });
+  }
   const vectorLiteral = `[${embedding.join(",")}]`;
   const similarity = sql<number>`1 - (${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector)`;
 
@@ -147,5 +224,10 @@ export async function retrieveSemanticCitations(options: {
       similarity: Number(row.similarity)
     }));
 
+  // A processed source may have controlled chunks before the asynchronous
+  // embedding worker has populated vectors. Keep the source searchable through
+  // a deterministic lexical fallback until indexing catches up. If vector rows
+  // exist but all are below threshold, preserve the semantic "no match" result.
+  if (!rows.length) return retrieveLexicalCitations({ ...options, limit });
   return rerankCitations(options.query, candidates, limit);
 }

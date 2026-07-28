@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { documentVersions, documents, findings, gates, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, sourceRegions, systems, users } from "@/lib/db/schema";
+import { alerts, auditEvents, documentVersions, documents, evidence, findings, gates, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getProjectGateReadiness, type GateReadiness } from "@/lib/readiness/project-readiness";
 import { requireProjectPermission } from "@/lib/projects/access";
 
@@ -12,9 +12,25 @@ export interface DashboardData {
   gate: string;
   metrics: Array<{ label: string; value: string; detail: string; tone: "primary" | "secondary" | "tertiary" }>;
   readiness: Array<{ gateId: string; gate: string; system: string; state: ReadinessTone; detail: string }>;
-  sources: Array<{ id: string; title: string; revision: string; status: string; detail: string }>;
+  sources: Array<{ id: string; title: string; revision: string; status: string; detail: string; firstRegionId: string | null }>;
   actions: Array<{ id: string; title: string; owner: string; due: string; severity: string }>;
   proposal: { id: string; statement: string; citation: string } | null;
+  insights: {
+    gateBars: Array<{ id: string; label: string; state: ReadinessTone; percent: number; evidence: string }>;
+    evidence: Array<{ label: string; value: number; tone: string }>;
+    requirements: Array<{ label: string; value: number; tone: string }>;
+    actionSeverity: Array<{ label: string; value: number; tone: string }>;
+    operations: {
+      shipments: number;
+      delayedShipments: number;
+      acceptedTasks: number;
+      scheduleVersion: number | null;
+      scheduleStatus: string;
+      activeAlerts: number;
+    };
+    activity: Array<{ label: string; value: number }>;
+    recentActivity: Array<{ id: string; action: string; entityType: string; actor: string; at: string }>;
+  };
 }
 
 export interface AlertLink { href: string; label: string }
@@ -98,7 +114,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   const project = await db.query.projects.findFirst({ where: (projects, { eq }) => eq(projects.id, projectId) });
   if (!project) return null;
 
-  const [projectGates, projectSystems, projectVersions, projectRegions, projectRequirements, projectFindings, people, gateReadiness] = await Promise.all([
+  const [projectGates, projectSystems, projectVersions, projectRegions, projectRequirements, projectFindings, people, gateReadiness, projectEvidence, projectShipments, projectTasks, latestSchedule, activeAlerts, recentAudit] = await Promise.all([
     db.select().from(gates).where(eq(gates.projectId, projectId)),
     db.select().from(systems).where(eq(systems.projectId, projectId)),
     db.select().from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)),
@@ -106,7 +122,13 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
     db.select().from(requirements).where(eq(requirements.projectId, projectId)),
     db.select().from(findings).where(eq(findings.projectId, projectId)).orderBy(desc(findings.createdAt)),
     db.select().from(users),
-    getProjectGateReadiness(projectId)
+    getProjectGateReadiness(projectId),
+    db.select().from(evidence).where(eq(evidence.projectId, projectId)),
+    db.select().from(shipments).where(eq(shipments.projectId, projectId)),
+    db.select().from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)),
+    db.query.scheduleVersions.findFirst({ where: eq(scheduleVersions.projectId, projectId), orderBy: [desc(scheduleVersions.versionNumber)] }),
+    db.select().from(alerts).where(eq(alerts.projectId, projectId)),
+    db.select().from(auditEvents).where(eq(auditEvents.projectId, projectId)).orderBy(desc(auditEvents.createdAt)).limit(200)
   ]);
 
   const systemById = new Map(projectSystems.map((system) => [system.id, system.name]));
@@ -119,11 +141,27 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   const readyGateCount = gateReadiness.filter((item) => item.state === "ready").length;
   const readinessPercent = projectGates.length === 0 ? 0 : Math.round((readyGateCount / projectGates.length) * 100);
   const regionCountByVersion = new Map<string, number>();
+  const firstRegionByVersion = new Map<string, string>();
   projectRegions.forEach(({ source_regions }) => regionCountByVersion.set(source_regions.documentVersionId, (regionCountByVersion.get(source_regions.documentVersionId) ?? 0) + 1));
+  projectRegions.forEach(({ source_regions }) => {
+    if (!firstRegionByVersion.has(source_regions.documentVersionId)) firstRegionByVersion.set(source_regions.documentVersionId, source_regions.id);
+  });
   const ownerById = new Map(people.map((person) => [person.id, person.displayName]));
   const regionsById = new Map(projectRegions.map(({ source_regions, document_versions, documents }) => [source_regions.id, { source_regions, document_versions, documents }]));
   const proposal = projectRequirements.find((requirement) => requirement.reviewState === "proposed");
   const actionableFindings = projectFindings.filter((finding) => ["open", "in_progress"].includes(finding.status));
+  const countBy = <T,>(items: T[], read: (item: T) => string, value: string) => items.filter((item) => read(item) === value).length;
+  const activityDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - (6 - index));
+    const next = new Date(date);
+    next.setDate(next.getDate() + 1);
+    return {
+      label: new Intl.DateTimeFormat("en-IN", { weekday: "short" }).format(date),
+      value: recentAudit.filter((event) => event.createdAt >= date && event.createdAt < next).length
+    };
+  });
 
   return {
     projectId,
@@ -143,9 +181,44 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
       title: documents.title,
       revision: document_versions.revision,
       status: document_versions.extractionStatus === "completed" ? "Processed" : document_versions.extractionStatus === "failed" ? "Needs attention" : "Processing",
-      detail: `${regionCountByVersion.get(document_versions.id) ?? 0} cited region${(regionCountByVersion.get(document_versions.id) ?? 0) === 1 ? "" : "s"}`
+      detail: `${regionCountByVersion.get(document_versions.id) ?? 0} cited region${(regionCountByVersion.get(document_versions.id) ?? 0) === 1 ? "" : "s"}`,
+      firstRegionId: firstRegionByVersion.get(document_versions.id) ?? null
     })),
     actions: actionableFindings.slice(0, 5).map((finding) => ({ id: finding.id, title: finding.title, owner: finding.ownerId ? ownerById.get(finding.ownerId) ?? "Unassigned" : "Unassigned", due: finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(finding.dueAt) : "Unscheduled", severity: finding.severity })),
-    proposal: proposal ? { id: proposal.id, statement: proposal.statement, citation: (() => { const region = regionsById.get(proposal.sourceRegionId); return region ? `${region.documents.title} · p. ${region.source_regions.pageNumber}` : "Controlled source unavailable"; })() } : null
+    proposal: proposal ? { id: proposal.id, statement: proposal.statement, citation: (() => { const region = regionsById.get(proposal.sourceRegionId); return region ? `${region.documents.title} · p. ${region.source_regions.pageNumber}` : "Controlled source unavailable"; })() } : null,
+    insights: {
+      gateBars: projectGates.slice().sort((a, b) => Number(a.sequenceNumber) - Number(b.sequenceNumber)).map((gate) => {
+        const state = readinessByGate.get(gate.id);
+        const percent = !state?.requiredEvidence ? state?.state === "ready" ? 100 : 0 : Math.min(100, Math.round((state.acceptedEvidence / state.requiredEvidence) * 100));
+        return { id: gate.id, label: gate.name, state: state ? stateTone(state.state) : "unknown", percent, evidence: `${state?.acceptedEvidence ?? 0}/${state?.requiredEvidence ?? 0}` };
+      }),
+      evidence: [
+        { label: "Accepted", value: countBy(projectEvidence, (item) => item.validityState, "accepted"), tone: "ready" },
+        { label: "Pending", value: countBy(projectEvidence, (item) => item.validityState, "pending"), tone: "review" },
+        { label: "Stale / failed", value: projectEvidence.filter((item) => ["stale", "failed", "rejected"].includes(item.validityState)).length, tone: "blocked" }
+      ],
+      requirements: [
+        { label: "Accepted", value: countBy(projectRequirements, (item) => item.reviewState, "accepted"), tone: "ready" },
+        { label: "Proposed", value: countBy(projectRequirements, (item) => item.reviewState, "proposed"), tone: "review" },
+        { label: "Edited / rejected", value: projectRequirements.filter((item) => ["edited", "rejected"].includes(item.reviewState)).length, tone: "unknown" }
+      ],
+      actionSeverity: ["critical", "high", "medium", "low"].map((severity) => ({ label: severity, value: actionableFindings.filter((item) => item.severity === severity).length, tone: severity })),
+      operations: {
+        shipments: projectShipments.length,
+        delayedShipments: projectShipments.filter((item) => ["amber", "red"].includes(item.status)).length,
+        acceptedTasks: projectTasks.filter((item) => item.reviewState === "accepted").length,
+        scheduleVersion: latestSchedule?.versionNumber ?? null,
+        scheduleStatus: latestSchedule?.solverStatus ?? "No baseline",
+        activeAlerts: activeAlerts.filter((item) => item.status === "active").length
+      },
+      activity: activityDays,
+      recentActivity: recentAudit.slice(0, 6).map((event) => ({
+        id: event.id,
+        action: event.action.replaceAll("_", " ").replaceAll(".", " · "),
+        entityType: event.entityType.replaceAll("_", " "),
+        actor: event.actorId ? ownerById.get(event.actorId) ?? "Project member" : "System",
+        at: event.createdAt.toISOString()
+      }))
+    }
   };
 }

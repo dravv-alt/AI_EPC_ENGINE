@@ -67,6 +67,8 @@ const T = {
   user_admin:   "10000000-0000-4000-8000-000000000002",
   user_field:   "10000000-0000-4000-8000-000000000003",
   user_approver:"10000000-0000-4000-8000-000000000004",
+  user_clerk_test:"10000000-0000-4000-8000-000000000005",
+  user_clerk_owner:"10000000-0000-4000-8000-000000000006",
 
   // This is the original Refinement project UUID. Changing it would cause the
   // project-code conflict to skip insertion and leave every later FK invalid.
@@ -103,6 +105,7 @@ const T = {
   doc_nfpa:     "10000000-0000-4000-8000-000000000052",
 
   // Document versions
+  ver_chw_prev: "10000000-0000-4000-8000-000000000063",
   ver_chw_proc: "10000000-0000-4000-8000-000000000060",
   ver_ashrae:   "10000000-0000-4000-8000-000000000061",
   ver_nfpa:     "10000000-0000-4000-8000-000000000062",
@@ -114,6 +117,7 @@ const T = {
   reg_r4:       "10000000-0000-4000-8000-000000000073",
   reg_r5:       "10000000-0000-4000-8000-000000000074",
   reg_r6:       "10000000-0000-4000-8000-000000000075",
+  reg_prev_r1:  "10000000-0000-4000-8000-000000000076",
 
   // Requirements
   req_r1:       "10000000-0000-4000-8000-000000000080",
@@ -126,6 +130,7 @@ const T = {
   req_r8:       "10000000-0000-4000-8000-000000000087",
   req_r9:       "10000000-0000-4000-8000-000000000088",
   req_r10:      "10000000-0000-4000-8000-000000000089",
+  req_prev_r1:  "10000000-0000-4000-8000-00000000008A",
 
   // Evidence
   evid_e1:      "10000000-0000-4000-8000-000000000090",
@@ -198,6 +203,8 @@ const T = {
   edge_gate1_gate2:  "10000000-0000-4000-8000-000000000119",
   edge_gate2_gate3:  "10000000-0000-4000-8000-00000000011A",
   edge_gate3_gate4:  "10000000-0000-4000-8000-00000000011B",
+  edge_prev_req_gate4:"10000000-0000-4000-8000-00000000011C",
+  edge_evid1_prev_req:"10000000-0000-4000-8000-00000000011D",
 
   // Knowledge chunks (stable IDs so PK conflict fires on re-seed)
   kc_1:         "10000000-0000-4000-8000-000000000120",
@@ -233,8 +240,10 @@ async function seed() {
     { id: T.user_admin,    email: "manager@pramana.local",  displayName: "Aarav Mehta",     passwordHash },
     { id: T.user_field,    email: "field@pramana.local",    displayName: "Priya Sharma",    passwordHash },
     { id: T.user_approver, email: "approver@pramana.local", displayName: "Rohan Desai",     passwordHash },
+    { id: T.user_clerk_test, email: "testbeta@ipdkimkc.com", displayName: "Test Beta" },
+    { id: T.user_clerk_owner, email: "atharva.v.deo@gmail.com", displayName: "Atharva Deo" },
   ]).onConflictDoNothing();
-  console.log("  ✓ Users (admin, field, approver) — password: Pramana@123!");
+  console.log("  ✓ Users (admin, field, approver, Clerk test + owner) — password: Pramana@123!");
 
   // ── Project ───────────────────────────────────────────────────────────────
   await db.insert(projects).values({
@@ -249,6 +258,8 @@ async function seed() {
     { projectId: T.project, userId: T.user_admin,    role: "admin" },
     { projectId: T.project, userId: T.user_field,    role: "field_engineer" },
     { projectId: T.project, userId: T.user_approver, role: "approver" },
+    { projectId: T.project, userId: T.user_clerk_test, role: "viewer" },
+    { projectId: T.project, userId: T.user_clerk_owner, role: "admin" },
   ]).onConflictDoNothing();
   console.log("  ✓ Project: Mumbai DC-07 (MDC-07)");
 
@@ -294,6 +305,7 @@ async function seed() {
   ]).onConflictDoNothing();
 
   await db.insert(documentVersions).values([
+    { id: T.ver_chw_prev, documentId: T.doc_chw_proc, revision: "Rev B",    status: "superseded",  sha256: sha256("chw-proc-rev-b"),    objectKey: "seed/chw-procedure-rev-b.pdf",     mediaType: "application/pdf", extractionStatus: "completed", createdAt: daysAgo(60) },
     { id: T.ver_chw_proc, documentId: T.doc_chw_proc, revision: "Rev C",    status: "approved",    sha256: sha256("chw-proc-rev-c"),    objectKey: "seed/chw-procedure-rev-c.pdf",     mediaType: "application/pdf", extractionStatus: "completed" },
     { id: T.ver_ashrae,   documentId: T.doc_ashrae,   revision: "Rev 2022", status: "approved",    sha256: sha256("ashrae-90.1-2022"),  objectKey: "seed/ashrae-90-1-2022.pdf",        mediaType: "application/pdf", extractionStatus: "completed" },
     { id: T.ver_nfpa,     documentId: T.doc_nfpa,     revision: "Rev 2018", status: "approved",    sha256: sha256("nfpa-2001-2018"),    objectKey: "seed/nfpa-2001-2018.pdf",          mediaType: "application/pdf", extractionStatus: "completed" },
@@ -333,8 +345,15 @@ async function seed() {
       extractedText: "UPS transfer time to battery backup shall not exceed 8 milliseconds under full load. The switchover shall be tested with a live full-load block and recorded on a calibrated oscilloscope.",
     },
   ];
-  await db.insert(sourceRegions).values(regions).onConflictDoNothing();
-  console.log("  ✓ Source regions (6)");
+  await db.insert(sourceRegions).values([
+    ...regions,
+    {
+      id: T.reg_prev_r1, documentVersionId: T.ver_chw_prev, pageNumber: "14",
+      bbox: [72, 162, 530, 240], contentHash: sha256("reg-prev-r1"),
+      extractedText: "Primary and standby chilled-water pumps shall maintain design flow of 430 LPM during the L4 integrated test. Flow deviation greater than ±5% shall constitute a test failure.",
+    },
+  ]).onConflictDoNothing();
+  console.log("  ✓ Source regions (6 current + 1 superseded revision region)");
 
   // ── Requirements ──────────────────────────────────────────────────────────
   const reqNow = new Date();
@@ -353,6 +372,9 @@ async function seed() {
     { id: T.req_r9, projectId: T.project, sourceRegionId: T.reg_r4, statement: "All distribution boards shall be rated IP55 (amended from IP54 per site survey).", modality: "shall", reviewState: "edited", reviewedBy: T.user_admin, reviewedAt: daysAgo(3), reviewNote: "Site survey found IP54 insufficient for outdoor-facing sections.", confidence: "0.8200" },
     // Rejected requirement
     { id: T.req_r10, projectId: T.project, sourceRegionId: T.reg_r6, statement: "UPS shall include a bypass maintenance switch rated at 1,000 A.", modality: "shall", reviewState: "rejected", reviewedBy: T.user_admin, reviewedAt: daysAgo(2), reviewNote: "Covered by separate electrical scope — not a commissioning requirement.", confidence: "0.6000" },
+    // Retained against Rev B so /changes can trace Rev C's amendment through
+    // requirement -> evidence/gate without mutating the current Rev C records.
+    { id: T.req_prev_r1, projectId: T.project, sourceRegionId: T.reg_prev_r1, statement: "Rev B required primary and standby CHW pumps to maintain 430 LPM during the L4 integrated test.", modality: "shall", reviewState: "accepted", reviewedBy: T.user_admin, reviewedAt: daysAgo(50), confidence: "0.9500" },
   ]).onConflictDoNothing();
   console.log("  ✓ Requirements (6 accepted, 2 proposed, 1 edited, 1 rejected)");
 
@@ -392,6 +414,8 @@ async function seed() {
     { id: T.edge_gate1_gate2, projectId: T.project, fromType: "gate",        fromId: T.gate_l1, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l2 },
     { id: T.edge_gate2_gate3, projectId: T.project, fromType: "gate",        fromId: T.gate_l2, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l3 },
     { id: T.edge_gate3_gate4, projectId: T.project, fromType: "gate",        fromId: T.gate_l3, relationshipType: "PRECEDES", toType: "gate",        toId: T.gate_l4 },
+    { id: T.edge_prev_req_gate4, projectId: T.project, fromType: "requirement", fromId: T.req_prev_r1, relationshipType: "AFFECTS", toType: "gate", toId: T.gate_l4 },
+    { id: T.edge_evid1_prev_req, projectId: T.project, fromType: "evidence", fromId: T.evid_e1, relationshipType: "PROVES", toType: "requirement", toId: T.req_prev_r1 },
   ]).onConflictDoNothing();
   console.log("  ✓ Graph edges (requirements→gates AFFECTS, evidence→requirements PROVES, gate prerequisites)");
 
@@ -673,6 +697,8 @@ async function seed() {
     admin@pramana.local     → Admin
     field@pramana.local     → Field Engineer
     approver@pramana.local  → Approver
+    testbeta@ipdkimkc.com    → Clerk viewer
+    atharva.v.deo@gmail.com  → Clerk admin
 
   Project: Mumbai DC-07 (MDC-07)
   Surfaces pre-populated:

@@ -249,6 +249,7 @@ export function GraphWorkbench({
           </div>
         )}
 
+        <div className="graph-node-scroll" tabIndex={0} aria-label="Scrollable authority graph entities">
         <div className="graph-node-grid">
           {visibleNodes.map((node) => {
             const color = TYPE_COLORS[node.type] ?? "#6d7470";
@@ -274,7 +275,7 @@ export function GraphWorkbench({
               </button>
             );
           })}
-        </div>
+        </div></div>
       </section>
 
       {/* ── RIGHT: detail + create ── */}
@@ -516,7 +517,7 @@ export function GraphWorkbench({
         {/* global audit timeline */}
         <details className="surface history-panel" open>
           <summary>Project audit timeline ({audit.length})</summary>
-          {audit.slice(0, 60).map((ev) => (
+          <div className="graph-audit-scroll" tabIndex={0}>{audit.slice(0, 60).map((ev) => (
             <article className="entity-row" key={ev.id}>
               <div>
                 <b>{ev.action.replaceAll(".", " ")}</b>
@@ -527,7 +528,7 @@ export function GraphWorkbench({
                 <br />{ev.eventHash.slice(0, 10)}…
               </small>
             </article>
-          ))}
+          ))}</div>
         </details>
       </aside>
     </div>

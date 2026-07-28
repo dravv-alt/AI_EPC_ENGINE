@@ -56,13 +56,13 @@ export function ActionsWorkbench({ projectId, findings, gates, members, initialF
   const closed = findings.filter((finding) => finding.status === "closed");
   return <div className="workflow-stack">
     <form className="surface finding-form" onSubmit={create}>
-      <div><p className="eyebrow">New accountable action</p><h2>Create finding</h2></div>
-      <label>Title<input name="title" minLength={3} required placeholder="Resolve missing witness signature" /></label>
-      <label>Description<textarea name="description" placeholder="Describe the exact blocker and acceptance condition." /></label>
-      <label>Severity<select name="severity" defaultValue="high"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
-      <label>Gate<select name="gateId"><option value="">Project-wide</option>{gates.map((gate) => <option value={gate.id} key={gate.id}>{gate.name}</option>)}</select></label>
-      <label>Owner<select name="ownerId" required><option value="">Select owner</option>{members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}</select></label>
-      <label>Due date<input name="dueAt" type="datetime-local" required /></label>
+      <div className="finding-form-heading"><p className="eyebrow">New accountable action</p><h2>Create finding</h2><p>Describe the blocker first, then assign its control details.</p></div>
+      <label className="finding-title-field">Title<input name="title" minLength={3} required placeholder="Resolve missing witness signature" /></label>
+      <label className="finding-description-field">Description<textarea name="description" placeholder="Describe the exact blocker and acceptance condition." /></label>
+      <label className="finding-control-field">Severity<select name="severity" defaultValue="high"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
+      <label className="finding-control-field">Gate<select name="gateId"><option value="">Project-wide</option>{gates.map((gate) => <option value={gate.id} key={gate.id}>{gate.name}</option>)}</select></label>
+      <label className="finding-control-field">Owner<select name="ownerId" required><option value="">Select owner</option>{members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}</select></label>
+      <label className="finding-control-field">Due date<input name="dueAt" type="datetime-local" required /></label>
       <button className="button button-primary" disabled={saving || !members.length}>Create and assign</button>
     </form>
     {message && <p className="surface inline-feedback" role="status">{message}</p>}

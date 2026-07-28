@@ -6,6 +6,8 @@ import { db } from "@/lib/db/client";
 import { alerts } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 
+export const dynamic = "force-dynamic";
+
 function humanAlertFacts(alert: AlertRow) {
   const payload = alert.payload && typeof alert.payload === "object" ? alert.payload as Record<string, unknown> : {};
   const facts: string[] = [];
