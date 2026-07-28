@@ -333,6 +333,48 @@ Run `clerk doctor` and confirm `src/proxy.ts` contains the API matcher followed
 by `/__clerk/:path*`. Confirm `APP_BASE_URL` and Clerk redirect URLs use port
 3000 for host development.
 
+## Safe shutdown and cache cleanup
+
+First stop the Next.js and worker terminals with `Ctrl+C`. Preserve the local
+database, extracted sources, and other Docker volumes:
+
+```bash
+docker compose -f docker-compose.dev.yml stop
+```
+
+PowerShell:
+
+```powershell
+docker compose -f docker-compose.dev.yml stop
+```
+
+Stop host Ollama:
+
+- Windows: quit Ollama from the system tray, or run
+  `Stop-Process -Name ollama -ErrorAction SilentlyContinue`.
+- Linux systemd: `sudo systemctl stop ollama`.
+- Linux without systemd: return to the `ollama serve` terminal and press
+  `Ctrl+C`.
+- macOS: quit Ollama from the menu bar, or stop a terminal-launched
+  `ollama serve` process with `pkill -f "ollama serve"`.
+
+Clear only the Next.js cache when a clean rebuild is required:
+
+```bash
+rm -rf .next
+```
+
+PowerShell:
+
+```powershell
+Remove-Item .next -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Routine shutdown intentionally preserves PostgreSQL/MinIO volumes, Docker build
+cache, and Ollama models. Do not use `docker system prune`, `docker builder
+prune`, or `ollama rm` unless their broader deletion scope is explicitly
+intended.
+
 ### Resetting local infrastructure
 
 The following command permanently removes the developer database, object

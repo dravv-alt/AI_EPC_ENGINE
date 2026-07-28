@@ -366,6 +366,27 @@ Run `npm run worker` in a second terminal, then open
 prerequisites, native PowerShell commands, Clerk project access, health checks,
 containerized Ollama fallback, ports, and troubleshooting.
 
+### Safe shutdown and cache cleanup
+
+Stop the Next.js and worker terminals with `Ctrl+C`, then stop only this
+project's development containers while preserving the database and object
+volumes:
+
+```bash
+docker compose -f docker-compose.dev.yml stop
+```
+
+Stop the host Ollama process with the operating-system command documented in
+the setup guide. To clear only the regenerable Next.js build cache:
+
+```bash
+rm -rf .next
+```
+
+Do not run Docker-wide prune commands or remove Ollama models as routine
+cleanup: both are global, expensive, and may affect unrelated projects.
+`docker compose ... down -v` is reserved for the explicit full-reset procedure.
+
 `docker-compose.yml` is not the developer quick start. It is a fail-closed
 deployment topology requiring `.env.compose.example`, managed secrets, an HTTPS
 public URL, and approved image tags or digests.
@@ -392,6 +413,15 @@ npm run verify:all
 `verify:all` is the broad local matrix — migrations, type-check, production build, seeded prerequisites, isolated development and credentials runtimes, and every `verify:*` script (auth, evidence/turnover, schedule, Cx, compliance, predictive-risk, knowledge, model-provider, audit). It deliberately overrides providers to deterministic mock values so it can validate application contracts without a hosted model. This is not evidence that a real model, live AIS/weather, or production secrets work; run `verify:ollama` and the deployment checks below separately. Individual `npm run verify:<name>` scripts (see `package.json`) can run against a development server for faster iteration. See [STATUS.md](STATUS.md) for what the last full run actually covered.
 
 The 21 July 2026 merge-readiness run also exercised the application in a real browser across every sidebar destination. The supplied TIA-942 PDF produced 26 controlled regions and 26 `nomic-embed-text` vectors; a live `gemma4:e2b` query returned only TIA-labelled citation links. Knowledge now supports an explicit Document filter and deterministic exact-title/standard-name routing, enforced in SQL before vector ranking. A migration backfills previously processed documents that had extraction regions but were missing semantic chunks. The complete post-fix `verify:all` run finished green; production dependency audit reports zero runtime advisories. See [STATUS.md](STATUS.md#what-changed-in-the-merge-readiness-pass-21-july-2026) for the complete change and residual-risk ledger.
+
+The 28 July 2026 live-corpus run imported *Cisco Press — Data Center
+Fundamentals* through `source:import`, producing 2,648 controlled regions and
+2,648 `nomic-embed-text` vectors. Architecture, high-availability, and Fibre
+Channel queries returned cited passages at approximately 73–87% cosine
+similarity. Cross-encoder reranking correctly rejected unsupported power/cooling
+and FM-200 negative controls. When Ollama emitted a fabricated citation UUID,
+the deterministic guard dropped it and returned short, source-region-bound
+extracts through the explicit retrieval fallback.
 
 ## Top 20 defects found across `Refinement` and `Updated-Refinement`
 
