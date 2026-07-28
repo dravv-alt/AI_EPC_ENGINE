@@ -1,7 +1,7 @@
-import { env } from "@/lib/env";
+import { clerkKeysConfigured } from "@/lib/env";
 
 export async function AuthBoundary({ children }: Readonly<{ children: React.ReactNode }>) {
-  if (env.AUTH_MODE !== "clerk") return children;
+  if (!clerkKeysConfigured) return children;
 
   const { ClerkProvider } = await import("@clerk/nextjs");
   return <ClerkProvider>{children}</ClerkProvider>;

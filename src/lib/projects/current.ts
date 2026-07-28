@@ -1,25 +1,23 @@
 import { and, eq } from "drizzle-orm";
-import { getCurrentIdentity } from "@/lib/auth/provider";
+import { AccountProvisioningError, getPersistedCurrentUser } from "@/lib/auth/user";
 import { db } from "@/lib/db/client";
-import { projectMembers, projects, users } from "@/lib/db/schema";
+import { projectMembers, projects } from "@/lib/db/schema";
 import { AuthenticationError } from "@/lib/auth/provider";
+import { env } from "@/lib/env";
+import type { Route } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 export const activeProjectCookie = "pramana_active_project";
 
 export async function getActiveProjectId() {
-  let identity;
-  try { identity = await getCurrentIdentity(); }
-  catch (error) { if (error instanceof AuthenticationError) redirect("/login"); throw error; }
-  const user = await db.query.users.findFirst({
-    where: identity.provider === "credentials"
-      ? eq(users.id, identity.userId)
-      : identity.provider === "clerk"
-        ? eq(users.externalAuthId, identity.userId)
-        : eq(users.email, identity.email)
-  });
-  if (!user) throw new Error("Authenticated user is not provisioned.");
+  let user;
+  try { ({ user } = await getPersistedCurrentUser()); }
+  catch (error) {
+    if (error instanceof AuthenticationError) redirect((env.AUTH_MODE === "clerk" ? "/sign-in" : "/login") as Route);
+    if (error instanceof AccountProvisioningError && env.AUTH_MODE === "clerk") redirect("/pending-access" as Route);
+    throw error;
+  }
   const selected = (await cookies()).get(activeProjectCookie)?.value;
   if (selected) {
     const membership = await db.select({ projectId: projects.id })

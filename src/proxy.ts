@@ -1,7 +1,15 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/redis/rate-limit";
 
-export async function proxy(request: NextRequest) {
+const publicClerkPaths = ["/sign-in", "/sign-up", "/pending-access", "/api/health"];
+
+function isPublicClerkPath(pathname: string) {
+  return publicClerkPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+async function applyApiRateLimit(request: NextRequest) {
+  if (!request.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
   const address = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
   const key = `${address}:${request.nextUrl.pathname.startsWith("/api/projects") ? "project-api" : "api"}`;
   const result = await checkRateLimit(key);
@@ -12,4 +20,20 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: "/api/:path*" };
+const withClerk = clerkMiddleware(async (auth, request) => {
+  if (!isPublicClerkPath(request.nextUrl.pathname)) await auth.protect();
+  return applyApiRateLimit(request);
+});
+
+export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (process.env.AUTH_MODE === "clerk") return withClerk(request, event);
+  return applyApiRateLimit(request);
+}
+
+export const config = {
+  matcher: [
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+    "/__clerk/:path*",
+  ],
+};

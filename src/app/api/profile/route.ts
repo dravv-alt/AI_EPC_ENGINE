@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentIdentity } from "@/lib/auth/provider";
+import { getPersistedCurrentUser } from "@/lib/auth/user";
 import { getSessionUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { authSessions, projectMembers, projects, users } from "@/lib/db/schema";
@@ -9,10 +9,7 @@ import { authSessions, projectMembers, projects, users } from "@/lib/db/schema";
 const patchSchema = z.object({ displayName: z.string().trim().min(2).max(200) });
 
 async function persistedUser() {
-  const identity = await getCurrentIdentity();
-  const user = await db.query.users.findFirst({ where: identity.provider === "credentials" ? eq(users.id, identity.userId) : eq(users.email, identity.email) });
-  if (!user) throw new Error("Authenticated user is not provisioned.");
-  return { identity, user };
+  return getPersistedCurrentUser();
 }
 
 export async function GET() {

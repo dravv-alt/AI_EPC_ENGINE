@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentIdentity } from "@/lib/auth/provider";
 import { requireProjectPermission } from "@/lib/projects/access";
 import { scheduleRecurringRiskPoll, cancelRecurringRiskPoll } from "@/lib/jobs/recurring";
 
@@ -11,9 +10,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const identity = await getCurrentIdentity();
   const body = bodySchema.parse(await request.json());
-  await requireProjectPermission(body.projectId, "schedule:manage");
+  const actor = await requireProjectPermission(body.projectId, "schedule:manage");
 
   if (body.action === "stop") {
     const result = await cancelRecurringRiskPoll(body.projectId);
@@ -22,7 +20,7 @@ export async function POST(request: Request) {
 
   const result = await scheduleRecurringRiskPoll({
     projectId: body.projectId,
-    actorId: identity.userId,
+    actorId: actor.userId,
     intervalMs: body.intervalMinutes * 60_000,
   });
   return NextResponse.json(result, { status: 202 });

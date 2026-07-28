@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const resolvedAuthMode = process.env.AUTH_MODE
+  ?? (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY ? "clerk" : undefined);
+
 const environmentSchema = z.object({
   DATABASE_URL: z.string().url().or(z.string().startsWith("postgresql://")).default("postgresql://pramana:pramana@localhost:5432/pramana"),
   AUTH_MODE: z.enum(["development", "credentials", "clerk"]).default("development"),
@@ -93,7 +96,7 @@ const environmentSchema = z.object({
 
 export const env = environmentSchema.parse({
   DATABASE_URL: process.env.DATABASE_URL,
-  AUTH_MODE: process.env.AUTH_MODE,
+  AUTH_MODE: resolvedAuthMode,
   AUTH_ENCRYPTION_KEY: process.env.AUTH_ENCRYPTION_KEY,
   SESSION_COOKIE_NAME: process.env.SESSION_COOKIE_NAME,
   SESSION_TTL_HOURS: process.env.SESSION_TTL_HOURS,
@@ -190,4 +193,5 @@ if (env.REQUIRE_PRODUCTION_CONFIG) {
   }
 }
 
-export const clerkIsConfigured = env.AUTH_MODE === "clerk" && Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);
+export const clerkKeysConfigured = Boolean(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY);
+export const clerkIsConfigured = env.AUTH_MODE === "clerk" && clerkKeysConfigured;
