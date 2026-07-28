@@ -243,6 +243,27 @@ The health response must identify Clerk authentication and the configured
 Ollama providers. Test sign-in, a Knowledge query, a source citation, and a
 shipment weather refresh before considering the laptop ready.
 
+### Terminal PDF ingestion and RAG verification
+
+Windows PowerShell:
+
+```powershell
+npm run source:import -- --file "C:\Documents\source.pdf" --title "Controlled source title" --revision "Rev A" --project "MDC-07" --actor "project.admin@example.com" --type "standard"
+npm run source:query -- --document "Controlled source title" --project "MDC-07" --query "How is high availability designed?" --synthesize
+```
+
+Linux:
+
+```bash
+npm run source:import -- --file "/home/user/Documents/source.pdf" --title "Controlled source title" --revision "Rev A" --project "MDC-07" --actor "project.admin@example.com" --type "standard"
+npm run source:query -- --document "Controlled source title" --project "MDC-07" --query "How is high availability designed?" --synthesize
+```
+
+The importer is idempotent by PDF SHA-256 and rejects actors without
+`source:upload`. The query command reports the active embedding model, vector
+dimensions, similarity scores, page numbers, source-region IDs, excerpts, and
+optional grounded synthesis.
+
 ## Ports
 
 | Port | Process |

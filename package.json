@@ -13,6 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
     "worker": "tsx scripts/worker.ts",
+    "source:import": "tsx scripts/import-source.ts",
+    "source:query": "tsx scripts/query-source.ts",
     "ais:worker": "tsx scripts/ais-worker.ts",
     "system:run": "tsx scripts/run-system.ts",
     "system:start": "npm run db:migrate && npm run build && npm run system:run",

@@ -1,5 +1,5 @@
 import { Worker, type Job } from "bullmq";
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { db } from "@/lib/db/client";
 import { documentVersions, durableJobs, knowledgeChunks, projects, projectMembers, scheduleAssignments, scheduleEvents, scheduleTasks, scheduleVersions, shipments, sourceRegions } from "@/lib/db/schema";
@@ -42,6 +42,31 @@ export async function extractDocument(input: { documentVersionId: string; object
   });
   await indexDocumentKnowledgeChunks(documentVersionId);
   return { regionCount: parsed.chunks.length };
+}
+
+export async function embedPendingKnowledgeChunks(options: { projectId?: string; sourceRegionIds?: string[] } = {}) {
+  const modelTag = activeEmbeddingModelTag();
+  const conditions = [
+    or(isNull(knowledgeChunks.embedding), ne(knowledgeChunks.embeddingModel, modelTag))
+  ];
+  if (options.projectId) conditions.push(eq(knowledgeChunks.projectId, options.projectId));
+  if (options.sourceRegionIds?.length) conditions.push(inArray(knowledgeChunks.sourceRegionId, options.sourceRegionIds));
+  const pending = await db
+    .select({ id: knowledgeChunks.id, content: knowledgeChunks.content })
+    .from(knowledgeChunks)
+    .where(and(...conditions));
+  if (!pending.length) return { embedded: 0, scanned: 0, modelTag };
+
+  const provider = getModelProvider();
+  let embedded = 0;
+  for (const chunk of pending) {
+    const vector = await provider.embed(chunk.content);
+    await db.update(knowledgeChunks)
+      .set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() })
+      .where(eq(knowledgeChunks.id, chunk.id));
+    embedded += 1;
+  }
+  return { embedded, scanned: pending.length, modelTag };
 }
 
 const handlers: Record<string, (job: Job) => Promise<unknown>> = {
@@ -156,23 +181,7 @@ const handlers: Record<string, (job: Job) => Promise<unknown>> = {
   },
   "knowledge.embed": async (job) => {
     const projectId = job.data.projectId ? String(job.data.projectId) : null;
-    const conditions = projectId ? and(eq(knowledgeChunks.projectId, projectId), isNull(knowledgeChunks.embedding)) : isNull(knowledgeChunks.embedding);
-    const pending = await db.select({ id: knowledgeChunks.id, content: knowledgeChunks.content }).from(knowledgeChunks).where(conditions);
-    if (!pending.length) return { embedded: 0, scanned: 0 };
-    const provider = getModelProvider();
-    const modelTag = activeEmbeddingModelTag();
-    let embedded = 0;
-    // Batching the embed calls (up to 32 chunks/request) is deferred: both
-    // MockModelProvider.embed and ServiceEmbeddingProvider.embed take a single
-    // string today, and widening that interface is a larger refactor than this
-    // slice's scope. Correctness (one HTTP round-trip per chunk, but every row
-    // tagged with the active embedding_model) matters more here than batching.
-    for (const chunk of pending) {
-      const vector = await provider.embed(chunk.content);
-      await db.update(knowledgeChunks).set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() }).where(eq(knowledgeChunks.id, chunk.id));
-      embedded += 1;
-    }
-    return { embedded, scanned: pending.length };
+    return embedPendingKnowledgeChunks(projectId ? { projectId } : {});
   },
   "document.extract": async (job) => {
     const data = job.data as { documentVersionId: string; objectKey: string; actorId?: string; tenantId?: string; projectId?: string };

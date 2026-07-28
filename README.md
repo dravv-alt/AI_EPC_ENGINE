@@ -55,6 +55,30 @@ The normal project journey is intentionally governed rather than a single AI cha
 
 The Graph and Changes surfaces are supporting views across this journey: Graph answers how records are connected; Changes shows what a controlled revision invalidated and why.
 
+### Import and verify a controlled PDF from the terminal
+
+The terminal path uses the same database, object storage, extraction, audit,
+chunking, and embedding contracts as the Sources UI. The actor must already
+have `source:upload` permission in the selected project.
+
+```bash
+npm run source:import -- \
+  --file "/absolute/path/to/source.pdf" \
+  --title "Controlled source title" \
+  --revision "Rev A" \
+  --project "MDC-07" \
+  --actor "project.admin@example.com" \
+  --type "standard"
+
+npm run source:query -- \
+  --document "Controlled source title" \
+  --project "MDC-07"
+```
+
+Add one or more `--query "..."` arguments to test specific questions. Add
+`--synthesize` to run the complete planner, retrieval, reranking, citation
+guard, and grounded-answer pipeline for the first query.
+
 ## Application surfaces
 
 - Overview and current-project selection
