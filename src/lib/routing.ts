@@ -23,7 +23,8 @@ export async function getShipmentRoute(
   originLng: number,
   destLat: number,
   destLng: number,
-  mode: "sea" | "air" | "land"
+  mode: "sea" | "air" | "land",
+  options: { originIsInTransit?: boolean } = {}
 ): Promise<{ mode: "sea" | "air" | "land", coords: [number, number][] }[]> {
   try {
     const segments: { mode: "sea" | "air" | "land", coords: [number, number][] }[] = [];
@@ -81,7 +82,11 @@ export async function getShipmentRoute(
       let actualOriginLat = originLat, actualOriginLng = originLng;
       let actualDestLat = destLat, actualDestLng = destLng;
 
-      if (oPort && oDist > 1) { // > 1km from port, add land leg
+      // A vessel fix is already on the voyage. Never send that point through a
+      // road router merely because our finite port catalogue finds a distant
+      // "nearest" port; OSRM will snap an offshore point onto land and invent
+      // a cross-country route.
+      if (!options.originIsInTransit && oPort && oDist > 1) { // > 1km from port, add land leg
         const landSegs = await getLandRoute(originLat, originLng, oPort.lat, oPort.lng);
         if (landSegs.length > 0) {
           segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
@@ -97,8 +102,18 @@ export async function getShipmentRoute(
 
       const seaSegs = getMarineRoute(
         actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
-        oPort?.seaRouteWaypoints, dPort?.seaRouteWaypoints
+        options.originIsInTransit ? undefined : oPort?.seaRouteWaypoints,
+        dPort?.seaRouteWaypoints
       );
+      // Fail closed instead of presenting land legs without a verified marine
+      // middle. A straight great-circle is an air route and can cross land.
+      if (!seaSegs.length) return [];
+      if (options.originIsInTransit) {
+        const first = seaSegs[0]?.[0];
+        if (first && haversineKm(originLat, originLng, first[0], first[1]) > 1) {
+          seaSegs[0].unshift([originLat, originLng]);
+        }
+      }
       segments.push(...seaSegs.map(coords => ({ mode: "sea" as const, coords })));
 
       if (dPort && dDist > 1) {
@@ -129,7 +144,7 @@ function getMarineRoute(
 
   // The actual points fed into searoute-js
   const oEntry = oWaypoints && oWaypoints.length > 0 ? oWaypoints[oWaypoints.length - 1] : undefined;
-  const dEntry = dWaypoints && dWaypoints.length > 0 ? dWaypoints[0] : undefined;
+  const dEntry = dWaypoints && dWaypoints.length > 0 ? dWaypoints[dWaypoints.length - 1] : undefined;
 
   let feature;
   try {
@@ -141,7 +156,7 @@ function getMarineRoute(
           coordinates: [
             ...oWaypoints!.map(p => [p[1], p[0]]),
             ...(f1?.geometry?.coordinates || []),
-            ...dWaypoints!.map(p => [p[1], p[0]])
+            ...[...dWaypoints!].reverse().map(p => [p[1], p[0]])
           ]
         }
       };
@@ -163,15 +178,18 @@ function getMarineRoute(
           type: "LineString",
           coordinates: [
             ...(f1?.geometry?.coordinates || []),
-            ...dWaypoints!.map(p => [p[1], p[0]])
+            ...[...dWaypoints!].reverse().map(p => [p[1], p[0]])
           ]
         }
       };
     } else {
       feature = searoute(origin, dest);
     }
-  } catch (e) {
-    feature = searoute(origin, dest);
+  } catch {
+    // A live vessel can be between graph nodes in open water. If the nautical
+    // graph cannot snap it, fail closed; an air great-circle is not a valid
+    // substitute for a marine route.
+    feature = null;
   }
   if (
     !feature ||
@@ -179,7 +197,7 @@ function getMarineRoute(
     !feature.geometry.coordinates ||
     feature.geometry.coordinates.length < 2
   ) {
-    return [[[originLat, originLng], [destLat, destLng]]] as [number, number][][];
+    return [];
   }
 
   const coordinates =

@@ -10,6 +10,7 @@ import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { calculateShipmentStatus } from "@/lib/supply/status";
 import { currentMappedTaskIds } from "@/lib/supply/task-mapping";
 import { getShipmentRoute } from "@/lib/routing";
+import { assessRouteThreats } from "@/lib/weather/route-threats";
 
 const schema = z.object({ plannedEta: z.string().datetime().optional(), requiredOnSite: z.string().datetime().optional(), portCongestion: z.boolean().optional(), weatherDelayFactor: z.coerce.number().min(0).optional(), status: z.enum(["green", "amber", "red", "delivered"]).optional(), currentPosition: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), source: z.enum(["live", "simulated"]), reason: z.string().trim().max(1000).optional() }).optional(), assessedThreats: z.array(z.string()).optional() });
 
@@ -19,8 +20,33 @@ export async function GET(_: Request, { params }: { params: Promise<{ shipmentId
     await requireProjectPermission(shipment.projectId, "audit:view");
     if (!shipment.originLat || !shipment.originLng || !shipment.destinationLat || !shipment.destinationLng) return NextResponse.json({ shipment, route: [], estimate: true, routeAvailable: false, reason: "Origin and destination coordinates are required before a route can be drawn." });
     const mode = shipment.transportMode === "air" || shipment.transportMode === "land" ? shipment.transportMode : "sea";
-    const route = await getShipmentRoute(Number(shipment.originLat), Number(shipment.originLng), Number(shipment.destinationLat), Number(shipment.destinationLng), mode);
-    return NextResponse.json({ shipment, route, estimate: true, routeAvailable: route.length > 0, reason: route.length ? undefined : "A verified route could not be calculated for these coordinates." });
+    const hasCurrentPosition = shipment.currentLat !== null
+      && shipment.currentLng !== null
+      && Number.isFinite(Number(shipment.currentLat))
+      && Number.isFinite(Number(shipment.currentLng));
+    const routeStart = hasCurrentPosition
+      ? { lat: Number(shipment.currentLat), lng: Number(shipment.currentLng), source: shipment.positionSource === "live" || shipment.positionSource === "aisstream" ? "live AIS position" : "latest simulated position" }
+      : { lat: Number(shipment.originLat), lng: Number(shipment.originLng), source: "shipment origin" };
+    const route = await getShipmentRoute(
+      routeStart.lat,
+      routeStart.lng,
+      Number(shipment.destinationLat),
+      Number(shipment.destinationLng),
+      mode,
+      { originIsInTransit: hasCurrentPosition }
+    );
+    const weather = route.length
+      ? await assessRouteThreats(route.flatMap((segment) => segment.coords))
+      : { dataAvailable: false, unavailableReasons: ["A verified route is required before live waypoint weather can be sampled."], observations: [], threats: [], newThreats: [], totalNewDelayHours: 0 };
+    return NextResponse.json({
+      shipment,
+      route,
+      routeStart,
+      weather: { ...weather, source: "Open-Meteo current conditions", observedAt: new Date().toISOString() },
+      estimate: true,
+      routeAvailable: route.length > 0,
+      reason: route.length ? undefined : "A verified route could not be calculated for these coordinates."
+    });
   }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load shipment." }, { status: error instanceof AccessError ? error.status : 500 }); }
 }

@@ -14,6 +14,16 @@ export interface WeatherThreat {
   fingerprint: string;
 }
 
+export interface WeatherObservation {
+  waypointIndex: number;
+  lat: number;
+  lng: number;
+  windSpeed: number;
+  precipitation: number;
+  weatherCode: number;
+  threat: WeatherThreat | null;
+}
+
 // Function to interpolate and find 10 evenly spaced waypoints along a route
 export function sampleWaypoints(routeCoords: [number, number][], sampleCount: number = 10): [number, number][] {
   if (routeCoords.length === 0) return [];
@@ -58,18 +68,19 @@ export async function assessRouteThreats(routeCoords: [number, number][], existi
   /** False means the route cannot be declared clear because live weather was incomplete. */
   dataAvailable: boolean,
   unavailableReasons: string[],
+  observations: WeatherObservation[],
   threats: WeatherThreat[],
   newThreats: WeatherThreat[],
   totalNewDelayHours: number
 }> {
   const waypoints = sampleWaypoints(routeCoords, 10);
-  if (!waypoints.length) return { dataAvailable: false, unavailableReasons: ["No verified route coordinates are available for weather assessment."], threats: [], newThreats: [], totalNewDelayHours: 0 };
+  if (!waypoints.length) return { dataAvailable: false, unavailableReasons: ["No verified route coordinates are available for weather assessment."], observations: [], threats: [], newThreats: [], totalNewDelayHours: 0 };
   const threats: WeatherThreat[] = [];
 
   // To avoid hitting Open-Meteo too aggressively, we could batch, but for 10 points we can just do parallel fetches
   // Open-Meteo doesn't require an API key and allows decent throughput for non-commercial use
 
-  const fetchPromises = waypoints.map(async (wp, idx): Promise<{ threat: WeatherThreat | null; unavailableReason: string | null }> => {
+  const fetchPromises = waypoints.map(async (wp, idx): Promise<{ observation: WeatherObservation | null; threat: WeatherThreat | null; unavailableReason: string | null }> => {
     try {
       // Using current weather for simplicity. For future ETAs we'd use forecast.
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${wp[0]}&longitude=${wp[1]}&current=wind_speed_10m,precipitation,weather_code&wind_speed_unit=kmh`;
@@ -111,7 +122,7 @@ export async function assessRouteThreats(routeCoords: [number, number][], existi
         const dateHour = new Date().toISOString().slice(0, 13); // 'YYYY-MM-DDTHH'
         const fingerprint = `wp${idx}_code${weatherCode}_${dateHour}`;
 
-        return { threat: {
+        const threat = {
           waypointIndex: idx + 1,
           lat: wp[0],
           lng: wp[1],
@@ -122,17 +133,27 @@ export async function assessRouteThreats(routeCoords: [number, number][], existi
           weatherCode,
           estimatedDelayHours: delayHours,
           fingerprint
-        } as WeatherThreat, unavailableReason: null };
+        } as WeatherThreat;
+        return {
+          observation: { waypointIndex: idx + 1, lat: wp[0], lng: wp[1], windSpeed, precipitation, weatherCode, threat },
+          threat,
+          unavailableReason: null
+        };
       }
+      return {
+        observation: { waypointIndex: idx + 1, lat: wp[0], lng: wp[1], windSpeed, precipitation, weatherCode, threat: null },
+        threat: null,
+        unavailableReason: null
+      };
     } catch (e) {
       console.error('Failed to fetch weather for waypoint', wp, e);
-      return { threat: null, unavailableReason: e instanceof Error ? e.message : "Open-Meteo route weather is unavailable." };
+      return { observation: null, threat: null, unavailableReason: e instanceof Error ? e.message : "Open-Meteo route weather is unavailable." };
     }
-    return { threat: null, unavailableReason: null };
   });
 
   const results = await Promise.all(fetchPromises);
   const unavailableReasons = results.flatMap((result) => result.unavailableReason ? [result.unavailableReason] : []);
+  const observations = results.flatMap((result) => result.observation ? [result.observation] : []);
   const foundThreats = results.flatMap((result) => result.threat ? [result.threat] : []);
 
   const newThreats = foundThreats.filter(t => !existingThreatFingerprints.includes(t.fingerprint));
@@ -141,6 +162,7 @@ export async function assessRouteThreats(routeCoords: [number, number][], existi
   return {
     dataAvailable: unavailableReasons.length === 0,
     unavailableReasons,
+    observations,
     threats: foundThreats,
     newThreats,
     totalNewDelayHours

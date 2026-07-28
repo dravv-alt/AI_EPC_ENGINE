@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { LocateFixed, RefreshCw, Ship, AlertTriangle } from "lucide-react";
 import { ShipmentMapLoader } from "@/components/shipment-map-loader";
-import type { MapShipment } from "@/components/shipment-map";
+import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
 import { LocationSearch } from "@/components/location-search";
 import { assessRouteThreats } from "@/lib/weather/route-threats";
 import { getShipmentRoute } from "@/lib/routing";
@@ -17,7 +17,7 @@ export function ShipmentWorkbench({ projectId, initialShipments, assets, initial
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [threatAssessments, setThreatAssessments] = useState<Record<string, any>>({});
+  const [threatAssessments, setThreatAssessments] = useState<Record<string, RouteThreatAssessment>>({});
 
   // State for Location Search selections
   const [origin, setOrigin] = useState<{name: string, lat: number, lng: number} | null>(null);
@@ -221,7 +221,7 @@ export function ShipmentWorkbench({ projectId, initialShipments, assets, initial
     <section className="shipment-layout">
       <div className="surface map-surface" style={{ zIndex: 0 }}>
         <ShipmentMapLoader shipments={shipments} selectedId={selectedId} threatAssessments={threatAssessments} />
-        <p className="map-attribution-note">Sea: nautical waterway routing · Air: great-circle arc · Land: OSRM road route. OpenStreetMap tiles © contributors, ODbL. Positions labelled live AIS or simulated.</p>
+        <p className="map-attribution-note">Select Monitor both to watch the dynamic route and sampled weather side by side. Sea: nautical waterway routing · Air: great-circle arc · Land: OSRM road route. OpenStreetMap tiles © contributors, ODbL.</p>
       </div>
 
       <aside className="surface shipment-navigator">

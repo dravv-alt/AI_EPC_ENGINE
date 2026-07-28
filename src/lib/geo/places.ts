@@ -20,6 +20,11 @@ export const places: Place[] = [
   { id: 'p_rotterdam', name: 'Port of Rotterdam', country: 'Netherlands', lat: 51.949, lng: 4.145, type: 'port' },
   { id: 'p_losangeles', name: 'Port of Los Angeles', country: 'United States', lat: 33.729, lng: -118.262, type: 'port' },
   { id: 'p_hamburg', name: 'Port of Hamburg', country: 'Germany', lat: 53.541, lng: 9.967, type: 'port', seaRouteWaypoints: [[53.60, 9.50], [53.85, 9.00], [54.00, 8.50]] }, // Elbe river exit
+  { id: 'p_khorfakkan', name: 'Port of Khor Fakkan', country: 'United Arab Emirates', lat: 25.359, lng: 56.359, type: 'port', seaRouteWaypoints: [[25.31, 56.48], [25.20, 56.70], [25.05, 57.05]] },
+  { id: 'p_jebelali', name: 'Jebel Ali Port', country: 'United Arab Emirates', lat: 24.985, lng: 55.061, type: 'port', seaRouteWaypoints: [[24.92, 55.02], [24.75, 54.85], [24.55, 54.65]] },
+  { id: 'p_colombo', name: 'Port of Colombo', country: 'Sri Lanka', lat: 6.953, lng: 79.844, type: 'port' },
+  { id: 'p_portklang', name: 'Port Klang', country: 'Malaysia', lat: 2.999, lng: 101.392, type: 'port' },
+  { id: 'p_portsaid', name: 'Port Said', country: 'Egypt', lat: 31.265, lng: 32.302, type: 'port' },
 
   // Major Airports
   { id: 'a_jfk', name: 'John F. Kennedy International Airport', country: 'United States', lat: 40.641, lng: -73.778, type: 'airport' },
