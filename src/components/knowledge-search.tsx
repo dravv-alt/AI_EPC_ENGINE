@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Search, MessageSquareQuote, BookOpen } from "lucide-react";
+import { Search, MessageSquareQuote, BookOpen, Network } from "lucide-react";
 
 type GraphContextEntry = { id: string; type: string; label: string; state: string; relationshipType: string; anchorType: "requirement" | "evidence"; anchorId: string };
 type Claim = { text: string; content?: string; sourceRegionId: string; documentVersionId: string | null; documentId?: string | null; documentTitle?: string | null; documentType?: string; contentHash: string; similarity: number; graphContext?: GraphContextEntry[] };
@@ -49,6 +49,56 @@ function GraphContextNote({ claims }: { claims: Claim[] }) {
       Also {entries.map((entry) => `${entry.relationshipType.toLowerCase().replaceAll("_", " ")}: ${entry.label} (${entry.state})`).join(" · ")}
     </small>
   );
+}
+
+// A focused, query-result graph rather than a duplicate of the full project
+// graph. It keeps source → cited-region → governed-record provenance visible
+// beside the answer, while every node remains a normal navigable link.
+function KnowledgeLinkGraph({ groups }: { groups: AnswerGroup[] }) {
+  const claims = groups.flatMap((group) => group.claims).slice(0, 8);
+  const docs = new Map<string, { label: string; href: string }>();
+  const regions = new Map<string, { label: string; documentId: string }>();
+  const links = new Map<string, { label: string; relationship: string }>();
+  const relationEdges: Array<{ regionId: string; linkId: string; relationship: string }> = [];
+
+  for (const claim of claims) {
+    const documentId = claim.documentId ?? claim.documentVersionId ?? "controlled-source";
+    docs.set(documentId, { label: claim.documentTitle ?? "Controlled source", href: "/sources" });
+    regions.set(claim.sourceRegionId, { label: `Region ${claim.sourceRegionId.slice(0, 8)}`, documentId });
+    for (const entry of claim.graphContext ?? []) {
+      links.set(entry.id, { label: entry.label, relationship: entry.relationshipType });
+      relationEdges.push({ regionId: claim.sourceRegionId, linkId: entry.id, relationship: entry.relationshipType });
+    }
+  }
+
+  const docNodes = [...docs.entries()].slice(0, 4);
+  const regionNodes = [...regions.entries()].slice(0, 8);
+  const linkedNodes = [...links.entries()].slice(0, 8);
+  const uniqueRelationEdges = [...new Map(relationEdges.map((edge) => [`${edge.regionId}-${edge.linkId}-${edge.relationship}`, edge])).values()];
+  if (!regionNodes.length) return null;
+  const height = Math.max(220, Math.max(docNodes.length, regionNodes.length, linkedNodes.length, 1) * 44 + 72);
+  const positioned = (index: number, count: number, x: number) => ({ x, y: 42 + ((index + 1) * (height - 84)) / (count + 1) });
+  const docPositions = new Map(docNodes.map(([id], index) => [id, positioned(index, docNodes.length, 105)]));
+  const regionPositions = new Map(regionNodes.map(([id], index) => [id, positioned(index, regionNodes.length, 350)]));
+  const linkedPositions = new Map(linkedNodes.map(([id], index) => [id, positioned(index, linkedNodes.length, 605)]));
+  const shorten = (value: string, length = 22) => value.length > length ? `${value.slice(0, length - 1)}…` : value;
+
+  return <section className="surface knowledge-link-graph" aria-label="Knowledge result graph">
+    <div className="section-heading"><div><p className="eyebrow">Connected knowledge</p><h2><Network size={17} /> Result graph</h2></div><small>Click a node to inspect its controlled record</small></div>
+    <div className="knowledge-graph-scroll">
+      <svg viewBox={`0 0 720 ${height}`} role="img" aria-label="Cited source regions and their linked authority records">
+        <rect width="720" height={height} rx="10" className="knowledge-graph-backdrop" />
+        <g className="knowledge-graph-grid">{[80, 160, 240, 320, 400, 480, 560, 640].map((x) => <line key={`v-${x}`} x1={x} x2={x} y1="0" y2={height} />)}{Array.from({ length: Math.ceil(height / 40) }).map((_, index) => <line key={`h-${index}`} x1="0" x2="720" y1={index * 40} y2={index * 40} />)}</g>
+        <text x="105" y="24" textAnchor="middle" className="knowledge-graph-column">SOURCES</text><text x="350" y="24" textAnchor="middle" className="knowledge-graph-column">CITED REGIONS</text><text x="605" y="24" textAnchor="middle" className="knowledge-graph-column">LINKED RECORDS</text>
+        {regionNodes.map(([regionId, region]) => { const from = docPositions.get(region.documentId); const to = regionPositions.get(regionId); return from && to ? <line key={`${region.documentId}-${regionId}`} className="knowledge-graph-edge" x1={from.x + 65} y1={from.y} x2={to.x - 72} y2={to.y} /> : null; })}
+        {uniqueRelationEdges.map((edge) => { const from = regionPositions.get(edge.regionId); const to = linkedPositions.get(edge.linkId); return from && to ? <g key={`${edge.regionId}-${edge.linkId}-${edge.relationship}`}><line className="knowledge-graph-edge is-context" x1={from.x + 72} y1={from.y} x2={to.x - 76} y2={to.y} /><text className="knowledge-graph-relation" x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 4} textAnchor="middle">{edge.relationship.replaceAll("_", " ")}</text></g> : null; })}
+        {docNodes.map(([id, node]) => { const p = docPositions.get(id)!; return <a href={node.href} key={id} className="knowledge-graph-node is-document"><rect x={p.x - 65} y={p.y - 16} width="130" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">source</text></a>; })}
+        {regionNodes.map(([id, node]) => { const p = regionPositions.get(id)!; return <a href={`/sources/regions/${id}`} key={id} className="knowledge-graph-node is-region"><rect x={p.x - 72} y={p.y - 16} width="144" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{node.label}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">citation</text></a>; })}
+        {linkedNodes.map(([id, node]) => { const p = linkedPositions.get(id)!; return <a href="/graph" key={id} className="knowledge-graph-node is-context"><rect x={p.x - 76} y={p.y - 16} width="152" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.relationship.replaceAll("_", " ")}</text></a>; })}
+      </svg>
+    </div>
+    <p className="workflow-hint">Only records connected to the current cited results are shown. This view is read-only; authority changes remain in their owning workflow.</p>
+  </section>;
 }
 
 type ScopeOption = { id: string; label: string };
@@ -224,6 +274,7 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
               <GraphContextNote claims={group.claims} />
             </article>
           ))}
+          <KnowledgeLinkGraph groups={groups} />
         </>
       )}
 

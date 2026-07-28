@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
@@ -62,6 +62,36 @@ export type SemanticCitation = {
 };
 
 const LEXICAL_STOP_WORDS = new Set(["about", "and", "are", "does", "for", "from", "into", "the", "this", "what", "with"]);
+
+// A durable worker normally populates embeddings immediately after document
+// extraction.  Keep retrieval resilient if that worker was started before the
+// app configuration was available, or after the embedding provider changed:
+// the first query performs a small, project-scoped catch-up and then retries
+// semantic retrieval.  The bound avoids turning an interactive search into an
+// unbounded reindex; the worker remains responsible for the full backlog.
+const INTERACTIVE_EMBED_CATCH_UP_LIMIT = 64;
+
+async function catchUpProjectEmbeddings(projectId: string) {
+  const modelTag = activeEmbeddingModelTag();
+  const pending = await db
+    .select({ id: knowledgeChunks.id, content: knowledgeChunks.content })
+    .from(knowledgeChunks)
+    .where(and(
+      eq(knowledgeChunks.projectId, projectId),
+      or(isNull(knowledgeChunks.embedding), ne(knowledgeChunks.embeddingModel, modelTag))
+    ))
+    .limit(INTERACTIVE_EMBED_CATCH_UP_LIMIT);
+
+  if (!pending.length) return 0;
+  const provider = getModelProvider();
+  for (const chunk of pending) {
+    const vector = await provider.embed(chunk.content);
+    await db.update(knowledgeChunks)
+      .set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() })
+      .where(eq(knowledgeChunks.id, chunk.id));
+  }
+  return pending.length;
+}
 
 function lexicalTokens(value: string) {
   return [...new Set(value.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter((token) => token.length >= 3 && !LEXICAL_STOP_WORDS.has(token)).map((token) => token.endsWith("ies") ? `${token.slice(0, -3)}y` : token.endsWith("s") && token.length > 4 ? token.slice(0, -1) : token))];
@@ -189,7 +219,7 @@ export async function retrieveSemanticCitations(options: {
   // is a no-op passthrough otherwise, so the mock-mode fetch size (limit * 2)
   // and resulting order stay exactly as before reranking existed.
   const fetchMultiplier = env.EMBEDDING_PROVIDER === "service" ? 4 : 2;
-  const rows = await db
+  let rows = await db
     .select({
       chunkId: knowledgeChunks.id,
       content: knowledgeChunks.content,
@@ -208,6 +238,33 @@ export async function retrieveSemanticCitations(options: {
     .where(and(...filters))
     .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
     .limit(limit * fetchMultiplier);
+
+  // Do not silently degrade a freshly processed document to keyword matching
+  // merely because the asynchronous worker has not caught up yet.  Retry once
+  // after a bounded, same-project vector backfill.  A non-empty vector result
+  // below the threshold remains a genuine semantic "no match" and is never
+  // replaced with lexical results.
+  if (!rows.length && await catchUpProjectEmbeddings(options.projectId)) {
+    rows = await db
+      .select({
+        chunkId: knowledgeChunks.id,
+        content: knowledgeChunks.content,
+        sourceRegionId: knowledgeChunks.sourceRegionId,
+        documentVersionId: sourceRegions.documentVersionId,
+        documentId: documents.id,
+        documentTitle: documents.title,
+        documentType: knowledgeChunks.documentType,
+        contentHash: knowledgeChunks.contentHash,
+        similarity
+      })
+      .from(knowledgeChunks)
+      .leftJoin(sourceRegions, eq(knowledgeChunks.sourceRegionId, sourceRegions.id))
+      .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+      .leftJoin(documents, eq(documentVersions.documentId, documents.id))
+      .where(and(...filters))
+      .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
+      .limit(limit * fetchMultiplier);
+  }
 
   const candidates: SemanticCitation[] = rows
     .filter((row) => Number(row.similarity) >= threshold)

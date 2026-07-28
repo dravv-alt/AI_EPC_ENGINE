@@ -50,6 +50,7 @@ const environmentSchema = z.object({
   // for generation must never silently change an existing vector space.
   EMBEDDING_PROVIDER: z.enum(["mock", "ollama", "gemini", "service"]).default("ollama"),
   RETRIEVAL_SERVICE_URL: z.string().url().default("http://localhost:8003"),
+  KNOWLEDGE_RERANK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   SHIPMENT_STATUS_BUFFER_HOURS: z.coerce.number().min(0).max(720).default(72),
   POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(3_600_000).default(60_000),
   POLL_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
@@ -66,7 +67,10 @@ const environmentSchema = z.object({
   RISK_WEATHER_URL: z.string().url().optional(),
   RISK_SITE_LAT: z.coerce.number().min(-90).max(90).default(18.9492),
   RISK_SITE_LNG: z.coerce.number().min(-180).max(180).default(72.9347),
-  KNOWLEDGE_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.2),
+  // Scores below 0.50 produced plausible-looking but cross-domain citations
+  // (for example, chilled-water procedures in a fire-protection answer).
+  // Prefer a deliberate "no match" over an uncited-looking weak match.
+  KNOWLEDGE_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   AI_RATE_LIMIT: z.coerce.number().int().min(1).max(100_000).default(60),
   AI_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3_600).default(60),
   // Per-category budgets (Rules.md line 87: auth, upload, search, AI, export,
@@ -131,6 +135,7 @@ export const env = environmentSchema.parse({
   NIM_MODEL: process.env.NIM_MODEL,
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
   RETRIEVAL_SERVICE_URL: process.env.RETRIEVAL_SERVICE_URL,
+  KNOWLEDGE_RERANK_THRESHOLD: process.env.KNOWLEDGE_RERANK_THRESHOLD,
   SHIPMENT_STATUS_BUFFER_HOURS: process.env.SHIPMENT_STATUS_BUFFER_HOURS,
   POLL_INTERVAL_MS: process.env.POLL_INTERVAL_MS,
   POLL_ENABLED: process.env.POLL_ENABLED,

@@ -2,4 +2,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 sentence-transformers==3.3.1
-torch==2.5.1+cpu
+# PyTorch's CPU wheel index no longer publishes the 2.5.1+cpu build used by
+# the original image. 2.6.0+cpu is available for Python 3.12 and remains
+# compatible with sentence-transformers 3.3.1.
+torch==2.6.0+cpu

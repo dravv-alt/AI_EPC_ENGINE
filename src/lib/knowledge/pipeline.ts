@@ -20,6 +20,12 @@ const PLAN_SYSTEM_PROMPT = `You are the planning stage of a controlled-document 
 
 const SYNTHESIS_SYSTEM_PROMPT = `You are the synthesis stage of a controlled-document knowledge-query pipeline. Answer the user's original query using ONLY the supplied citations — never introduce information, numbers, or clauses that are not present in the supplied citation text. Every claim you make must name which sourceRegionId(s) from the supplied set support it. Never cite a sourceRegionId that was not supplied to you; a fabricated or out-of-scope citation will be discarded by the calling system regardless of what you output, so only cite what you were given. If the supplied citations do not answer part of the query, omit that part rather than guessing. Output JSON only.`;
 
+function controlledExcerpt(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const sentences = normalized.match(/[^.!?]+[.!?]+/g)?.slice(0, 2).join(" ").trim();
+  return (sentences || normalized).slice(0, 700);
+}
+
 const planSchema = z.object({
   documentType: z.string().nullable(),
   // ADR-021 scope dimensions the plan may propose narrowing to. These are
@@ -213,7 +219,12 @@ export async function answerKnowledgeQuery(input: {
   // 3. Synthesis call. Mock reproduces one claim per retrieved chunk, citing
   // its own region — today's raw-concatenation output.
   const fallbackSynthesis = {
-    data: synthesisSchema.parse({ claims: reranked.map((citation) => ({ text: citation.text, citations: [citation.sourceRegionId] })) }),
+    data: synthesisSchema.parse({
+      claims: reranked.slice(0, 3).map((citation) => ({
+        text: controlledExcerpt(citation.text),
+        citations: [citation.sourceRegionId]
+      }))
+    }),
     provider: "retrieval-fallback",
     model: "citation-extract-v1"
   };
@@ -238,9 +249,15 @@ export async function answerKnowledgeQuery(input: {
   // retrieved set; a partial cited answer is still useful.
   const allowedRegions = new Set(reranked.map((citation) => citation.sourceRegionId));
   const { grounded, droppedCount } = filterGroundedClaims(synthesis.data.claims, allowedRegions);
+  // A model can satisfy the JSON schema yet still invent a UUID. Preserve the
+  // fail-closed citation guard, but do not misreport valid retrieval as "no
+  // results": fall back to short verbatim extracts whose region IDs came
+  // directly from the deterministic retrieval set.
+  const effectiveGrounded = grounded.length ? grounded : fallbackSynthesis.data.claims;
+  const effectiveSynthesis = grounded.length ? synthesis : fallbackSynthesis;
 
   const citationByRegion = new Map(reranked.map((citation) => [citation.sourceRegionId, citation]));
-  const claims: AnsweredClaim[] = grounded.flatMap((claim) =>
+  const claims: AnsweredClaim[] = effectiveGrounded.flatMap((claim) =>
     claim.citations.map((regionId) => {
       const citation = citationByRegion.get(regionId);
       // Every citation here passed filterGroundedClaims, so it is guaranteed
@@ -262,14 +279,14 @@ export async function answerKnowledgeQuery(input: {
   );
 
   return {
-    answer: grounded.length ? grounded.map((claim) => claim.text).join("\n\n") : null,
+    answer: effectiveGrounded.map((claim) => claim.text).join("\n\n"),
     claims,
-    noResults: grounded.length === 0,
+    noResults: false,
     droppedClaimCount: droppedCount,
     planModel: plan.model,
     planProvider: plan.provider,
-    synthesisModel: synthesis.model,
-    synthesisProvider: synthesis.provider,
+    synthesisModel: effectiveSynthesis.model,
+    synthesisProvider: effectiveSynthesis.provider,
     documentScope
   };
 }
