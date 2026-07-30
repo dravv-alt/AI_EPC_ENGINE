@@ -21,6 +21,96 @@ The chronological build record lives in git history. STATUS.md is the single sou
 
 Pramana Cx is not a general document chatbot. It is a governed commissioning workspace: controlled project sources become cited records, human-reviewed requirements, linked systems/assets/gates, reviewed evidence, deterministic readiness, and verifiable turnover artefacts. AI can help extract, retrieve, rank, draft, and explain, but it cannot approve compliance, close a finding, certify a facility, or decide a gate.
 
+## Product tour
+
+### 1. Project overview
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20222626.png" alt="Project overview dashboard showing readiness, evidence, actions, alerts, and delivery health" width="100%" />
+</p>
+
+The commissioning control room brings readiness, evidence, actions, alerts, and delivery health into one project view.
+
+### 2. Graph and timeline
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20222803.png" alt="Graph and timeline showing linked assets, gates, requirements, and audit relationships" width="100%" />
+</p>
+
+Explore the authority graph that connects project assets, gates, requirements, evidence, and the audit trail.
+
+### 3. Readiness and decisions
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20222845.png" alt="Readiness board showing accepted and missing proof with an authorized decision form" width="100%" />
+</p>
+
+Make gate readiness transparent through accepted proof, missing evidence, prerequisites, blockers, and controlled decisions.
+
+### 4. Schedule management
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20222934.png" alt="Schedule management view showing critical-path tasks and deterministic planning" width="100%" />
+</p>
+
+Review deterministic project schedules, critical-path activities, task sequencing, and advisory planning insights.
+
+### 5. Risk mitigation review
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223002.png" alt="Risk mitigation cards for procurement, workforce, weather, and equipment risks" width="100%" />
+</p>
+
+Review actionable, advisory mitigation options for schedule, procurement, workforce, weather, and equipment risks.
+
+### 6. Shipment navigator
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223035.png" alt="Shipment navigator with route map, weather overlay, ETA, and congestion context" width="100%" />
+</p>
+
+Track equipment movements with route monitoring, weather intelligence, ETA updates, and congestion context.
+
+### 7. Commissioning tests
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223152.png" alt="Commissioning test workspace for controlled standards and cited draft checklists" width="100%" />
+</p>
+
+Turn controlled standards into citation-verified commissioning checklists and governed test records.
+
+### 8. Compliance workbench
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223231.png" alt="Compliance workbench for cited requirement comparisons and review proposals" width="100%" />
+</p>
+
+Surface structured compliance deviations while keeping final disposition under engineer review.
+
+### 9. Controlled sources
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223303.png" alt="Controlled sources library showing immutable documents, revisions, and extracted citation regions" width="100%" />
+</p>
+
+Manage immutable project documents with revision tracking and traceable extracted citation regions.
+
+### 10. Command center
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223330.png" alt="Command center showing operational alerts and live event feed" width="100%" />
+</p>
+
+Route operational alerts directly to the affected task, risk, gate, finding, or shipment alongside a live event feed.
+
+### 11. Turnover
+
+<p align="center">
+  <img src="Demo_images/Screenshot%202026-07-30%20223414.png" alt="Turnover workspace for generating an immutable handover pack from accepted evidence" width="100%" />
+</p>
+
+Generate hash-verifiable handover packs from accepted evidence and approved commissioning gates.
+
 ## Current status
 
 The reconciled application is a locally verified release candidate. The evidence-to-turnover, deterministic schedule, governed Cx, compliance, shipment, predictive-risk, and cited knowledge workflows have local verification coverage. Production rollout still requires the live-integration, observability, backup, and deployment controls listed in **What remains** and the release gate below.
