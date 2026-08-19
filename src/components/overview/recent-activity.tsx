@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useMemo } from "react";
 import Link from "next/link";
 import { DashboardData } from "@/lib/dashboard-data";
 import { ArrowRight } from "lucide-react";
@@ -6,28 +8,36 @@ import { ArrowRight } from "lucide-react";
 export function RecentActivity({ data }: { data: DashboardData }) {
   const { activity, recentActivity } = data.insights;
   
-  const hasActivityIn7Days = activity.some(day => day.value > 0);
-  const activityMax = Math.max(1, ...activity.map((item) => item.value));
+  const activityMax = useMemo(() => Math.max(1, ...activity.map((item) => item.value)), [activity]);
 
   return (
-    <article className="surface dashboard-chart dashboard-recent" style={{ height: "100%", display: "flex", flexDirection: "column", padding: "18px" }}>
+    <article className="surface dashboard-chart dashboard-activity" style={{ height: "100%", display: "flex", flexDirection: "column", padding: "18px" }}>
       <header style={{ marginBottom: "12px" }}>
-        <div><p className="eyebrow">Append-only authority</p><h2 style={{ fontSize: "18px" }}>Recent Activity</h2></div>
-        <Link className="dashboard-inline-link" href="/graph" style={{ marginTop: 0 }}>Audit timeline <ArrowRight size={14} /></Link>
+        <div>
+          <p className="eyebrow">Append-only authority</p>
+          <h2 style={{ fontSize: "18px" }}>7-day activity</h2>
+        </div>
+        <Link className="dashboard-inline-link" href="/graph" style={{ marginTop: 0 }}>
+          Audit timeline <ArrowRight size={14} />
+        </Link>
       </header>
 
-      {hasActivityIn7Days && (
-        <div className="dashboard-spark-bars" style={{ height: "60px", marginBottom: "12px", paddingTop: 0 }}>
-          {activity.map((item) => (
-            <div key={item.label}>
-              <i style={{ height: `${Math.max(8, item.value / activityMax * 100)}%` }} title={`${item.value} audit events`} />
-            </div>
-          ))}
-        </div>
-      )}
+      {/* 7-day spark bars */}
+      <div className="dashboard-spark-bars" style={{ height: "110px", marginBottom: "16px" }}>
+        {activity.map((item) => (
+          <div key={item.label}>
+            <i style={{ height: `${Math.max(8, (item.value / activityMax) * 100)}%` }} title={`${item.value} audit events`} />
+            <b>{item.value}</b>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
 
-      <div style={{ flex: 1 }}>
-        {recentActivity.map((event) => {
+      <div style={{ borderTop: "1px solid var(--line)", paddingTop: "12px", marginTop: "auto" }}>
+        <div style={{ fontSize: "10px", fontFamily: "var(--mono)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
+          Latest Authority Events
+        </div>
+        {recentActivity.slice(0, 4).map((event) => {
           const date = new Date(event.at);
           const dateStr = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(date);
           const timeStr = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(date).toLowerCase();
