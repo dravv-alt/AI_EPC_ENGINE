@@ -18,13 +18,13 @@ export function GateProgression({ data }: { data: DashboardData }) {
 
   return (
     <article className="surface" style={{ padding: "18px", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div className="section-heading" style={{ marginBottom: "16px" }}>
+      <div className="section-heading" style={{ marginBottom: "14px" }}>
         <div><p className="eyebrow">Progression</p><h2 style={{ fontSize: "18px" }}>Gate Progression</h2></div>
         <Link className="text-button" href="/readiness">Open board <ArrowUpRight size={14} /></Link>
       </div>
       
       {/* Visual Connected Timeline */}
-      <div className="gate-timeline-container">
+      <div className="gate-timeline-container" style={{ marginBottom: "16px" }}>
         <div style={{ position: "absolute", top: "10px", left: "20px", right: "20px", height: "2px", background: "var(--line)", zIndex: 0 }} />
         
         {data.readiness.map((item, i) => {
@@ -59,7 +59,7 @@ export function GateProgression({ data }: { data: DashboardData }) {
         })}
       </div>
 
-      {/* Gate Breakdown List (Fills white space with rich details) */}
+      {/* Gate Breakdown List */}
       <div style={{ borderTop: "1px solid var(--line)", paddingTop: "12px", marginTop: "auto" }}>
         <div style={{ fontSize: "10px", fontFamily: "var(--mono)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px" }}>
           Gate Breakdown Details
@@ -75,8 +75,8 @@ export function GateProgression({ data }: { data: DashboardData }) {
                 justifyContent: "space-between", 
                 padding: "6px 10px", 
                 borderRadius: "5px", 
-                background: gate.gateId === data.activeGateId ? "#edf2ef" : "transparent",
-                border: gate.gateId === data.activeGateId ? "1px solid #c7d1cb" : "1px solid transparent",
+                background: gate.state === "blocked" ? "#fdf3f4" : gate.state === "review" ? "#fef8f3" : "transparent",
+                border: gate.state === "blocked" ? "1px solid #f8c8cc" : gate.state === "review" ? "1px solid #f6e2d0" : "1px solid transparent",
                 textDecoration: "none",
                 color: "inherit"
               }}

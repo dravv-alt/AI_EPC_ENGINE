@@ -2,11 +2,11 @@ import React from "react";
 import Link from "next/link";
 import { DashboardData } from "@/lib/dashboard-data";
 import { StatusPill } from "@/components/ui/status-pill";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 export function ProjectState({ data }: { data: DashboardData }) {
-  // Find current active/blocked gate item
-  const currentGateItem = data.readiness.find(r => r.gateId === data.activeGateId) || data.readiness[0];
+  // Find current active/blocked gate item from readiness
+  const currentGateItem = data.readiness.find(r => r.state === "blocked" || r.state === "review") || data.readiness[data.readiness.length - 1];
   const severityWeight: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
   const primaryBlocker = [...data.actions].sort((a, b) => (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0))[0];
 
@@ -32,13 +32,13 @@ export function ProjectState({ data }: { data: DashboardData }) {
             <h2 style={{ fontSize: "22px", margin: 0, fontFamily: "var(--display)", fontWeight: 500 }}>
               {data.gate}
             </h2>
-            <StatusPill status={currentGateItem ? currentGateItem.state : (data.status === "On track" ? "ready" : "review")} />
+            <StatusPill status={currentGateItem ? currentGateItem.state : "review"} />
           </div>
         </div>
 
         {primaryBlocker && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f8e3e5", border: "1px solid #f0b8bd", padding: "6px 12px", borderRadius: "6px", fontSize: "12px", color: "#971a27" }}>
-            <AlertTriangle size={14} style={{ shrink: 0 }} />
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
             <span><strong>Blocker:</strong> {primaryBlocker.title}</span>
             <Link href={`/actions?finding=${primaryBlocker.id}`} style={{ color: "#971a27", fontWeight: 700, textDecoration: "underline", marginLeft: "4px" }}>
               View &rarr;
@@ -54,7 +54,7 @@ export function ProjectState({ data }: { data: DashboardData }) {
         </div>
         <div>
           <div style={{ fontSize: "10px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "var(--mono)" }}>Location</div>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>{data.location}</div>
+          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>Mumbai</div>
         </div>
       </div>
     </div>

@@ -9,7 +9,11 @@ const toneColor: Record<string, string> = {
   ready: "#2d6b55",
   review: "#c0782b",
   blocked: "#b52b3b",
-  unknown: "#8b938f"
+  unknown: "#8b938f",
+  critical: "#a91f32",
+  high: "#c84b3d",
+  medium: "#c98431",
+  low: "#5b7a6e"
 };
 
 function AnimatedMetricValue({ value }: { value: string }) {
@@ -90,7 +94,7 @@ export function ProjectHealth({ data }: { data: DashboardData }) {
             <ul>
               {evidence.map((row) => (
                 <li key={row.label}>
-                  <i style={{ background: toneColor[row.tone] }} />
+                  <i style={{ background: toneColor[row.tone] ?? toneColor.unknown }} />
                   {row.label}
                   <b>{row.value}</b>
                 </li>
@@ -102,7 +106,7 @@ export function ProjectHealth({ data }: { data: DashboardData }) {
             <ul>
               {requirements.map((row) => (
                 <li key={row.label}>
-                  <i style={{ background: toneColor[row.tone] }} />
+                  <i style={{ background: toneColor[row.tone] ?? toneColor.unknown }} />
                   {row.label}
                   <b>{row.value}</b>
                 </li>
@@ -122,15 +126,29 @@ export function ProjectHealth({ data }: { data: DashboardData }) {
           <AlertTriangle size={18} style={{ color: "var(--muted)" }} />
         </header>
         <div>
-          {actionSeverity.map((row) => (
-            <div className="dashboard-severity-row" key={row.label} style={{ marginBottom: "8px" }}>
-              <span>{row.label}</span>
-              <div>
-                <i style={{ width: `${(row.value / severityMax) * 100}%`, background: toneColor[row.tone] }} />
+          {actionSeverity.map((row) => {
+            const barWidth = row.value > 0 ? Math.max(8, (row.value / severityMax) * 100) : 0;
+            const barColor = toneColor[row.tone] || toneColor[row.label] || toneColor.unknown;
+
+            return (
+              <div className="dashboard-severity-row" key={row.label} style={{ marginBottom: "10px" }}>
+                <span style={{ textTransform: "capitalize", fontSize: "11px", fontWeight: 600 }}>{row.label}</span>
+                <div style={{ height: "8px", borderRadius: "99px", background: "#e8ebe9", overflow: "hidden" }}>
+                  <i 
+                    style={{ 
+                      display: "block",
+                      height: "100%",
+                      width: `${barWidth}%`, 
+                      background: barColor,
+                      borderRadius: "inherit",
+                      transition: "width 0.6s ease"
+                    }} 
+                  />
+                </div>
+                <b style={{ fontSize: "11px", fontFamily: "var(--mono)" }}>{row.value}</b>
               </div>
-              <b>{row.value}</b>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <Link className="dashboard-inline-link" href="/actions" style={{ marginTop: "14px" }}>
           Manage findings <ArrowRight size={14} />
