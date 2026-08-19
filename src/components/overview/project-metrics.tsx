@@ -9,23 +9,6 @@ export function ProjectMetrics({ data }: { data: DashboardData }) {
   const actionsDetail = data.metrics.find(m => m.label === "Open actions")?.detail || "Open findings";
   const alertsValue = data.insights.operations.activeAlerts.toString();
 
-  const stripStyle: React.CSSProperties = {
-    display: "flex",
-    background: "var(--paper)",
-    border: "1px solid var(--line)",
-    borderRadius: "8px",
-    marginBottom: "16px",
-    overflow: "hidden"
-  };
-
-  const itemStyle: React.CSSProperties = {
-    flex: 1,
-    padding: "12px 18px",
-    textDecoration: "none",
-    color: "inherit",
-    borderRight: "1px solid var(--line)"
-  };
-
   const labelStyle: React.CSSProperties = {
     fontSize: "9px",
     fontFamily: "var(--mono)",
@@ -48,26 +31,26 @@ export function ProjectMetrics({ data }: { data: DashboardData }) {
   };
 
   return (
-    <div style={stripStyle}>
-      <Link href="/readiness" style={itemStyle}>
+    <div className="project-metrics-strip">
+      <Link href="/readiness" className="project-metrics-item">
         <div style={labelStyle}>Readiness</div>
         <div style={valueStyle}>{readinessValue}</div>
         <div style={detailStyle}>Deterministic &rarr;</div>
       </Link>
       
-      <Link href="/evidence" style={itemStyle}>
+      <Link href="/evidence" className="project-metrics-item">
         <div style={labelStyle}>Evidence</div>
         <div style={valueStyle}>{evidenceValue}</div>
         <div style={detailStyle}>Accepted &rarr;</div>
       </Link>
 
-      <Link href="/actions" style={itemStyle}>
+      <Link href="/actions" className="project-metrics-item">
         <div style={labelStyle}>Open Work</div>
         <div style={valueStyle}>{actionsValue}</div>
         <div style={detailStyle}>{actionsDetail} &rarr;</div>
       </Link>
 
-      <Link href="/command-center" style={{ ...itemStyle, borderRight: "none" }}>
+      <Link href="/command-center" className="project-metrics-item">
         <div style={labelStyle}>Active Alerts</div>
         <div style={valueStyle}>{alertsValue}</div>
         <div style={detailStyle}>Command center &rarr;</div>

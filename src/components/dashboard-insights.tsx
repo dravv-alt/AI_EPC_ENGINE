@@ -12,7 +12,7 @@ import { RecentSources } from "./overview/recent-sources";
 
 export function DashboardInsights({ data }: { data: DashboardData }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", maxWidth: "1400px", margin: "16px auto 0", width: "100%" }}>
+    <div className="overview-container">
       {/* 2. PROJECT STATE */}
       <ProjectState data={data} />
 
@@ -20,11 +20,11 @@ export function DashboardInsights({ data }: { data: DashboardData }) {
       <ProjectMetrics data={data} />
 
       {/* 4. MAIN OPERATIONAL ROW */}
-      <div className="dashboard-insight-grid" style={{ marginBottom: "16px" }}>
-        <div style={{ gridColumn: "span 2" }}>
+      <div className="overview-main-row">
+        <div>
           <GateProgression data={data} />
         </div>
-        <div style={{ gridColumn: "span 1" }}>
+        <div>
           <AttentionQueue data={data} />
         </div>
       </div>
@@ -33,7 +33,7 @@ export function DashboardInsights({ data }: { data: DashboardData }) {
       <ProjectHealth data={data} />
 
       {/* 6. RECENT PROJECT CONTEXT */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+      <div className="overview-footer-row">
         <RecentActivity data={data} />
         <RecentSources data={data} />
       </div>

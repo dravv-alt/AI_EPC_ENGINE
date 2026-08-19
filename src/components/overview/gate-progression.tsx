@@ -24,7 +24,7 @@ export function GateProgression({ data }: { data: DashboardData }) {
       </div>
       
       {/* Visual Connected Timeline */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", position: "relative", marginBottom: "20px", padding: "0 8px" }}>
+      <div className="gate-timeline-container">
         <div style={{ position: "absolute", top: "10px", left: "20px", right: "20px", height: "2px", background: "var(--line)", zIndex: 0 }} />
         
         {data.readiness.map((item, i) => {

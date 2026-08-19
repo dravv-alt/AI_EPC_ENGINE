@@ -254,4 +254,103 @@ h2 { margin-bottom: 0; font-family: var(--display); font-size: 23px; font-weight
 .status-attention { background: #FDF3E1; color: #B5651D; }  
 .status-danger { background: #FDECEC; color: #A91F32; }  
 .status-information { background: #EBEFF5; color: #2D466B; }  
-.status-neutral { background: #F3F1ED; color: #737373; } 
+.status-neutral { background: #F3F1ED; color: #737373; }
+
+/* Responsive Overview & UI 2.0 Layout Utilities */
+.overview-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 1400px;
+  margin: 16px auto 0;
+  width: 100%;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+.project-metrics-strip {
+  display: flex;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.project-metrics-item {
+  flex: 1;
+  padding: 12px 18px;
+  text-decoration: none;
+  color: inherit;
+  border-right: 1px solid var(--line);
+  box-sizing: border-box;
+}
+
+.project-metrics-item:last-child {
+  border-right: none;
+}
+
+.overview-main-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.overview-footer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.gate-timeline-container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 20px;
+  padding: 0 8px;
+  overflow-x: auto;
+}
+
+@media (max-width: 1024px) {
+  .overview-main-row {
+    grid-template-columns: 1fr;
+  }
+  .overview-footer-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .project-metrics-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .project-metrics-item {
+    border-bottom: 1px solid var(--line);
+  }
+  .project-metrics-item:nth-child(2n) {
+    border-right: none;
+  }
+  .project-metrics-item:nth-last-child(-n+2) {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .overview-container {
+    padding: 0 10px;
+  }
+  .project-metrics-strip {
+    grid-template-columns: 1fr;
+  }
+  .project-metrics-item {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .project-metrics-item:last-child {
+    border-bottom: none;
+  }
+}
+ 
