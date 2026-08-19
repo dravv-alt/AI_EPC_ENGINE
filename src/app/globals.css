@@ -245,3 +245,13 @@ h2 { margin-bottom: 0; font-family: var(--display); font-size: 23px; font-weight
   .clerk-account-control .cl-userButtonOuterIdentifier { display: none; }
 }
 @media (max-width: 860px) { .not-found-page { grid-template-columns: 1fr; }.not-found-copy { position: relative; z-index: 2; padding: 38px 28px 22px; }.not-found-brand { margin-bottom: 50px; }.not-found-visual { min-height: 390px; }.not-found-canvas { width: min(100%, 570px); height: 430px; }.not-found-visual > p { bottom: 13%; }.not-found-halo { width: 480px; } }
+  
+/* Status Pill */  
+.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-family: 'Hanken Grotesk', sans-serif; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; background: #EAE8E2; color: #555; }  
+.status-pill.compact { padding: 0px 4px; font-size: 10px; }  
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }  
+.status-positive { background: #E3EDE9; color: #2D6B55; }  
+.status-attention { background: #FDF3E1; color: #B5651D; }  
+.status-danger { background: #FDECEC; color: #A91F32; }  
+.status-information { background: #EBEFF5; color: #2D466B; }  
+.status-neutral { background: #F3F1ED; color: #737373; } 

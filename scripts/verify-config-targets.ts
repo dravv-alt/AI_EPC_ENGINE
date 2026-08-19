@@ -25,9 +25,11 @@ function readTargets(overrides: Record<string, string | undefined>): Record<stri
   );
   try {
     const env = { ...process.env, ...overrides };
-    const stdout = execFileSync("npx", ["tsx", entryFile], {
+    const npxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+    const stdout = execFileSync(npxCmd, ["tsx", entryFile], {
       cwd: PROJECT_ROOT,
       env,
+      shell: true,
       encoding: "utf-8"
     });
     const lastLine = stdout.trim().split("\n").pop() ?? "{}";
