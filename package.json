@@ -83,6 +83,7 @@
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.80.7",
     "csv-parse": "^7.0.1",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^5.11.1",
     "leaflet": "^1.9.4",
