@@ -23,7 +23,7 @@ export default async function RequirementsPage() {
   ]);
   if (!data) throw new Error("Project not found");
   const accepted = items.filter(({ requirement }) => requirement.reviewState === "accepted").map(({ requirement }) => ({ id: requirement.id, statement: requirement.statement }));
-  return <FeatureShell projectName={data.project} eyebrow="Human authority" title="Requirements" description="Review every cited proposal, normalize values and units, retain rejected/duplicate history, and allow only accepted records into readiness.">
+  return <FeatureShell projectName={data.project} eyebrow="Engineering · human authority" title="Requirements" description="Review every cited proposal, normalize values and units, retain rejected/duplicate history, and allow only accepted records into readiness.">
     <div className="workflow-stack">{items.map(({ requirement, region, version, document }) => <article className="surface workflow-card" key={requirement.id}>
       <span className={`source-status ${requirement.reviewState === "accepted" ? "processed" : "pending"}`}>{requirement.reviewState}</span>
       <h2>{requirement.statement}</h2>

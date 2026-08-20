@@ -69,10 +69,10 @@ export function ActionsWorkbench({ projectId, findings, gates, members, initialF
     <section className="section-heading"><div><p className="eyebrow">Requires attention</p><h2>{active.length} active finding{active.length === 1 ? "" : "s"}</h2></div></section>
     <section className="workflow-grid">
       {active.map((finding) => <article id={`finding-${finding.id}`} className={`surface workflow-card finding-card ${finding.id === initialFindingId ? "is-selected" : ""}`} key={finding.id}>
-        <span className={`severity ${finding.severity}`} /><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>{isOverdue(finding) && <span className="status-pill blocked">overdue</span>}
-        <h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p>
-        <small>{finding.ownerName ?? "Unassigned"} · Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small>
-        {finding.gateId && <a className="finding-gate-link" href={`/readiness?gate=${finding.gateId}`}>View gate readiness</a>}
+        <span className={`severity ${finding.severity}`} />
+        <header className="finding-card-header"><div className="finding-statuses"><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>{isOverdue(finding) && <span className="status-pill blocked">overdue</span>}</div><span className="finding-severity-label">{finding.severity}</span></header>
+        <div className="finding-card-copy"><h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p></div>
+        <div className="finding-card-meta"><span><b>{finding.ownerName ?? "Unassigned"}</b><small>Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small></span>{finding.gateId && <a className="finding-gate-link" href={`/readiness?gate=${finding.gateId}`}>View gate <span aria-hidden="true">→</span></a>}</div>
         <label className="resolution-field">Resolution note<textarea value={resolutionNotes[finding.id] ?? ""} onChange={(event) => setResolutionNotes((current) => ({ ...current, [finding.id]: event.target.value }))} placeholder="State what changed and where the proof is stored." /></label>
         <div className="review-actions">{finding.status === "open" && <button className="button button-secondary" disabled={saving} onClick={() => update(finding, "in_progress")}>Start work</button>}<button className="button button-primary" disabled={saving} onClick={() => update(finding, "closed")}>Resolve finding</button></div>
       </article>)}

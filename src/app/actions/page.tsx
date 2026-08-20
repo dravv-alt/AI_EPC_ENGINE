@@ -32,7 +32,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
     db.select({ id: users.id, name: users.displayName }).from(projectMembers).innerJoin(users, eq(projectMembers.userId, users.id)).where(eq(projectMembers.projectId, projectId))
   ]);
   if (!data) throw new Error("Project not found");
-  return <FeatureShell projectName={data.project} eyebrow="Owned work" title="Actions & findings" description="Create accountable blockers, assign due dates, resolve them with evidence-backed notes, and immediately recompute deterministic readiness.">
+  return <FeatureShell projectName={data.project} eyebrow="Owned work" title="Issues & Actions" description="Create accountable blockers, assign due dates, resolve them with evidence-backed notes, and immediately recompute deterministic readiness.">
     <ActionsWorkbench projectId={projectId} findings={findingRows} gates={gateRows} members={memberRows} initialFindingId={finding} />
   </FeatureShell>;
 }

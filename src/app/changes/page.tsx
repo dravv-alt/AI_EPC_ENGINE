@@ -21,5 +21,5 @@ export default async function ChangesPage() {
     seen.add(row.documentId);
     return { ...row, latestForDocument, hasPrevious: (counts.get(row.documentId) ?? 0) > 1 };
   });
-  return <FeatureShell projectName={data.project} eyebrow="Revision control" title="Changes" description="Region-level diffs mark impacted proof stale, reopen approved gates for review, and preserve every prior decision."><ChangeAssessmentList versions={versions} /></FeatureShell>;
+  return <FeatureShell projectName={data.project} eyebrow="Assurance · revision control" title="Change Control" description="Region-level diffs mark impacted proof stale, reopen approved gates for review, and preserve every prior decision."><ChangeAssessmentList versions={versions} /></FeatureShell>;
 }

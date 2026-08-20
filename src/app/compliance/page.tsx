@@ -18,7 +18,7 @@ export default async function CompliancePage() {
     db.select({ precedent: compliancePrecedents, reviewerName: users.displayName }).from(compliancePrecedents).leftJoin(users, eq(compliancePrecedents.reviewedBy, users.id)).where(eq(compliancePrecedents.projectId, projectId)).orderBy(desc(compliancePrecedents.createdAt))
   ]);
   if (!data) throw new Error("Project not found");
-  return <FeatureShell projectName={data.project} eyebrow="Clause versus controlled line" title="Compliance" description="Structured deviations are deterministic proposals. Qualitative equivalence is valid only after an engineer approves a project-scoped, exactly cited precedent.">
+  return <FeatureShell projectName={data.project} eyebrow="Assurance · clause versus controlled line" title="Compliance" description="Structured deviations are deterministic proposals. Qualitative equivalence is valid only after an engineer approves a project-scoped, exactly cited precedent.">
     <ComplianceWorkbench projectId={projectId} requirements={acceptedRows} regions={regionRows} checks={checkRows.map((row) => ({ ...row.check, reviewerName: row.reviewerName }))} precedents={precedentRows.map((row) => ({ ...row.precedent, reviewerName: row.reviewerName }))} />
   </FeatureShell>;
 }

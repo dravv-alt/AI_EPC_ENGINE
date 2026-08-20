@@ -28,7 +28,7 @@ export default async function CxPage() {
     versionIds.length ? db.select({ id: sourceRegions.id, documentVersionId: sourceRegions.documentVersionId }).from(sourceRegions).where(inArray(sourceRegions.documentVersionId, versionIds)) : []
   ]);
   const results = records.length ? await db.select().from(cxStepResults).where(inArray(cxStepResults.testRecordId, records.map((record) => record.id))) : [];
-  return <FeatureShell projectName={data.project} eyebrow="Commissioning QA copilot" title="Cx tests" description="Ingest controlled standards, generate citation-verified advisory checklists, execute deterministic proposed checks, and approve an editable report into immutable evidence.">
+  return <FeatureShell projectName={data.project} eyebrow="Delivery · commissioning QA" title="Commissioning Tests" description="Ingest controlled standards, generate citation-verified advisory checklists, execute deterministic proposed checks, and approve an editable report into immutable evidence.">
     <CxWorkbench
       projectId={projectId}
       systems={systemRows.map((row) => ({ id: row.id, name: row.name }))}

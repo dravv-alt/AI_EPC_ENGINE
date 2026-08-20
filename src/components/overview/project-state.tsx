@@ -11,52 +11,21 @@ export function ProjectState({ data }: { data: DashboardData }) {
   const primaryBlocker = [...data.actions].sort((a, b) => (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0))[0];
 
   return (
-    <div 
-      className="surface"
-      style={{ 
-        padding: "16px 20px", 
-        marginBottom: "16px", 
-        display: "flex", 
-        alignItems: "center", 
-        justifyContent: "space-between",
-        gap: "16px",
-        flexWrap: "wrap"
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: "10px", fontFamily: "var(--mono)", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" }}>
-            Active Stage / Gate
+    <article className="surface control-hero">
+      <div className="control-hero-main">
+        <p className="eyebrow">Current decision</p>
+        <div className="control-hero-title"><h2>{data.gate}</h2><StatusPill status={currentGateItem ? currentGateItem.state : "review"} /></div>
+        {primaryBlocker ? (
+          <div className="control-blocker">
+            <AlertTriangle size={18} /><div><span>Primary blocker</span><strong>{primaryBlocker.title}</strong></div>
+            <Link href={`/actions?finding=${primaryBlocker.id}`}>Open blocker →</Link>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <h2 style={{ fontSize: "22px", margin: 0, fontFamily: "var(--display)", fontWeight: 500 }}>
-              {data.gate}
-            </h2>
-            <StatusPill status={currentGateItem ? currentGateItem.state : "review"} />
-          </div>
-        </div>
-
-        {primaryBlocker && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f8e3e5", border: "1px solid #f0b8bd", padding: "6px 12px", borderRadius: "6px", fontSize: "12px", color: "#971a27" }}>
-            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-            <span><strong>Blocker:</strong> {primaryBlocker.title}</span>
-            <Link href={`/actions?finding=${primaryBlocker.id}`} style={{ color: "#971a27", fontWeight: 700, textDecoration: "underline", marginLeft: "4px" }}>
-              View &rarr;
-            </Link>
-          </div>
-        )}
+        ) : <p className="control-clear">No active blocker is preventing this gate from proceeding.</p>}
       </div>
-      
-      <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
-        <div>
-          <div style={{ fontSize: "10px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "var(--mono)" }}>Project</div>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>{data.project}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: "10px", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "var(--mono)" }}>Location</div>
-          <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--ink)" }}>Mumbai</div>
-        </div>
-      </div>
-    </div>
+      <dl className="control-context">
+        <div><dt>Project</dt><dd>{data.project}</dd></div>
+        <div><dt>Location</dt><dd>Mumbai</dd></div>
+      </dl>
+    </article>
   );
 }

@@ -21,7 +21,7 @@ export default async function SettingsPage() {
     verifyAuditChain(projectId)
   ]);
   if (!data || !project) throw new Error("Project not found");
-  return <FeatureShell projectName={data.project} eyebrow="Project controls" title="Settings & audit" description="Manage project policy and membership through enforced RBAC, then independently verify the append-only audit chain.">
+  return <FeatureShell projectName={data.project} eyebrow="Project controls · audit verification" title="Settings" description="Manage project policy and membership through enforced RBAC, then independently verify the append-only audit chain.">
     <ProjectSettingsPanel project={project} members={members} canManage={can(actor.role, "project:manage")} verification={verification} />
   </FeatureShell>;
 }

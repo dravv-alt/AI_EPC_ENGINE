@@ -16,7 +16,7 @@ export default async function FieldCapturePage() {
     db.select({ id: assets.id, systemId: assets.systemId, tag: assets.tag }).from(assets).where(eq(assets.projectId, projectId)).orderBy(asc(assets.tag))
   ]);
   if (!data) throw new Error("Project not found");
-  return <FeatureShell projectName={data.project} eyebrow="Field authority boundary" title="Field capture" description="Capture observations and artifacts online or offline with visible synchronization state. Only server-reviewed evidence can affect readiness.">
+  return <FeatureShell projectName={data.project} eyebrow="Evidence · field authority boundary" title="Capture Evidence" description="Capture observations and artifacts online or offline with visible synchronization state. Only server-reviewed evidence can affect readiness.">
     <FieldCaptureWorkbench projectId={projectId} systems={systemRows} assets={assetRows} />
   </FeatureShell>;
 }

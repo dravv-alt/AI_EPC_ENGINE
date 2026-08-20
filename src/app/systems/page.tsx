@@ -17,7 +17,7 @@ export default async function SystemsPage() {
     db.select().from(gates).where(eq(gates.projectId, projectId)).orderBy(asc(gates.sequenceNumber))
   ]);
   if (!data) throw new Error("Project not found");
-  return <FeatureShell projectName={data.project} eyebrow="Authority graph" title="Systems, assets & gates" description="Configure the controlled hierarchy that every requirement, field record, test, decision, and schedule link must reference.">
+  return <FeatureShell projectName={data.project} eyebrow="Engineering · authority graph" title="Systems & Assets" description="Configure the controlled hierarchy that every requirement, field record, test, decision, and schedule link must reference.">
     <SystemsWorkbench projectId={projectId} systems={systemRows} assets={assetRows} gates={gateRows} />
   </FeatureShell>;
 }

@@ -25,6 +25,19 @@ function AnimatedMetricValue({ value }: { value: string }) {
   return <>{match ? `${current}${suffix}` : value}</>;
 }
 
+function MetricVisual({ kind }: { kind: "readiness" | "evidence" | "work" | "alerts" }) {
+  if (kind === "readiness") {
+    return <div className="metric-visual metric-visual-readiness" aria-hidden="true"><i /><span /><span /><span /><span /><b /></div>;
+  }
+  if (kind === "evidence") {
+    return <div className="metric-visual metric-visual-evidence" aria-hidden="true"><i /><i /><i /><b>✓</b></div>;
+  }
+  if (kind === "work") {
+    return <div className="metric-visual metric-visual-work" aria-hidden="true"><i><b /></i><i><b /></i><i><b /></i></div>;
+  }
+  return <div className="metric-visual metric-visual-alerts" aria-hidden="true"><i /><i /><i /><b /></div>;
+}
+
 export function ProjectMetrics({ data }: { data: DashboardData }) {
   const readinessValue = data.metrics.find(m => m.label === "Gate readiness")?.value || "0%";
   const evidenceValue = data.metrics.find(m => m.label === "Accepted evidence")?.value || "0 / 0";
@@ -32,51 +45,34 @@ export function ProjectMetrics({ data }: { data: DashboardData }) {
   const actionsDetail = data.metrics.find(m => m.label === "Open actions")?.detail || "Open findings";
   const alertsValue = data.insights.operations.activeAlerts.toString();
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: "9px",
-    fontFamily: "var(--mono)",
-    color: "var(--muted)",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    marginBottom: "4px"
-  };
-
-  const valueStyle: React.CSSProperties = {
-    fontSize: "24px",
-    fontWeight: 500,
-    fontFamily: "var(--display)",
-    marginBottom: "2px"
-  };
-
-  const detailStyle: React.CSSProperties = {
-    fontSize: "11px",
-    color: "var(--primary)"
-  };
-
   return (
     <div className="project-metrics-strip">
       <Link href="/readiness" className="project-metrics-item metric-primary">
-        <div style={labelStyle}>Readiness</div>
-        <div style={valueStyle}><AnimatedMetricValue value={readinessValue} /></div>
-        <div style={detailStyle}>Deterministic &rarr;</div>
+        <MetricVisual kind="readiness" />
+        <div className="metric-label">Readiness</div>
+        <div className="metric-value"><AnimatedMetricValue value={readinessValue} /></div>
+        <div className="metric-detail">Deterministic <span aria-hidden="true">→</span></div>
       </Link>
       
       <Link href="/evidence" className="project-metrics-item metric-secondary">
-        <div style={labelStyle}>Evidence</div>
-        <div style={valueStyle}><AnimatedMetricValue value={evidenceValue} /></div>
-        <div style={detailStyle}>Accepted &rarr;</div>
+        <MetricVisual kind="evidence" />
+        <div className="metric-label">Evidence</div>
+        <div className="metric-value"><AnimatedMetricValue value={evidenceValue} /></div>
+        <div className="metric-detail">Accepted <span aria-hidden="true">→</span></div>
       </Link>
 
       <Link href="/actions" className="project-metrics-item metric-tertiary">
-        <div style={labelStyle}>Open Work</div>
-        <div style={valueStyle}><AnimatedMetricValue value={actionsValue} /></div>
-        <div style={detailStyle}>{actionsDetail} &rarr;</div>
+        <MetricVisual kind="work" />
+        <div className="metric-label">Open Work</div>
+        <div className="metric-value"><AnimatedMetricValue value={actionsValue} /></div>
+        <div className="metric-detail">{actionsDetail} <span aria-hidden="true">→</span></div>
       </Link>
 
       <Link href="/command-center" className="project-metrics-item metric-live">
-        <div style={labelStyle}>Active Alerts</div>
-        <div style={valueStyle}><AnimatedMetricValue value={alertsValue} /></div>
-        <div style={detailStyle}>Command center &rarr;</div>
+        <MetricVisual kind="alerts" />
+        <div className="metric-label">Active Alerts</div>
+        <div className="metric-value"><AnimatedMetricValue value={alertsValue} /></div>
+        <div className="metric-detail">Alert Center <span aria-hidden="true">→</span></div>
       </Link>
     </div>
   );

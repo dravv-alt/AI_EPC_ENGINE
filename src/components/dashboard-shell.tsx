@@ -1,19 +1,11 @@
 import {
-  ArrowUpRight,
   Bell,
   BookOpen,
   Camera,
-  ChevronDown,
-  CircleAlert,
-  ClipboardCheck,
   FileUp,
-  FolderOpen,
   Grid2X2,
-  ListChecks,
   Menu,
   Search,
-  Settings,
-  ShieldCheck,
 } from "lucide-react";
 import type { DashboardData, ReadinessTone } from "@/lib/dashboard-data";
 import { RequirementReviewActions } from "@/components/requirement-review-actions";
@@ -25,15 +17,6 @@ import { ProjectSearchForm } from "@/components/project-search-form";
 import { DashboardInsights } from "@/components/dashboard-insights";
 import { ClerkAccountControl } from "@/components/clerk-account-control";
 import { clerkIsConfigured } from "@/lib/env";
-
-const navigation = [
-  [Grid2X2, "Overview"],
-  [FolderOpen, "Sources"],
-  [ListChecks, "Requirements"],
-  [ClipboardCheck, "Readiness"],
-  [CircleAlert, "Actions"],
-  [ShieldCheck, "Turnover"]
-] as const;
 
 const toneLabel: Record<ReadinessTone, string> = {
   ready: "Ready",
@@ -56,7 +39,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
 
         <div className="content">
           <section className="page-heading">
-            <div><p className="eyebrow">Commissioning control room</p><h1>Project overview</h1><p className="subhead">Evidence-backed readiness for <b>{data.gate}</b>.</p></div>
+            <div><p className="eyebrow">Commissioning control room</p><h1>Control Center</h1><p className="subhead">Evidence-backed readiness for <b>{data.gate}</b>.</p></div>
             <div className="heading-actions">
               <Link className="button button-secondary" href={{ pathname: "/brief" }}><BookOpen size={17} /> View brief</Link>
               <Link className="button button-secondary" href={{ pathname: "/field-capture" }}><Camera size={17} /> Capture evidence</Link>
