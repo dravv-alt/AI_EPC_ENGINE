@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+if (typeof window === "undefined" && !process.env.DATABASE_URL) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const dotenv = require("dotenv");
+    dotenv.config({ path: ".env.local" });
+    dotenv.config();
+  } catch {}
+}
+
 const resolvedAuthMode = process.env.AUTH_MODE
   ?? (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY ? "clerk" : undefined);
 

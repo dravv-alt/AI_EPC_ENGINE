@@ -245,3 +245,112 @@ h2 { margin-bottom: 0; font-family: var(--display); font-size: 23px; font-weight
   .clerk-account-control .cl-userButtonOuterIdentifier { display: none; }
 }
 @media (max-width: 860px) { .not-found-page { grid-template-columns: 1fr; }.not-found-copy { position: relative; z-index: 2; padding: 38px 28px 22px; }.not-found-brand { margin-bottom: 50px; }.not-found-visual { min-height: 390px; }.not-found-canvas { width: min(100%, 570px); height: 430px; }.not-found-visual > p { bottom: 13%; }.not-found-halo { width: 480px; } }
+  
+/* Status Pill */  
+.status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-family: 'Hanken Grotesk', sans-serif; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; background: #EAE8E2; color: #555; }  
+.status-pill.compact { padding: 0px 4px; font-size: 10px; }  
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }  
+.status-positive { background: #E3EDE9; color: #2D6B55; }  
+.status-attention { background: #FDF3E1; color: #B5651D; }  
+.status-danger { background: #FDECEC; color: #A91F32; }  
+.status-information { background: #EBEFF5; color: #2D466B; }  
+.status-neutral { background: #F3F1ED; color: #737373; }
+
+/* Responsive Overview & UI 2.0 Layout Utilities */
+.overview-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 1400px;
+  margin: 16px auto 0;
+  width: 100%;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+.project-metrics-strip {
+  display: flex;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.project-metrics-item {
+  flex: 1;
+  padding: 12px 18px;
+  text-decoration: none;
+  color: inherit;
+  border-right: 1px solid var(--line);
+  box-sizing: border-box;
+}
+
+.project-metrics-item:last-child {
+  border-right: none;
+}
+
+.overview-main-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.overview-footer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.gate-timeline-container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 20px;
+  padding: 0 8px;
+  overflow-x: auto;
+}
+
+@media (max-width: 1024px) {
+  .overview-main-row {
+    grid-template-columns: 1fr;
+  }
+  .overview-footer-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .project-metrics-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .project-metrics-item {
+    border-bottom: 1px solid var(--line);
+  }
+  .project-metrics-item:nth-child(2n) {
+    border-right: none;
+  }
+  .project-metrics-item:nth-last-child(-n+2) {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .overview-container {
+    padding: 0 10px;
+  }
+  .project-metrics-strip {
+    grid-template-columns: 1fr;
+  }
+  .project-metrics-item {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .project-metrics-item:last-child {
+    border-bottom: none;
+  }
+}
+ 

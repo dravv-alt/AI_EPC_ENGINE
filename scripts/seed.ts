@@ -21,7 +21,12 @@
  *  - Knowledge chunks for 3 source regions
  */
 
+import { config } from "dotenv";
+config({ path: ".env.local" });
+config();
+
 import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../src/lib/db/client";
 import {
@@ -289,12 +294,12 @@ async function seed() {
 
   // ── Gates ─────────────────────────────────────────────────────────────────
   await db.insert(gates).values([
-    { id: T.gate_l1, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "1", name: "L1 Factory Acceptance Test",       status: "approved",    approvalRole: "approver" },
-    { id: T.gate_l2, projectId: T.project, systemId: T.sys_elec, sequenceNumber: "2", name: "L2 Mechanical Completion",         status: "approved",    approvalRole: "approver" },
-    { id: T.gate_l3, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "3", name: "L3 Pre-Functional Check",          status: "in_review",   approvalRole: "approver" },
-    { id: T.gate_l4, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "4", name: "L4 Integrated Systems Test",       status: "not_started", approvalRole: "approver" },
-    { id: T.gate_l5, projectId: T.project, systemId: T.sys_fire, sequenceNumber: "5", name: "L5 Fire Suppression Commissioning", status: "blocked",     approvalRole: "approver" },
-  ]).onConflictDoNothing();
+    { id: T.gate_l1, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "1", name: "L1 Factory Acceptance Test",          status: "approved",    approvalRole: "approver" },
+    { id: T.gate_l2, projectId: T.project, systemId: T.sys_elec, sequenceNumber: "2", name: "L2 Mechanical Completion",            status: "approved",    approvalRole: "approver" },
+    { id: T.gate_l3, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "3", name: "L3 Pre-Functional Check",             status: "in_review",   approvalRole: "approver" },
+    { id: T.gate_l4, projectId: T.project, systemId: T.sys_chw,  sequenceNumber: "4", name: "L4 Functional Performance Testing",   status: "not_started", approvalRole: "approver" },
+    { id: T.gate_l5, projectId: T.project, systemId: T.sys_fire, sequenceNumber: "5", name: "L5 Integrated Systems Testing (IST)", status: "blocked",     approvalRole: "approver" },
+  ]).onConflictDoUpdate({ target: gates.id, set: { name: sql`EXCLUDED.name` } });
   console.log("  ✓ Gates (L1-approved, L2-approved, L3-in_review, L4-not_started, L5-blocked)");
 
   // ── Documents & versions ──────────────────────────────────────────────────

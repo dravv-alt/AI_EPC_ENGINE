@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { UserButton } from "@clerk/nextjs";
 
 export default function PendingAccessPage() {

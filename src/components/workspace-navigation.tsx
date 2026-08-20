@@ -77,22 +77,39 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
     .map((part) => part[0]?.toUpperCase())
     .join(""), [profile]);
 
-  return <aside className="sidebar" aria-label="Primary navigation">
-    <Link className="brand" href="/"><span className="brand-mark">P</span><span>pramana<span className="brand-muted">.cx</span></span></Link>
-    <label className="project-switcher">
-      <span className="project-dot" />
-      <span className="sr-only">Active project</span>
-      {projects.length ? <select aria-label="Active project" value={activeProjectId} disabled={switching} onChange={(event) => activate(event.target.value)}>
-        {projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
-      </select> : <span>{projectName}</span>}
-    </label>
-    <nav className="nav-list" aria-label="Project areas">
-      {workspaceGroups.map((group) => <div className="nav-group" key={group.label}><span className="nav-group-label">{group.label}</span>{group.links.map(([Icon, label, href]) => <Link className={`nav-item ${pathname === href || href !== "/" && pathname.startsWith(`${href}/`) ? "is-active" : ""}`} href={href} key={href}><Icon size={18} /><span>{label}</span></Link>)}</div>)}
-    </nav>
-    <div className="sidebar-footer">
-      <div className="dev-badge"><Sparkles size={14} /> {profile?.user.provider === "development" ? "Development mode" : "Controlled session"}</div>
-      <Link className={`nav-item ${pathname === "/settings" ? "is-active" : ""}`} href="/settings"><Settings size={18} /><span>Settings & audit</span></Link>
-      <Link className={`user-card ${pathname === "/profile" ? "is-active" : ""}`} href="/profile"><span className="avatar">{initials}</span><span><b>{profile?.user.displayName ?? "Your profile"}</b><small>{profile?.user.email ?? "Identity and security"}</small></span></Link>
-    </div>
-  </aside>;
+  return (
+    <aside className="sidebar" aria-label="Primary navigation">
+      <Link className="brand" href="/"><span className="brand-mark">P</span><span>pramana<span className="brand-muted">.cx</span></span></Link>
+      <label className="project-switcher">
+        <span className="project-dot" />
+        <span className="sr-only">Active project</span>
+        {projects.length ? (
+          <select aria-label="Active project" value={activeProjectId} disabled={switching} onChange={(event) => activate(event.target.value)}>
+            {projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}
+          </select>
+        ) : <span>{projectName}</span>}
+      </label>
+      <nav className="nav-list" aria-label="Project areas">
+        {workspaceGroups.map((group) => (
+          <div className="nav-group" key={group.label}>
+            <span className="nav-group-label">{group.label}</span>
+            {group.links.map(([Icon, label, href]) => (
+              <Link className={`nav-item ${pathname === href || href !== "/" && pathname.startsWith(`${href}/`) ? "is-active" : ""}`} href={href} key={href}>
+                <Icon size={18} />
+                <span>{label}</span>
+              </Link>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <div className="dev-badge"><Sparkles size={14} /> {profile?.user.provider === "development" ? "Development mode" : "Controlled session"}</div>
+        <Link className={`nav-item ${pathname === "/settings" ? "is-active" : ""}`} href="/settings"><Settings size={18} /><span>Settings & audit</span></Link>
+        <Link className={`user-card ${pathname === "/profile" ? "is-active" : ""}`} href="/profile">
+          <span className="avatar">{initials}</span>
+          <span><b>{profile?.user.displayName ?? "Your profile"}</b><small>{profile?.user.email ?? "Identity and security"}</small></span>
+        </Link>
+      </div>
+    </aside>
+  );
 }

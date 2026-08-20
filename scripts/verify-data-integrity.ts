@@ -1,3 +1,7 @@
+import { config } from "dotenv";
+config({ path: ".env.local" });
+config();
+
 import assert from "node:assert/strict";
 import { sql } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
