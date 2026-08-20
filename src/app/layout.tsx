@@ -19,5 +19,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#2d463e" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary></body></html>;
+  const themeBootstrap = "try { var stored = localStorage.getItem('pramana-theme'); var theme = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; document.documentElement.dataset.theme = theme; } catch (_) {}";
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary></body></html>;
 }

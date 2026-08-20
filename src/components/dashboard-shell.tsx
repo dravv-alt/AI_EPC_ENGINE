@@ -16,6 +16,7 @@ import { MobileRouteMenu } from "@/components/mobile-route-menu";
 import { ProjectSearchForm } from "@/components/project-search-form";
 import { DashboardInsights } from "@/components/dashboard-insights";
 import { ClerkAccountControl } from "@/components/clerk-account-control";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { clerkIsConfigured } from "@/lib/env";
 
 const toneLabel: Record<ReadinessTone, string> = {
@@ -34,7 +35,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
         <header className="topbar">
           <MobileRouteMenu />
           <ProjectSearchForm />
-          <div className="topbar-actions"><Link className="icon-button" href="/command-center" aria-label="Open notifications"><Bell size={19} /><span className="notification-dot" /></Link><Link className="help-button" href={{ pathname: "/help" }} aria-label="Open help">?</Link>{clerkIsConfigured && <ClerkAccountControl />}<span className="sync-state"><span />Synced</span></div>
+          <div className="topbar-actions"><Link className="icon-button" href="/command-center" aria-label="Open notifications"><Bell size={19} /><span className="notification-dot" /></Link><ThemeToggle /><Link className="help-button" href={{ pathname: "/help" }} aria-label="Open help">?</Link>{clerkIsConfigured && <ClerkAccountControl />}<span className="sync-state"><span />Synced</span></div>
         </header>
 
         <div className="content">
