@@ -9,6 +9,7 @@ import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import { AuthBoundary } from "@/components/auth-boundary";
 import { HashRouteRedirect } from "@/components/hash-route-redirect";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
   title: "Pramana Cx | Commissioning intelligence",
@@ -19,6 +20,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { themeColor: "#2d463e" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const themeBootstrap = "try { var stored = localStorage.getItem('pramana-theme'); var theme = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; document.documentElement.dataset.theme = theme; } catch (_) {}";
-  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary></body></html>;
+  const themeBootstrap = "try { var preset = localStorage.getItem('pramana-theme-preset'); var stored = localStorage.getItem('pramana-theme'); var fallback = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'midnight-bloom' : 'soft-pop'; var selected = preset || fallback; var dark = selected === 'midnight-bloom' || selected === 'northern-lights'; document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.dataset.palette = selected; } catch (_) {}";
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary><div className="theme-global-control"><ThemeToggle /></div></body></html>;
 }

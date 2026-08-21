@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { alerts, auditEvents, documentVersions, documents, evidence, findings, gates, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, sourceRegions, systems, users } from "@/lib/db/schema";
+import { alerts, assets, auditEvents, documentVersions, documents, evidence, findings, gates, projectMembers, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getProjectGateReadiness, type GateReadiness } from "@/lib/readiness/project-readiness";
 import { requireProjectPermission } from "@/lib/projects/access";
 
@@ -9,11 +9,18 @@ export type ReadinessTone = "ready" | "review" | "blocked" | "unknown";
 export interface DashboardData {
   projectId: string;
   project: string;
+  projectCode: string;
+  projectTimezone: string;
+  projectUpdatedAt: string;
   gate: string;
+  openIssueCount: number;
+  systems: Array<{ id: string; name: string; type: string; assetCount: number; gateCount: number; state: ReadinessTone }>;
   metrics: Array<{ label: string; value: string; detail: string; tone: "primary" | "secondary" | "tertiary" }>;
   readiness: Array<{ gateId: string; gate: string; system: string; state: ReadinessTone; detail: string }>;
   sources: Array<{ id: string; title: string; revision: string; status: string; detail: string; firstRegionId: string | null }>;
-  actions: Array<{ id: string; title: string; owner: string; due: string; severity: string }>;
+  actions: Array<{ id: string; title: string; owner: string; due: string; severity: string; status: string; gate: string }>;
+  members: Array<{ id: string; name: string; role: string }>;
+  timelineTasks: Array<{ id: string; name: string; durationHours: number; earliestStart: string | null; deadline: string | null; reviewState: string }>;
   proposal: { id: string; statement: string; citation: string } | null;
   insights: {
     gateBars: Array<{ id: string; label: string; state: ReadinessTone; percent: number; evidence: string }>;
@@ -114,14 +121,16 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   const project = await db.query.projects.findFirst({ where: (projects, { eq }) => eq(projects.id, projectId) });
   if (!project) return null;
 
-  const [projectGates, projectSystems, projectVersions, projectRegions, projectRequirements, projectFindings, people, gateReadiness, projectEvidence, projectShipments, projectTasks, latestSchedule, activeAlerts, recentAudit] = await Promise.all([
+  const [projectGates, projectSystems, projectAssets, projectVersions, projectRegions, projectRequirements, projectFindings, people, memberRows, gateReadiness, projectEvidence, projectShipments, projectTasks, latestSchedule, activeAlerts, recentAudit] = await Promise.all([
     db.select().from(gates).where(eq(gates.projectId, projectId)),
     db.select().from(systems).where(eq(systems.projectId, projectId)),
+    db.select().from(assets).where(eq(assets.projectId, projectId)),
     db.select().from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)),
     db.select().from(sourceRegions).innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id)).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)),
     db.select().from(requirements).where(eq(requirements.projectId, projectId)),
     db.select().from(findings).where(eq(findings.projectId, projectId)).orderBy(desc(findings.createdAt)),
     db.select().from(users),
+    db.select({ id: users.id, name: users.displayName, role: projectMembers.role }).from(projectMembers).innerJoin(users, eq(projectMembers.userId, users.id)).where(eq(projectMembers.projectId, projectId)),
     getProjectGateReadiness(projectId),
     db.select().from(evidence).where(eq(evidence.projectId, projectId)),
     db.select().from(shipments).where(eq(shipments.projectId, projectId)),
@@ -133,6 +142,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
 
   const systemById = new Map(projectSystems.map((system) => [system.id, system.name]));
   const readinessByGate = new Map(gateReadiness.map((item) => [item.gateId, item]));
+  const gateNameById = new Map(projectGates.map((gate) => [gate.id, gate.name]));
   const currentGate = projectGates.slice().sort((a, b) => Number(b.sequenceNumber) - Number(a.sequenceNumber))[0];
   const acceptedEvidence = gateReadiness.reduce((total, item) => total + item.acceptedEvidence, 0);
   const requiredEvidence = gateReadiness.reduce((total, item) => total + item.requiredEvidence, 0);
@@ -166,7 +176,17 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   return {
     projectId,
     project: project.name,
+    projectCode: project.code,
+    projectTimezone: project.timezone,
+    projectUpdatedAt: project.updatedAt.toISOString(),
     gate: currentGate?.name ?? "No gate configured",
+    openIssueCount: actionableFindings.length,
+    systems: projectSystems.map((system) => {
+      const systemGates = projectGates.filter((gate) => gate.systemId === system.id);
+      const states = systemGates.map((gate) => gateReadiness.find((item) => item.gateId === gate.id)?.state);
+      const state: ReadinessTone = states.includes("blocked") ? "blocked" : states.includes("in_review") ? "review" : states.length > 0 && states.every((item) => item === "ready") ? "ready" : "unknown";
+      return { id: system.id, name: system.name, type: system.systemType, assetCount: projectAssets.filter((asset) => asset.systemId === system.id).length, gateCount: systemGates.length, state };
+    }).sort((a, b) => a.name.localeCompare(b.name)),
     metrics: [
       { label: "Gate readiness", value: `${readinessPercent}%`, detail: blockers ? `${blockers} blocker${blockers === 1 ? "" : "s"} remain` : `${readyGateCount} gate${readyGateCount === 1 ? "" : "s"} ready`, tone: "primary" },
       { label: "Accepted evidence", value: `${acceptedEvidence} / ${requiredEvidence}`, detail: staleEvidence ? `${staleEvidence} stale record${staleEvidence === 1 ? "" : "s"}` : "No stale records", tone: "secondary" },
@@ -184,7 +204,9 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
       detail: `${regionCountByVersion.get(document_versions.id) ?? 0} cited region${(regionCountByVersion.get(document_versions.id) ?? 0) === 1 ? "" : "s"}`,
       firstRegionId: firstRegionByVersion.get(document_versions.id) ?? null
     })),
-    actions: actionableFindings.slice(0, 5).map((finding) => ({ id: finding.id, title: finding.title, owner: finding.ownerId ? ownerById.get(finding.ownerId) ?? "Unassigned" : "Unassigned", due: finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(finding.dueAt) : "Unscheduled", severity: finding.severity })),
+    actions: actionableFindings.slice(0, 8).map((finding) => ({ id: finding.id, title: finding.title, owner: finding.ownerId ? ownerById.get(finding.ownerId) ?? "Unassigned" : "Unassigned", due: finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(finding.dueAt) : "Unscheduled", severity: finding.severity, status: finding.status, gate: finding.gateId ? gateNameById.get(finding.gateId) ?? "Linked gate" : "Project-wide" })),
+    members: memberRows,
+    timelineTasks: projectTasks.slice().sort((a, b) => (a.earliestStart?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.earliestStart?.getTime() ?? Number.MAX_SAFE_INTEGER)).map((task) => ({ id: task.id, name: task.name, durationHours: task.durationHours, earliestStart: task.earliestStart?.toISOString() ?? null, deadline: task.deadline?.toISOString() ?? null, reviewState: task.reviewState })),
     proposal: proposal ? { id: proposal.id, statement: proposal.statement, citation: (() => { const region = regionsById.get(proposal.sourceRegionId); return region ? `${region.documents.title} · p. ${region.source_regions.pageNumber}` : "Controlled source unavailable"; })() } : null,
     insights: {
       gateBars: projectGates.slice().sort((a, b) => Number(a.sequenceNumber) - Number(b.sequenceNumber)).map((gate) => {

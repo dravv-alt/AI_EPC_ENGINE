@@ -8,13 +8,11 @@ import {
   Search,
 } from "lucide-react";
 import type { DashboardData, ReadinessTone } from "@/lib/dashboard-data";
-import { RequirementReviewActions } from "@/components/requirement-review-actions";
-import { SourceUploadForm } from "@/components/source-upload-form";
 import Link from "next/link";
 import { WorkspaceNavigation } from "@/components/workspace-navigation";
 import { MobileRouteMenu } from "@/components/mobile-route-menu";
 import { ProjectSearchForm } from "@/components/project-search-form";
-import { DashboardInsights } from "@/components/dashboard-insights";
+import { ProjectCommandOverview } from "@/components/project-command-overview";
 import { ClerkAccountControl } from "@/components/clerk-account-control";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { clerkIsConfigured } from "@/lib/env";
@@ -39,8 +37,9 @@ export function DashboardShell({ data }: { data: DashboardData }) {
         </header>
 
         <div className="content">
-          <section className="page-heading">
-            <div><p className="eyebrow">Commissioning control room</p><h1>Control Center</h1><p className="subhead">Evidence-backed readiness for <b>{data.gate}</b>.</p></div>
+          <div className="pm-breadcrumbs"><Link href="/projects">Projects</Link><span>/</span><span>{data.projectCode}</span><span>/</span><b>Overview</b></div>
+          <section className="page-heading pm-project-heading">
+            <div><p className="eyebrow">Active commissioning project</p><h1>{data.project}</h1><div className="pm-heading-meta"><span className="pm-status-chip status-open">Active</span><span>{data.projectCode}</span><span>{data.members.length} contributor{data.members.length === 1 ? "" : "s"}</span><span>{data.gate}</span></div></div>
             <div className="heading-actions">
               <Link className="button button-secondary" href={{ pathname: "/brief" }}><BookOpen size={17} /> View brief</Link>
               <Link className="button button-secondary" href={{ pathname: "/field-capture" }}><Camera size={17} /> Capture evidence</Link>
@@ -48,9 +47,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
             </div>
           </section>
 
-          <DashboardInsights data={data} />
-
-
+          <ProjectCommandOverview data={data} />
         </div>
       </section>
 

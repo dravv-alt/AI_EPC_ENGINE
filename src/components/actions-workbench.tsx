@@ -1,29 +1,38 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AlertCircle, ChevronDown, Circle, CircleCheck, CircleDot, Filter, Plus, Search } from "lucide-react";
 
 type Finding = { id: string; gateId: string | null; title: string; description: string | null; severity: string; status: string; ownerId: string | null; ownerName: string | null; dueAt: Date | string | null; resolutionNote: string | null; resolvedAt: Date | string | null; version: number; updatedAt: Date | string };
 
-// Mirrors the deterministic overdue rule in project-readiness.ts: past dueAt
-// and not resolved/closed, regardless of severity (PRD US-05). Computed
-// client-side from fields already on the row — no extra fetch.
 function isOverdue(finding: Finding): boolean {
-  if (!finding.dueAt || finding.status === "closed") return false;
-  return new Date(finding.dueAt).getTime() < Date.now();
+  return Boolean(finding.dueAt && finding.status !== "closed" && new Date(finding.dueAt).getTime() < Date.now());
 }
 
-export function ActionsWorkbench({ projectId, findings, gates, members, initialFindingId }: { projectId: string; findings: Finding[]; gates: Array<{ id: string; name: string }>; members: Array<{ id: string; name: string }>; initialFindingId?: string }) {
+const groups = [
+  { status: "in_progress", label: "In progress", Icon: CircleDot },
+  { status: "open", label: "Backlog", Icon: Circle },
+  { status: "closed", label: "Resolved", Icon: CircleCheck },
+] as const;
+
+export function ActionsWorkbench({ projectId, findings, gates, members }: { projectId: string; findings: Finding[]; gates: Array<{ id: string; name: string }>; members: Array<{ id: string; name: string }> }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [resolutionNotes, setResolutionNotes] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [severity, setSeverity] = useState("all");
+  const gateById = new Map(gates.map((gate) => [gate.id, gate.name]));
+  const visible = findings.filter((finding) => `${finding.title} ${finding.description ?? ""} ${finding.ownerName ?? ""}`.toLowerCase().includes(query.toLowerCase()) && (severity === "all" || finding.severity === severity));
+
   useEffect(() => {
-    if (!initialFindingId) return;
-    const target = document.getElementById(`finding-${initialFindingId}`);
+    const findingId = new URLSearchParams(window.location.search).get("finding");
+    if (!findingId) return;
+    const target = document.getElementById(`finding-${findingId}`);
     target?.closest("details")?.setAttribute("open", "");
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [initialFindingId]);
+  }, []);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,47 +46,45 @@ export function ActionsWorkbench({ projectId, findings, gates, members, initialF
     });
     const body = await response.json().catch(() => ({}));
     setSaving(false);
-    setMessage(response.ok ? "Finding created, assigned, and included in readiness." : body.error ?? "Unable to create finding.");
+    setMessage(response.ok ? "Issue created and included in readiness." : body.error ?? "Unable to create issue.");
     if (response.ok) { form.reset(); router.refresh(); }
   }
 
-  async function update(finding: Finding, status: "open" | "in_progress" | "closed") {
-    const resolutionNote = resolutionNotes[finding.id];
-    if (status === "closed" && (!resolutionNote || resolutionNote.trim().length < 5)) return setMessage("Enter a resolution note before closing the finding.");
-    setSaving(true);
-    const response = await fetch(`/api/findings/${finding.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ expectedVersion: finding.version, status, resolutionNote }) });
-    const body = await response.json().catch(() => ({}));
-    setSaving(false);
-    setMessage(response.ok ? `Finding moved to ${status.replaceAll("_", " ")}; readiness recalculated.` : body.error ?? "Unable to update finding.");
-    if (response.ok) router.refresh();
-  }
-
-  const active = findings.filter((finding) => finding.status !== "closed").sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
-  const closed = findings.filter((finding) => finding.status === "closed");
-  return <div className="workflow-stack">
-    <form className="surface finding-form" onSubmit={create}>
-      <div className="finding-form-heading"><p className="eyebrow">New accountable action</p><h2>Create finding</h2><p>Describe the blocker first, then assign its control details.</p></div>
-      <label className="finding-title-field">Title<input name="title" minLength={3} required placeholder="Resolve missing witness signature" /></label>
-      <label className="finding-description-field">Description<textarea name="description" placeholder="Describe the exact blocker and acceptance condition." /></label>
-      <label className="finding-control-field">Severity<select name="severity" defaultValue="high"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
-      <label className="finding-control-field">Gate<select name="gateId"><option value="">Project-wide</option>{gates.map((gate) => <option value={gate.id} key={gate.id}>{gate.name}</option>)}</select></label>
-      <label className="finding-control-field">Owner<select name="ownerId" required><option value="">Select owner</option>{members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}</select></label>
-      <label className="finding-control-field">Due date<input name="dueAt" type="datetime-local" required /></label>
-      <button className="button button-primary" disabled={saving || !members.length}>Create and assign</button>
-    </form>
-    {message && <p className="surface inline-feedback" role="status">{message}</p>}
-    <section className="section-heading"><div><p className="eyebrow">Requires attention</p><h2>{active.length} active finding{active.length === 1 ? "" : "s"}</h2></div></section>
-    <section className="workflow-grid">
-      {active.map((finding) => <article id={`finding-${finding.id}`} className={`surface workflow-card finding-card ${finding.id === initialFindingId ? "is-selected" : ""}`} key={finding.id}>
-        <span className={`severity ${finding.severity}`} />
-        <header className="finding-card-header"><div className="finding-statuses"><span className={`status-pill ${finding.status === "open" ? "blocked" : "review"}`}>{finding.status.replaceAll("_", " ")}</span>{isOverdue(finding) && <span className="status-pill blocked">overdue</span>}</div><span className="finding-severity-label">{finding.severity}</span></header>
-        <div className="finding-card-copy"><h2>{finding.title}</h2><p>{finding.description ?? "No description supplied."}</p></div>
-        <div className="finding-card-meta"><span><b>{finding.ownerName ?? "Unassigned"}</b><small>Due {finding.dueAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(finding.dueAt)) : "not scheduled"}</small></span>{finding.gateId && <a className="finding-gate-link" href={`/readiness?gate=${finding.gateId}`}>View gate <span aria-hidden="true">→</span></a>}</div>
-        <label className="resolution-field">Resolution note<textarea value={resolutionNotes[finding.id] ?? ""} onChange={(event) => setResolutionNotes((current) => ({ ...current, [finding.id]: event.target.value }))} placeholder="State what changed and where the proof is stored." /></label>
-        <div className="review-actions">{finding.status === "open" && <button className="button button-secondary" disabled={saving} onClick={() => update(finding, "in_progress")}>Start work</button>}<button className="button button-primary" disabled={saving} onClick={() => update(finding, "closed")}>Resolve finding</button></div>
-      </article>)}
-      {!active.length && <article className="surface empty-state"><h2>No active findings</h2><p>This is not a readiness claim. Gate state still depends on accepted requirements and current evidence.</p></article>}
+  return <div className="pm-issues-workbench">
+    <div className="pm-issues-toolbar">
+      <label className="pm-issue-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search issues…" /></label>
+      <label className="pm-issue-filter"><Filter size={16} /><span>Priority</span><select value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="all">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+      <span className="pm-issue-total">{visible.length} issue{visible.length === 1 ? "" : "s"}</span>
+      <details className="pm-create-issue"><summary><Plus size={17} /> Add issue</summary><form onSubmit={create}>
+        <header><div><p className="eyebrow">Accountable work</p><h2>Create issue</h2></div></header>
+        <label className="pm-span-2">Title<input name="title" minLength={3} required placeholder="Resolve missing witness signature" /></label>
+        <label className="pm-span-2">Description<textarea name="description" placeholder="Describe the blocker and its acceptance condition." /></label>
+        <label>Priority<select name="severity" defaultValue="high"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
+        <label>Gate<select name="gateId"><option value="">Project-wide</option>{gates.map((gate) => <option value={gate.id} key={gate.id}>{gate.name}</option>)}</select></label>
+        <label>Owner<select name="ownerId" required><option value="">Select owner</option>{members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}</select></label>
+        <label>Due date<input name="dueAt" type="datetime-local" required /></label>
+        <button className="button button-primary pm-span-2" disabled={saving || !members.length}>Create and assign</button>
+      </form></details>
+    </div>
+    {message && <p className="pm-inline-message" role="status">{message}</p>}
+    <section className="pm-issue-groups">
+      {groups.map(({ status, label, Icon }) => {
+        const rows = visible.filter((finding) => finding.status === status);
+        return <details className={`pm-issue-group group-${status}`} open={status !== "closed"} key={status}>
+          <summary><ChevronDown size={17} /><Icon size={17} /><b>{label}</b><span>{rows.length}</span></summary>
+          <div className="pm-issue-table" role="table" aria-label={`${label} issues`}>
+            {rows.map((finding) => <Link id={`finding-${finding.id}`} href={`/actions/${finding.id}`} className="pm-issue-row" role="row" key={finding.id}>
+              <span className={`pm-priority-dot priority-${finding.severity}`} />
+              <span className="pm-issue-key">{finding.id.slice(0, 6).toUpperCase()}</span>
+              <span className="pm-issue-title"><b>{finding.title}</b><small>{finding.description ?? "No description"}</small></span>
+              <span className="pm-issue-gate">{finding.gateId ? gateById.get(finding.gateId) ?? "Linked gate" : "Project-wide"}</span>
+              <span className="pm-issue-owner"><i>{(finding.ownerName ?? "U").split(/\s+/).map((part) => part[0]).slice(0, 2).join("")}</i>{finding.ownerName ?? "Unassigned"}</span>
+              <span className={`pm-issue-due ${isOverdue(finding) ? "is-overdue" : ""}`}>{isOverdue(finding) && <AlertCircle size={14} />}{finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(finding.dueAt)) : "No date"}</span>
+            </Link>)}
+            {!rows.length && <p className="pm-empty-group">No issues in this status.</p>}
+          </div>
+        </details>;
+      })}
     </section>
-    {closed.length > 0 && <details className="surface history-panel"><summary>Resolved history ({closed.length})</summary>{closed.map((finding) => <article id={`finding-${finding.id}`} className={`entity-row ${finding.id === initialFindingId ? "is-selected" : ""}`} key={finding.id}><div><b>{finding.title}</b><span>{finding.resolutionNote}</span></div><small>{finding.resolvedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(finding.resolvedAt)) : "Resolved"}</small></article>)}</details>}
   </div>;
 }

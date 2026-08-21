@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   FileCheck2,
   FolderOpen,
+  FolderKanban,
   GitCompareArrows,
   Grid2X2,
   ListChecks,
@@ -27,17 +28,18 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-type WorkspaceHref = "/" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover";
+type WorkspaceHref = "/" | "/projects" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover";
 export type WorkspaceLink = [LucideIcon, string, WorkspaceHref];
 
 export const primaryWorkspaceLinks: WorkspaceLink[] = [
-  [Grid2X2, "Control Center", "/"],
+  [FolderKanban, "Projects", "/projects"],
+  [Grid2X2, "Overview", "/"],
   [ClipboardCheck, "Readiness", "/readiness"],
-  [CircleAlert, "Issues & Actions", "/actions"]
+  [CircleAlert, "Issues", "/actions"]
 ];
 
 export const workspaceGroups: Array<{ label: string; links: WorkspaceLink[] }> = [
-  { label: "Engineering", links: [[FolderOpen, "Documents", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems & Assets", "/systems"], [Archive, "Evidence", "/evidence"], [Camera, "Capture Evidence", "/field-capture"]] },
+  { label: "Project records", links: [[FolderOpen, "Documents", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems & Assets", "/systems"], [Archive, "Evidence", "/evidence"], [Camera, "Capture Evidence", "/field-capture"]] },
   { label: "Delivery", links: [[CalendarRange, "Schedule", "/schedule"], [Boxes, "Commissioning Tests", "/cx"], [Ship, "Shipments & Logistics", "/shipments"]] },
   { label: "Assurance", links: [[FileCheck2, "Compliance", "/compliance"], [GitCompareArrows, "Change Control", "/changes"], [Network, "Traceability", "/graph"], [ShieldCheck, "Turnover & Closeout", "/turnover"]] },
   { label: "Project Tools", links: [[Search, "Knowledge Search", "/knowledge"], [Bell, "Alert Center", "/command-center"]] }

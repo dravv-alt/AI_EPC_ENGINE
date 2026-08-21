@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   assets,
@@ -12,6 +12,7 @@ import {
   gates,
   requirements,
   scheduleTasks,
+  scheduleDependencies,
   shipments,
   sourceRegions,
   systems
@@ -36,7 +37,7 @@ export async function graphEntityExists(projectId: string, type: GraphEntityType
 }
 
 export async function getProjectGraph(projectId: string) {
-  const [edgeRows, systemRows, assetRows, gateRows, requirementRows, evidenceRows, findingRows, taskRows, shipmentRows, testRows] = await Promise.all([
+  const [edgeRows, systemRows, assetRows, gateRows, requirementRows, evidenceRows, findingRows, taskRows, dependencyRows, shipmentRows, testRows] = await Promise.all([
     db.select().from(edges).where(eq(edges.projectId, projectId)),
     db.select().from(systems).where(eq(systems.projectId, projectId)),
     db.select().from(assets).where(eq(assets.projectId, projectId)),
@@ -45,6 +46,7 @@ export async function getProjectGraph(projectId: string) {
     db.select().from(evidence).where(eq(evidence.projectId, projectId)),
     db.select().from(findings).where(eq(findings.projectId, projectId)),
     db.select().from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)),
+    db.select().from(scheduleDependencies).where(eq(scheduleDependencies.projectId, projectId)),
     db.select().from(shipments).where(eq(shipments.projectId, projectId)),
     db.select().from(cxTestRecords).where(eq(cxTestRecords.projectId, projectId))
   ]);
@@ -59,7 +61,20 @@ export async function getProjectGraph(projectId: string) {
     ...shipmentRows.map((item) => ({ id: item.id, type: "shipment", label: item.name, state: item.status })),
     ...testRows.map((item) => ({ id: item.id, type: "cx_test", label: `Cx test ${item.id.slice(0, 8)}`, state: item.overallStatus }))
   ];
-  return { nodes, edges: edgeRows };
+  const storedKeys = new Set(edgeRows.map((edge) => `${edge.fromType}:${edge.fromId}:${edge.relationshipType}:${edge.toType}:${edge.toId}`));
+  const derived: Array<{ id: string; fromType: string; fromId: string; relationshipType: string; toType: string; toId: string; derived: true }> = [];
+  const addDerived = (fromType: string, fromId: string, relationshipType: string, toType: string, toId: string) => {
+    const key = `${fromType}:${fromId}:${relationshipType}:${toType}:${toId}`;
+    if (!storedKeys.has(key)) derived.push({ id: `derived:${key}`, fromType, fromId, relationshipType, toType, toId, derived: true });
+  };
+  assetRows.forEach((item) => addDerived("asset", item.id, "BELONGS_TO", "system", item.systemId));
+  gateRows.forEach((item) => addDerived("gate", item.id, "BELONGS_TO", "system", item.systemId));
+  evidenceRows.forEach((item) => { addDerived("evidence", item.id, "BELONGS_TO", "system", item.systemId); if (item.assetId) addDerived("evidence", item.id, "BELONGS_TO", "asset", item.assetId); });
+  findingRows.forEach((item) => { if (item.gateId) addDerived("finding", item.id, item.status === "closed" ? "AFFECTS" : "BLOCKS", "gate", item.gateId); });
+  dependencyRows.forEach((item) => addDerived("schedule_task", item.predecessorTaskId, "PRECEDES", "schedule_task", item.successorTaskId));
+  shipmentRows.forEach((item) => { if (item.equipmentId) addDerived("shipment", item.id, "AFFECTS", "asset", item.equipmentId); });
+  testRows.forEach((item) => { addDerived("cx_test", item.id, "AFFECTS", "gate", item.gateId); if (item.evidenceId) addDerived("cx_test", item.id, "GENERATED_FROM", "evidence", item.evidenceId); });
+  return { nodes, edges: [...edgeRows.map((edge) => ({ ...edge, derived: false as const })), ...derived] };
 }
 
 /**
@@ -68,15 +83,13 @@ export async function getProjectGraph(projectId: string) {
  * entries that let a reviewer traverse the evidence graph from that node.
  */
 export async function expandGraphNode(projectId: string, nodeId: string) {
-  const { nodes } = await getProjectGraph(projectId);
+  const { nodes, edges: graphEdges } = await getProjectGraph(projectId);
   const byId = new Map(nodes.map((item) => [item.id, item]));
   const node = byId.get(nodeId);
   if (!node) return null;
 
-  const [edgeRows, auditRows] = await Promise.all([
-    db.select().from(edges).where(and(eq(edges.projectId, projectId), or(eq(edges.fromId, nodeId), eq(edges.toId, nodeId)))),
-    db.select().from(auditEvents).where(and(eq(auditEvents.projectId, projectId), eq(auditEvents.entityId, nodeId))).orderBy(desc(auditEvents.createdAt))
-  ]);
+  const edgeRows = graphEdges.filter((edge) => edge.fromId === nodeId || edge.toId === nodeId);
+  const auditRows = await db.select().from(auditEvents).where(and(eq(auditEvents.projectId, projectId), eq(auditEvents.entityId, nodeId))).orderBy(desc(auditEvents.createdAt));
 
   const neighbors = edgeRows
     .map((edge) => {
