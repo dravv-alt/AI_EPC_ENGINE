@@ -991,6 +991,35 @@ export const shipments = pgTable(
   ],
 );
 
+// A shipment plan is a reviewable procurement recommendation derived from the
+// saved Site Analysis. It deliberately remains separate from a live shipment:
+// no route, schedule impact, or simulated telemetry is created until a person
+// approves the proposed package and supplies its logistics basis.
+export const shipmentPlans = pgTable(
+  "shipment_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").notNull().references(() => projects.id),
+    siteAnalysisId: uuid("site_analysis_id").references(() => siteAnalyses.id),
+    sourceKey: varchar("source_key", { length: 100 }).notNull(),
+    category: varchar("category", { length: 40 }).notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    requirementLevel: varchar("requirement_level", { length: 20 }).notNull(),
+    rationale: text("rationale").notNull(),
+    sourceAnswers: jsonb("source_answers").notNull().default({}),
+    transportMode: varchar("transport_mode", { length: 10 }).notNull().default("land"),
+    status: varchar("status", { length: 24 }).notNull().default("proposed"),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    materializedShipmentId: uuid("materialized_shipment_id").references(() => shipments.id),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("shipment_plans_project_source_unique").on(table.projectId, table.sourceKey),
+    index("shipment_plans_project_status_idx").on(table.projectId, table.status),
+  ],
+);
+
 export const alerts = pgTable(
   "alerts",
   {

@@ -2133,6 +2133,48 @@ td small {
 .shipment-registration .check-label input {
   min-height: auto;
 }
+.shipment-plan-panel {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+.shipment-manual-panel { padding: 22px; }
+.shipment-manual-panel h2 { display: flex; align-items: center; gap: 8px; }
+.shipment-plan-panel .section-heading > div > p:last-child {
+  max-width: 720px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.shipment-primary-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.shipment-plan-empty { margin: 0; padding: 11px 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; font-size: 12px; }
+.shipment-plan-list {
+  display: grid;
+  gap: 8px;
+}
+.shipment-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-sunken, rgba(255,255,255,.35));
+}
+.shipment-plan-row b { display: block; margin: 7px 0 4px; font-size: 14px; }
+.shipment-plan-row p { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.shipment-plan-row small { color: var(--muted); font: 9px var(--mono); }
+.shipment-plan-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 180px; }
+.shipment-plan-actions > span { color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
+.plan-level { display: inline-flex; padding: 3px 7px; border-radius: 999px; font: 9px var(--mono); text-transform: uppercase; }
+.plan-level.must_order { color: #9f1239; background: #ffe4e6; }
+.plan-level.confirm_order { color: #92400e; background: #fef3c7; }
+.plan-level.planning_only { color: #1d4ed8; background: #dbeafe; }
+.shipment-plan-row.status-approved { border-color: #86efac; }
+.shipment-plan-row.status-rejected { opacity: .58; }
+.shipment-view-controls { display: flex; align-items: center; gap: 5px; }
+.shipment-view-controls .button { min-height: 30px; padding: 5px 8px; font-size: 10px; }
+.shipment-view-controls .button.is-active { border-color: var(--accent); color: var(--accent); }
 .shipment-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.75fr);
@@ -2170,6 +2212,7 @@ td small {
   padding: 13px 0;
   border-top: 1px solid var(--line);
 }
+.shipment-row.is-compact { padding: 10px 0; }
 .shipment-row.is-selected {
   margin: 0 -10px;
   padding: 13px 10px;
@@ -2220,6 +2263,9 @@ td small {
   color: var(--muted);
   font-size: 9px;
 }
+.shipment-detail { margin: 9px 0 2px 28px; }
+.shipment-detail .button { min-height: 32px; padding: 6px 9px; font-size: 10px; }
+.shipment-assessment { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
 .cx-setup-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
