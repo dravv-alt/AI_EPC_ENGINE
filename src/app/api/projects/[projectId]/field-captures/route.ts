@@ -8,6 +8,8 @@ import { assets, evidence, projects, storageObjects, systems } from "@/lib/db/sc
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { detectAllowedCaptureMediaType } from "@/lib/storage/magic";
 import { objectStorage } from "@/lib/storage/service";
+import { classifyEvidenceArtifact } from "@/lib/evidence/classification";
+import { evidenceTypeValues } from "@/lib/evidence/taxonomy";
 
 export const runtime = "nodejs";
 const maxArtifactBytes = 20 * 1024 * 1024;
@@ -15,7 +17,7 @@ const schema = z.object({
   clientCaptureId: z.string().uuid(),
   systemId: z.string().uuid(),
   assetId: z.string().uuid().optional(),
-  evidenceType: z.enum(["photo", "measurement", "observation", "test_reading", "inspection", "document"]),
+  evidenceType: z.enum(evidenceTypeValues).or(z.literal("observation")),
   notes: z.string().trim().min(2).max(5000),
   capturedAt: z.string().datetime()
 });
@@ -56,13 +58,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const artifact = form.get("artifact");
     let stored: Awaited<ReturnType<typeof objectStorage.put>> | null = null;
+    let uploadedArtifact: File | null = null;
     if (artifact instanceof File && artifact.size > 0) {
       if (artifact.size > maxArtifactBytes) return NextResponse.json({ error: "Field artifacts must be 20 MB or smaller." }, { status: 413 });
       const bytes = new Uint8Array(await artifact.arrayBuffer());
       const mediaType = detectAllowedCaptureMediaType(bytes, artifact.type);
       if (!mediaType) return NextResponse.json({ error: "Only validated JPEG, PNG, PDF, CSV, and text artifacts are accepted." }, { status: 415 });
       stored = await objectStorage.put({ tenantId: project.tenantId, projectId, bytes, mediaType, fileName: artifact.name || "field-artifact" });
+      uploadedArtifact = artifact;
     }
+    const classification = await classifyEvidenceArtifact(uploadedArtifact, parsed.data.evidenceType);
     const contentHash = stored?.sha256 ?? createHash("sha256").update(JSON.stringify({ evidenceType: parsed.data.evidenceType, notes: parsed.data.notes, capturedAt: parsed.data.capturedAt, systemId: parsed.data.systemId, assetId: parsed.data.assetId ?? null })).digest("hex");
     const record = await db.transaction(async (tx) => {
       let objectId: string | null = null;
@@ -70,10 +75,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         const [object] = await tx.insert(storageObjects).values({ tenantId: project.tenantId, projectId, objectKey: stored.objectKey, mediaType: stored.mediaType, byteSize: stored.byteSize, sha256: stored.sha256, createdBy: actor.userId }).returning();
         objectId = object.id;
       }
-      const [record] = await tx.insert(evidence).values({ projectId, systemId: system.id, assetId: parsed.data.assetId ?? null, storageObjectId: objectId, evidenceType: parsed.data.evidenceType, validityState: "pending", contentHash, clientCaptureId: parsed.data.clientCaptureId, notes: parsed.data.notes, capturedBy: actor.userId, capturedAt: new Date(parsed.data.capturedAt) }).returning();
+      const [record] = await tx.insert(evidence).values({ projectId, systemId: system.id, assetId: parsed.data.assetId ?? null, storageObjectId: objectId, evidenceType: parsed.data.evidenceType, validityState: "pending", contentHash, clientCaptureId: parsed.data.clientCaptureId, notes: parsed.data.notes, aiDescription: classification.description, classificationMetadata: classification.metadata, classificationProvider: classification.provider, classificationConfidence: classification.confidence, capturedBy: actor.userId, capturedAt: new Date(parsed.data.capturedAt) }).returning();
       return record;
     });
-    await writeAuditEvent({ projectId, actorId: actor.userId, action: "field_capture.synced", entityType: "evidence", entityId: record.id, after: { clientCaptureId: record.clientCaptureId, contentHash, storageObjectId: record.storageObjectId, authority: "pending_review" } });
+    await writeAuditEvent({ projectId, actorId: actor.userId, action: "field_capture.synced", entityType: "evidence", entityId: record.id, after: { clientCaptureId: record.clientCaptureId, contentHash, storageObjectId: record.storageObjectId, classification: classification.status, classificationProvider: classification.provider, authority: "pending_review" } });
     return NextResponse.json({ evidence: record, duplicate: false, syncState: "needs_review", authority: "pending_review" }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to synchronize field capture." }, { status: error instanceof AccessError ? error.status : 500 });

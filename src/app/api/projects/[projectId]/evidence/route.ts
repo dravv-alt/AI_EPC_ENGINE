@@ -5,8 +5,9 @@ import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { assets, evidence, sourceRegions, systems } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { evidenceTypeValues } from "@/lib/evidence/taxonomy";
 
-const schema = z.object({ systemId: z.string().uuid(), assetId: z.string().uuid().optional(), sourceRegionId: z.string().uuid().optional(), evidenceType: z.string().trim().min(2).max(40), capturedAt: z.string().datetime(), contentHash: z.string().regex(/^[a-f0-9]{64}$/).optional() });
+const schema = z.object({ systemId: z.string().uuid(), assetId: z.string().uuid().optional(), sourceRegionId: z.string().uuid().optional(), evidenceType: z.enum(evidenceTypeValues), capturedAt: z.string().datetime(), contentHash: z.string().regex(/^[a-f0-9]{64}$/).optional() });
 
 export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) { const { projectId } = await params; try { await requireProjectPermission(projectId, "audit:view"); return NextResponse.json({ items: await db.select().from(evidence).where(eq(evidence.projectId, projectId)) }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load evidence." }, { status: error instanceof AccessError ? error.status : 500 }); } }
 

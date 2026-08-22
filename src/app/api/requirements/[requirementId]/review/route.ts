@@ -26,9 +26,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ requ
 }
 
 const supportedUnits = new Set(["A", "V", "kV", "W", "kW", "MW", "Hz", "bar", "kPa", "Pa", "psi", "°C", "C", "%", "l/s", "L/s", "m3/h", "m³/h", "rpm", "mm", "cm", "m", "ms", "s", "min", "h", "day", "days"]);
+const hasAtMostWords = (value: string, limit: number) => value.trim().split(/\s+/).filter(Boolean).length <= limit;
 const reviewSchema = z.object({
   action: z.enum(["accept", "reject", "edit", "duplicate"]),
   statement: z.string().trim().min(8).max(10000).optional(),
+  displayTitle: z.string().trim().min(3).max(180).refine((value) => hasAtMostWords(value, 9), "Review titles are limited to 9 words.").optional(),
+  displaySummary: z.string().trim().min(8).max(280).refine((value) => hasAtMostWords(value, 28), "Review summaries are limited to 28 words.").optional(),
   numericValue: z.coerce.number().finite().optional(),
   unit: z.string().trim().max(40).optional(),
   tolerance: z.coerce.number().finite().nonnegative().optional(),
@@ -60,6 +63,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
       const [updated] = await tx.update(requirements).set({
         reviewState,
         statement: parsed.data.statement ?? requirement.statement,
+        displayTitle: parsed.data.displayTitle ?? requirement.displayTitle,
+        displaySummary: parsed.data.displaySummary ?? requirement.displaySummary,
+        presentationProvider: parsed.data.action === "edit" && (parsed.data.displayTitle || parsed.data.displaySummary) ? "human-reviewed" : requirement.presentationProvider,
         numericValue: parsed.data.numericValue !== undefined ? String(parsed.data.numericValue) : requirement.numericValue,
         unit: parsed.data.unit ?? requirement.unit,
         tolerance: parsed.data.tolerance !== undefined ? String(parsed.data.tolerance) : requirement.tolerance,

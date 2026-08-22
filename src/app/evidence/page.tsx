@@ -32,7 +32,7 @@ export default async function EvidencePage() {
       systems={systemRows.map(({ id, name }) => ({ id, name }))}
       assets={assetRows.map(({ id, systemId, tag, assetType }) => ({ id, systemId, tag, assetType }))}
       requirements={requirementRows}
-      records={evidenceRows.map((record) => ({ id: record.id, systemId: record.systemId, systemName: systemById.get(record.systemId) ?? "System record unavailable", assetId: record.assetId, assetTag: record.assetId ? assetById.get(record.assetId) ?? "Asset record unavailable" : null, evidenceType: record.evidenceType, validityState: record.validityState, contentHash: record.contentHash, capturedAt: record.capturedAt.toISOString(), capturedBy: record.capturedBy ? userById.get(record.capturedBy) ?? "Project user" : "System", linkedRequirementIds: linkedByEvidence.get(record.id) ?? [] }))}
+      records={evidenceRows.map((record) => ({ id: record.id, systemId: record.systemId, systemName: systemById.get(record.systemId) ?? "System record unavailable", assetId: record.assetId, assetTag: record.assetId ? assetById.get(record.assetId) ?? "Asset record unavailable" : null, evidenceType: record.evidenceType, validityState: record.validityState, contentHash: record.contentHash, capturedAt: record.capturedAt.toISOString(), capturedBy: record.capturedBy ? userById.get(record.capturedBy) ?? "Project user" : "System", linkedRequirementIds: linkedByEvidence.get(record.id) ?? [], aiDescription: record.aiDescription, classificationProvider: record.classificationProvider }))}
     />
   </FeatureShell>;
 }

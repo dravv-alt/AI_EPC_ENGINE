@@ -7,7 +7,8 @@ import { documents, documentVersions, knowledgeChunks, projects, requirements, s
 import { getModelProvider } from "@/lib/model/provider";
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 
-const requirementProposalSchema = z.object({ proposals: z.array(z.object({ regionId: z.string().uuid(), statement: z.string().min(8).max(10000), modality: z.enum(["shall", "must", "should", "may", "informative"]), numericValue: z.number().finite().nullable(), unit: z.string().max(40).nullable(), tolerance: z.number().nonnegative().nullable(), comparisonModality: z.enum(["numeric", "boolean", "categorical", "narrative"]), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(500) });
+const withinWordLimit = (value: string, limit: number) => value.trim().split(/\s+/).filter(Boolean).length <= limit;
+const requirementProposalSchema = z.object({ proposals: z.array(z.object({ regionId: z.string().uuid(), statement: z.string().min(8).max(10000), displayTitle: z.string().trim().min(3).max(180).refine((value) => withinWordLimit(value, 9), "displayTitle exceeds 9 words"), displaySummary: z.string().trim().min(8).max(280).refine((value) => withinWordLimit(value, 28), "displaySummary exceeds 28 words"), modality: z.enum(["shall", "must", "should", "may", "informative"]), numericValue: z.number().finite().nullable(), unit: z.string().max(40).nullable(), tolerance: z.number().nonnegative().nullable(), comparisonModality: z.enum(["numeric", "boolean", "categorical", "narrative"]), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(500) });
 const scheduleProposalSchema = z.object({ tasks: z.array(z.object({ regionId: z.string().uuid(), name: z.string().min(3).max(240), durationHours: z.number().int().positive().max(100000), vendor: z.string().max(200).nullable(), leadTimeDays: z.number().int().nonnegative().nullable(), deadlineType: z.enum(["hard", "soft"]).nullable(), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(1000), resources: z.array(z.object({ regionId: z.string().uuid(), name: z.string().min(2).max(200), capacity: z.number().int().positive().max(100000), unit: z.string().min(1).max(60), confidence: z.number().min(0).max(1), validationIssues: z.array(z.string().max(200)).max(20) })).max(200) });
 const scheduleDocumentTypes = new Set(["contract", "timeline", "po", "approval", "schedule"]);
 const supportedUnits = new Set(["A", "V", "kV", "W", "kW", "MW", "Hz", "bar", "kPa", "Pa", "psi", "°C", "C", "%", "l/s", "L/s", "m3/h", "m³/h", "rpm", "mm", "cm", "m", "ms", "s", "min", "h", "day", "days"]);
@@ -15,6 +16,26 @@ const supportedUnits = new Set(["A", "V", "kV", "W", "kW", "MW", "Hz", "bar", "k
 function numericFromText(text: string) {
   const match = text.match(/(-?\d+(?:\.\d+)?)\s*(kPa|Pa|bar|psi|kV|V|MW|kW|W|Hz|°C|C|%|l\/s|L\/s|m3\/h|m³\/h|rpm|mm|cm|m|ms|s|min|h|days?)(?:\s*[±+]\s*(\d+(?:\.\d+)?))?/i);
   return match ? { numericValue: Number(match[1]), unit: match[2], tolerance: match[3] ? Number(match[3]) : null } : { numericValue: null, unit: null, tolerance: null };
+}
+
+function conciseWords(text: string, limit: number) {
+  return text.replace(/\s+/g, " ").trim().split(" ").slice(0, limit).join(" ").replace(/[,:;\-]+$/, "");
+}
+
+function requirementPresentation(statement: string) {
+  return {
+    displayTitle: conciseWords(statement, 9),
+    displaySummary: conciseWords(statement, 28)
+  };
+}
+
+// The deterministic provider must obey the same atomic-record contract as an
+// enabled model. A source region may contain a whole paragraph or a numbered
+// list, so never turn its full corpus into one opaque requirement proposal.
+function atomicRequirementStatements(text: string) {
+  const fragments = text.replace(/\r/g, " ").split(/(?<=[.;!?])\s+|\n+|(?=\b(?:\d+\.|[-•])\s)/).map((value) => value.trim()).filter(Boolean);
+  const modal = fragments.filter((value) => /\b(shall|must|should|may)\b/i.test(value));
+  return (modal.length ? modal : /\b(shall|must|should|may)\b/i.test(text) ? [text] : []).map((value) => value.slice(0, 10000));
 }
 
 // Materializes controlled source regions into knowledge_chunks (once per region)
@@ -72,15 +93,15 @@ export async function proposeDocumentRecords(documentVersionId: string, actorId:
 
   const existing = await db.select({ id: requirements.id }).from(requirements).where(and(eq(requirements.projectId, context.document.projectId), inArray(requirements.sourceRegionId, regions.map((region) => region.id))));
   if (existing.length) return { proposed: 0, kind: "requirements", duplicate: true };
-  const mock = { proposals: regions.filter((region) => /\b(shall|must|should|may)\b/i.test(region.extractedText)).slice(0, 100).map((region) => { const numeric = numericFromText(region.extractedText); const modality = (region.extractedText.match(/\b(shall|must|should|may)\b/i)?.[1]?.toLowerCase() ?? "informative") as "shall" | "must" | "should" | "may" | "informative"; const statement = region.extractedText.slice(0, 10000); const comparisonModality = classifyComparisonModality({ statement, numericValue: numeric.numericValue, unit: numeric.unit }); return { regionId: region.id, statement, modality, ...numeric, comparisonModality, confidence: 0.8, validationIssues: numeric.unit && !supportedUnits.has(numeric.unit) ? [`Unsupported unit ${numeric.unit}.`] : [] }; }) };
-  const generated = await provider.generateStructured({ system: "Extract atomic requirement proposals from controlled source regions. Every proposal must cite exactly one supplied regionId. Preserve modality, numeric value, normalized unit, tolerance and confidence. Never invent a citation. Also classify each proposal's comparisonModality — the kind of comparison a downstream compliance check against this requirement would need to perform: \"numeric\" when the statement has a measurable value with a unit and tolerance (e.g. a pressure, voltage, or dimension callout); \"boolean\" when the statement is an explicit presence/absence, provided/not-provided, or yes/no requirement; \"categorical\" when the statement makes an explicit type/class/material/rating callout; \"narrative\" for anything else that requires human qualitative engineering judgment to compare. Output only JSON.", prompt: JSON.stringify({ documentType: context.document.documentType, regions: sourcePayload }), schema: requirementProposalSchema, mock });
+  const mock = { proposals: regions.flatMap((region) => atomicRequirementStatements(region.extractedText).map((statement) => { const numeric = numericFromText(statement); const modality = (statement.match(/\b(shall|must|should|may)\b/i)?.[1]?.toLowerCase() ?? "informative") as "shall" | "must" | "should" | "may" | "informative"; const comparisonModality = classifyComparisonModality({ statement, numericValue: numeric.numericValue, unit: numeric.unit }); return { regionId: region.id, statement, ...requirementPresentation(statement), modality, ...numeric, comparisonModality, confidence: 0.8, validationIssues: numeric.unit && !supportedUnits.has(numeric.unit) ? [`Unsupported unit ${numeric.unit}.`] : [] }; })).slice(0, 100) };
+  const generated = await provider.generateStructured({ system: "Extract atomic requirement proposals from controlled source regions. Every proposal must cite exactly one supplied regionId. Preserve modality, numeric value, normalized unit, tolerance and confidence. Never invent a citation. Also provide displayTitle of at most 9 words and displaySummary of at most 28 words: both must accurately summarize only the cited statement, never add material facts, and never replace the complete statement. Also classify each proposal's comparisonModality — the kind of comparison a downstream compliance check against this requirement would need to perform: \"numeric\" when the statement has a measurable value with a unit and tolerance (e.g. a pressure, voltage, or dimension callout); \"boolean\" when the statement is an explicit presence/absence, provided/not-provided, or yes/no requirement; \"categorical\" when the statement makes an explicit type/class/material/rating callout; \"narrative\" for anything else that requires human qualitative engineering judgment to compare. Output only JSON.", prompt: JSON.stringify({ documentType: context.document.documentType, regions: sourcePayload }), schema: requirementProposalSchema, mock });
   if (generated.data.proposals.some((item) => !regionIds.has(item.regionId))) throw new Error("Model output contained an uncited or cross-document requirement proposal.");
   // Recorded unconditionally: the batched generateStructured call was made
   // for this document version regardless of how many proposals survived unit
   // validation below, so its provenance is recorded regardless too.
   await db.update(documentVersions).set({ extractionModel: generated.model, extractionProvider: generated.provider, updatedAt: new Date() }).where(eq(documentVersions.id, documentVersionId));
   const valid = generated.data.proposals.filter((item) => !item.unit || supportedUnits.has(item.unit));
-  const rows = valid.length ? await db.insert(requirements).values(valid.map((item) => ({ projectId: context.document.projectId, sourceRegionId: item.regionId, statement: item.statement, modality: item.modality, numericValue: item.numericValue === null ? null : String(item.numericValue), unit: item.unit, tolerance: item.tolerance === null ? null : String(item.tolerance), comparisonModality: item.comparisonModality, confidence: String(item.confidence), reviewState: "proposed" as const, reviewNote: item.validationIssues.length ? `Validation flags: ${item.validationIssues.join(" ")}` : null }))).returning() : [];
+  const rows = valid.length ? await db.insert(requirements).values(valid.map((item) => ({ projectId: context.document.projectId, sourceRegionId: item.regionId, statement: item.statement, displayTitle: item.displayTitle, displaySummary: item.displaySummary, presentationProvider: generated.model, modality: item.modality, numericValue: item.numericValue === null ? null : String(item.numericValue), unit: item.unit, tolerance: item.tolerance === null ? null : String(item.tolerance), comparisonModality: item.comparisonModality, confidence: String(item.confidence), reviewState: "proposed" as const, reviewNote: item.validationIssues.length ? `Validation flags: ${item.validationIssues.join(" ")}` : null }))).returning() : [];
   for (const row of rows) await writeAuditEvent({ projectId: context.document.projectId, actorId, action: "requirement.model_proposed", entityType: "requirement", entityId: row.id, after: { documentVersionId, sourceRegionId: row.sourceRegionId, model: generated.model, advisory: true } });
   return { proposed: rows.length, rejectedByValidation: generated.data.proposals.length - valid.length, kind: "requirements", provider: generated.provider, model: generated.model };
 }

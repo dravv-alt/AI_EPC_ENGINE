@@ -17,12 +17,25 @@ async function submitJson(url: string, body: Record<string, unknown>) {
 
 const readable = (value: string) => value.replaceAll("_", " ");
 
+const systemTemplates = [
+  ["Chilled Water System", "mechanical_hvac"], ["Electrical Power Distribution", "electrical_power"],
+  ["Fire & Life Safety", "fire_life_safety"], ["Building Management System", "controls_bms"],
+  ["Plumbing & Water Services", "plumbing_water"], ["Data Centre IT", "data_centre_it"],
+  ["Security & Access Control", "security_access"], ["Network & Telecoms", "network_telecoms"],
+  ["Vertical Transportation", "vertical_transport"], ["Civil & Structural", "civil_structural"],
+] as const;
+const assetTypes = ["Pump", "Chiller", "Air handling unit", "Cooling tower", "Valve", "Transformer", "Switchboard", "UPS", "Generator", "Circuit breaker", "Fire pump", "Detector", "Meter", "Sensor", "Camera", "Access controller", "Server rack", "Network switch", "Other"];
+const vendors = ["ABB", "Carrier", "Cummins", "Daikin", "Eaton", "Grundfos", "Honeywell", "Johnson Controls", "KSB", "Schneider Electric", "Siemens", "Trane", "Vertiv"];
+const gateTemplates = ["Design review", "Factory acceptance test", "Pre-functional verification", "Functional testing", "Integrated systems testing", "Handover & closeout"];
+
 export function SystemsWorkbench({ projectId, systems, assets, gates }: { projectId: string; systems: System[]; assets: Asset[]; gates: Gate[] }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(systems[0]?.id ?? "");
+  const [systemName, setSystemName] = useState("");
+  const [systemType, setSystemType] = useState("");
   const filteredSystems = useMemo(() => { const term = query.trim().toLowerCase(); return term ? systems.filter((system) => `${system.name} ${system.systemType}`.toLowerCase().includes(term)) : systems; }, [query, systems]);
   const selected = systems.find((system) => system.id === selectedId) ?? filteredSystems[0] ?? systems[0];
   const selectedAssets = selected ? assets.filter((asset) => asset.systemId === selected.id) : [];
@@ -30,7 +43,7 @@ export function SystemsWorkbench({ projectId, systems, assets, gates }: { projec
 
   async function createSystem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = event.currentTarget; const values = new FormData(form); setSaving(true);
-    try { await submitJson(`/api/projects/${projectId}/systems`, { name: values.get("name"), systemType: values.get("systemType") }); form.reset(); setMessage("System saved to the project database and audit chain."); router.refresh(); }
+    try { await submitJson(`/api/projects/${projectId}/systems`, { name: values.get("name"), systemType: values.get("systemType") }); form.reset(); setSystemName(""); setSystemType(""); setMessage("System saved to the project database and audit chain."); router.refresh(); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Unable to create system."); } finally { setSaving(false); }
   }
   async function createAsset(event: FormEvent<HTMLFormElement>) {
@@ -54,9 +67,9 @@ export function SystemsWorkbench({ projectId, systems, assets, gates }: { projec
     <details className="surface record-composer">
       <summary><span><Plus size={16} /> Add controlled record</span><small>System, asset, or approval gate</small></summary>
       <div className="configuration-forms">
-        <form className="compact-form" onSubmit={createSystem}><p className="eyebrow">System</p><h2>Create system</h2><label>Name<input name="name" required minLength={2} /></label><label>Type<input name="systemType" required minLength={2} /></label><button className="button button-primary" disabled={saving}>Create system</button></form>
-        <form className="compact-form" onSubmit={createAsset}><p className="eyebrow">Asset</p><h2>Register equipment</h2><label>Parent system<select name="systemId" required disabled={!systems.length}><option value="">Select system</option>{systems.map((system) => <option value={system.id} key={system.id}>{system.name}</option>)}</select></label><label>Tag<input name="tag" required minLength={2} /></label><label>Asset type<input name="assetType" required minLength={2} /></label><label>Vendor<input name="vendor" /></label><button className="button button-primary" disabled={saving || !systems.length}>Register asset</button></form>
-        <form className="compact-form" onSubmit={createGate}><p className="eyebrow">Gate</p><h2>Define approval gate</h2><label>Parent system<select name="systemId" required disabled={!systems.length}><option value="">Select system</option>{systems.map((system) => <option value={system.id} key={system.id}>{system.name}</option>)}</select></label><label>Gate name<input name="name" required minLength={2} /></label><label>Sequence<input name="sequenceNumber" type="number" min="0" required defaultValue="1" /></label><label>Approval authority<select name="approvalRole" defaultValue="approver"><option value="approver">Approver</option><option value="admin">Administrator</option><option value="commissioning_manager">Commissioning manager</option></select></label><button className="button button-primary" disabled={saving || !systems.length}>Create gate</button></form>
+        <form className="compact-form" onSubmit={createSystem}><p className="eyebrow">System</p><h2>Create system</h2><label>Start with a controlled template<select defaultValue="" onChange={(event) => { const template = systemTemplates.find(([name]) => name === event.target.value); if (template) { setSystemName(template[0]); setSystemType(template[1]); } }}><option value="">Choose a system template</option>{systemTemplates.map(([name, type]) => <option value={name} key={type}>{name}</option>)}</select></label><label>Name<input name="name" value={systemName} onChange={(event) => setSystemName(event.target.value)} required minLength={2} /></label><label>System family<input name="systemType" value={systemType} onChange={(event) => setSystemType(event.target.value)} list="system-type-options" required minLength={2} /><datalist id="system-type-options">{systemTemplates.map(([, type]) => <option value={type} key={type} />)}</datalist></label><button className="button button-primary" disabled={saving}>Create system</button></form>
+        <form className="compact-form" onSubmit={createAsset}><p className="eyebrow">Asset</p><h2>Register equipment</h2><label>Parent system<select name="systemId" required disabled={!systems.length}><option value="">{systems.length ? "Select system" : "Create a system first"}</option>{systems.map((system) => <option value={system.id} key={system.id}>{system.name}</option>)}</select></label><label>Tag<input name="tag" placeholder="e.g. CHWP-01" required minLength={2} /></label><label>Asset type<input name="assetType" list="asset-types" placeholder="Choose or type an asset type" required minLength={2} /><datalist id="asset-types">{assetTypes.map((type) => <option value={type} key={type} />)}</datalist></label><label>Vendor<input name="vendor" list="vendor-options" placeholder="Choose or type a vendor" /><datalist id="vendor-options">{vendors.map((vendor) => <option value={vendor} key={vendor} />)}</datalist></label><button className="button button-primary" disabled={saving || !systems.length}>Register asset</button></form>
+        <form className="compact-form" onSubmit={createGate}><p className="eyebrow">Gate</p><h2>Define approval gate</h2><label>Parent system<select name="systemId" required disabled={!systems.length}><option value="">{systems.length ? "Select system" : "Create a system first"}</option>{systems.map((system) => <option value={system.id} key={system.id}>{system.name}</option>)}</select></label><label>Gate name<input name="name" list="gate-templates" placeholder="Choose or type a gate" required minLength={2} /><datalist id="gate-templates">{gateTemplates.map((name) => <option value={name} key={name} />)}</datalist></label><label>Sequence<input name="sequenceNumber" type="number" min="0" required defaultValue="1" /></label><label>Approval authority<select name="approvalRole" defaultValue="approver"><option value="approver">Approver</option><option value="admin">Administrator</option><option value="commissioning_manager">Commissioning manager</option></select></label><button className="button button-primary" disabled={saving || !systems.length}>Create gate</button></form>
       </div>
     </details>
     {message && <p className="surface inline-feedback" role="status">{message}</p>}

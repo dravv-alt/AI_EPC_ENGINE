@@ -1,7 +1,6 @@
-import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
-import { RequirementReviewActions } from "@/components/requirement-review-actions";
+import { RequirementsWorkbench } from "@/components/requirements-workbench";
 import { getDashboardData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, requirements, sourceRegions } from "@/lib/db/schema";
@@ -19,18 +18,14 @@ export default async function RequirementsPage() {
       .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
       .innerJoin(documents, eq(documentVersions.documentId, documents.id))
       .where(eq(requirements.projectId, projectId))
-      .orderBy(desc(requirements.createdAt))
+      .orderBy(asc(documents.title), asc(documentVersions.revision), asc(sourceRegions.pageNumber), asc(requirements.createdAt))
   ]);
   if (!data) throw new Error("Project not found");
-  const accepted = items.filter(({ requirement }) => requirement.reviewState === "accepted").map(({ requirement }) => ({ id: requirement.id, statement: requirement.statement }));
-  return <FeatureShell projectName={data.project} eyebrow="Engineering · human authority" title="Requirements" description="Review every cited proposal, normalize values and units, retain rejected/duplicate history, and allow only accepted records into readiness.">
-    <div className="workflow-stack">{items.map(({ requirement, region, version, document }) => <article className="surface workflow-card" key={requirement.id}>
-      <span className={`source-status ${requirement.reviewState === "accepted" ? "processed" : "pending"}`}>{requirement.reviewState}</span>
-      <h2>{requirement.statement}</h2>
-      <p>Modality: {requirement.modality} · Confidence: {requirement.confidence ?? "not scored"}{requirement.numericValue ? ` · ${requirement.numericValue} ${requirement.unit ?? "unit missing"}${requirement.tolerance ? ` ± ${requirement.tolerance}` : ""}` : ""}</p>
-      <Link className="citation-link" href={`/sources/regions/${region.id}`}><span className="clause">Exact citation</span>{document.title} · {version.revision} · page {region.pageNumber} · SHA {region.contentHash.slice(0, 12)}…</Link>
-      {requirement.reviewNote && <p className="review-note">Reviewer rationale: {requirement.reviewNote}</p>}
-      {["proposed", "edited"].includes(requirement.reviewState) && <RequirementReviewActions requirement={requirement} acceptedTargets={accepted.filter((target) => target.id !== requirement.id)} />}
-    </article>)}</div>
+  return <FeatureShell projectName={data.project} eyebrow="Engineering · human authority" title="Requirements" description="Review concise, cited proposals by source document. Expand only when you need the complete controlled corpus.">
+    <RequirementsWorkbench rows={items.map(({ requirement, region, version, document }) => ({
+      id: requirement.id, statement: requirement.statement, displayTitle: requirement.displayTitle, displaySummary: requirement.displaySummary, presentationProvider: requirement.presentationProvider,
+      modality: requirement.modality, comparisonModality: requirement.comparisonModality, numericValue: requirement.numericValue, unit: requirement.unit, tolerance: requirement.tolerance, confidence: requirement.confidence,
+      reviewState: requirement.reviewState, reviewNote: requirement.reviewNote, regionId: region.id, documentTitle: document.title, revision: version.revision, pageNumber: region.pageNumber, contentHash: region.contentHash
+    }))} />
   </FeatureShell>;
 }

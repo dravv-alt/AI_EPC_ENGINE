@@ -10,7 +10,9 @@ import {
   Camera,
   CalendarRange,
   CircleAlert,
+  ChartNoAxesCombined,
   ClipboardCheck,
+  FilePenLine,
   FileCheck2,
   FolderOpen,
   FolderKanban,
@@ -22,18 +24,21 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  MapPinned,
   ShieldCheck,
   Ship,
   Wrench
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { Route } from "next";
 
-type WorkspaceHref = "/" | "/projects" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover";
+type WorkspaceHref = "/" | "/projects" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover" | "/financial-modeler" | "/technology-drafts" | "/site-analysis";
 export type WorkspaceLink = [LucideIcon, string, WorkspaceHref];
 
 export const primaryWorkspaceLinks: WorkspaceLink[] = [
   [FolderKanban, "Projects", "/projects"],
   [Grid2X2, "Overview", "/"],
+  [MapPinned, "Site Analysis", "/site-analysis"],
   [ClipboardCheck, "Readiness", "/readiness"],
   [CircleAlert, "Issues", "/actions"]
 ];
@@ -42,6 +47,7 @@ export const workspaceGroups: Array<{ label: string; links: WorkspaceLink[] }> =
   { label: "Project records", links: [[FolderOpen, "Documents", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems & Assets", "/systems"], [Archive, "Evidence", "/evidence"], [Camera, "Capture Evidence", "/field-capture"]] },
   { label: "Delivery", links: [[CalendarRange, "Schedule", "/schedule"], [Boxes, "Commissioning Tests", "/cx"], [Ship, "Shipments & Logistics", "/shipments"]] },
   { label: "Assurance", links: [[FileCheck2, "Compliance", "/compliance"], [GitCompareArrows, "Change Control", "/changes"], [Network, "Traceability", "/graph"], [ShieldCheck, "Turnover & Closeout", "/turnover"]] },
+  { label: "Commercial", links: [[ChartNoAxesCombined, "Financial Modeler · Beta", "/financial-modeler"], [FilePenLine, "Technology Draft Studio", "/technology-drafts"]] },
   { label: "Project Tools", links: [[Search, "Knowledge Search", "/knowledge"], [Bell, "Alert Center", "/command-center"]] }
 ];
 
@@ -129,7 +135,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
       <nav className="nav-list" aria-label="Project areas">
         <div className="nav-primary">
           {primaryWorkspaceLinks.map(([Icon, label, href]) => (
-            <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href} key={href}>
+            <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
               <Icon size={18} /><span>{label}</span>
             </Link>
           ))}
@@ -139,7 +145,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
             <h2 className="nav-group-label" id={`nav-group-${group.label.toLowerCase()}`}>{group.label}</h2>
             <div className="nav-children">
               {group.links.map(([Icon, label, href]) => (
-                <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href} key={href}>
+                <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
                   <Icon size={18} /><span>{label}</span>
                 </Link>
               ))}

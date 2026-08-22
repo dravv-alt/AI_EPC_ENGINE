@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import {
   AlertTriangle,
   ArrowRight,
@@ -46,6 +47,8 @@ export function ProjectCommandOverview({ data }: { data: DashboardData }) {
           <article><span><FolderKanban size={16} /> Open issues</span><strong>{work?.value ?? "0"}</strong><small>{work?.detail}</small></article>
           <article><span><CalendarDays size={16} /> Attention gate</span><strong className="pm-summary-name">{currentGate?.gate ?? data.gate}</strong><small>{currentGate ? stateLabel[currentGate.state] : "Not configured"}</small></article>
         </section>
+
+        {data.siteAnalysis && <section className="pm-site-analysis-card"><div><p className="eyebrow">Site analysis · planning basis</p><h2>{data.siteAnalysis.location}</h2><p>Target {data.siteAnalysis.targetItMw} MW IT · utility {data.siteAnalysis.utilityMw} MW · {data.siteAnalysis.cooling}</p></div><div><strong>{data.siteAnalysis.progress}%</strong><small>sections reviewed</small><Link href={"/site-analysis" as Route}>Open analysis <ArrowRight size={14} /></Link></div></section>}
 
         <ProjectAnalytics data={data} />
 

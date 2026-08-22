@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { alerts, assets, auditEvents, documentVersions, documents, evidence, findings, gates, projectMembers, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, sourceRegions, systems, users } from "@/lib/db/schema";
+import { alerts, assets, auditEvents, documentVersions, documents, evidence, findings, gates, projectMembers, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, siteAnalyses, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getProjectGateReadiness, type GateReadiness } from "@/lib/readiness/project-readiness";
 import { requireProjectPermission } from "@/lib/projects/access";
 
@@ -22,6 +22,7 @@ export interface DashboardData {
   members: Array<{ id: string; name: string; role: string }>;
   timelineTasks: Array<{ id: string; name: string; durationHours: number; earliestStart: string | null; deadline: string | null; reviewState: string }>;
   proposal: { id: string; statement: string; citation: string } | null;
+  siteAnalysis: { location: string; targetItMw: string; utilityMw: string; cooling: string; progress: number } | null;
   insights: {
     gateBars: Array<{ id: string; label: string; state: ReadinessTone; percent: number; evidence: string }>;
     evidence: Array<{ label: string; value: number; tone: string }>;
@@ -121,7 +122,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
   const project = await db.query.projects.findFirst({ where: (projects, { eq }) => eq(projects.id, projectId) });
   if (!project) return null;
 
-  const [projectGates, projectSystems, projectAssets, projectVersions, projectRegions, projectRequirements, projectFindings, people, memberRows, gateReadiness, projectEvidence, projectShipments, projectTasks, latestSchedule, activeAlerts, recentAudit] = await Promise.all([
+  const [projectGates, projectSystems, projectAssets, projectVersions, projectRegions, projectRequirements, projectFindings, people, memberRows, gateReadiness, projectEvidence, projectShipments, projectTasks, latestSchedule, activeAlerts, recentAudit, siteAnalysis] = await Promise.all([
     db.select().from(gates).where(eq(gates.projectId, projectId)),
     db.select().from(systems).where(eq(systems.projectId, projectId)),
     db.select().from(assets).where(eq(assets.projectId, projectId)),
@@ -137,7 +138,8 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
     db.select().from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)),
     db.query.scheduleVersions.findFirst({ where: eq(scheduleVersions.projectId, projectId), orderBy: [desc(scheduleVersions.versionNumber)] }),
     db.select().from(alerts).where(eq(alerts.projectId, projectId)),
-    db.select().from(auditEvents).where(eq(auditEvents.projectId, projectId)).orderBy(desc(auditEvents.createdAt)).limit(200)
+    db.select().from(auditEvents).where(eq(auditEvents.projectId, projectId)).orderBy(desc(auditEvents.createdAt)).limit(200),
+    db.query.siteAnalyses.findFirst({ where: eq(siteAnalyses.projectId, projectId) })
   ]);
 
   const systemById = new Map(projectSystems.map((system) => [system.id, system.name]));
@@ -208,6 +210,7 @@ export async function getDashboardData(projectId: string): Promise<DashboardData
     members: memberRows,
     timelineTasks: projectTasks.slice().sort((a, b) => (a.earliestStart?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.earliestStart?.getTime() ?? Number.MAX_SAFE_INTEGER)).map((task) => ({ id: task.id, name: task.name, durationHours: task.durationHours, earliestStart: task.earliestStart?.toISOString() ?? null, deadline: task.deadline?.toISOString() ?? null, reviewState: task.reviewState })),
     proposal: proposal ? { id: proposal.id, statement: proposal.statement, citation: (() => { const region = regionsById.get(proposal.sourceRegionId); return region ? `${region.documents.title} · p. ${region.source_regions.pageNumber}` : "Controlled source unavailable"; })() } : null,
+    siteAnalysis: siteAnalysis ? (() => { const answers = siteAnalysis.answers as Record<string, string>; const completed = Array.isArray(siteAnalysis.completedSections) ? siteAnalysis.completedSections.length : 0; return { location: answers.location ?? "Location pending", targetItMw: answers.target_it_mw ?? "—", utilityMw: answers.utility_mw ?? "—", cooling: answers.cooling_architecture ?? "Cooling pending", progress: Math.min(100, Math.round((completed / 16) * 100)) }; })() : null,
     insights: {
       gateBars: projectGates.slice().sort((a, b) => Number(a.sequenceNumber) - Number(b.sequenceNumber)).map((gate) => {
         const state = readinessByGate.get(gate.id);
