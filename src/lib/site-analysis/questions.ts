@@ -8,6 +8,8 @@ export type SiteSection = {
     label: string;
     hint: string;
     options?: string[];
+    recommendation?: string;
+    required?: boolean;
   }>;
 };
 export const coolingStatePointFields = [
@@ -497,19 +499,60 @@ export const siteSections: SiteSection[] = [
     questions: [
       {
         key: "fabric",
-        label: "Compute fabric",
-        hint: "Planning fabric basis.",
-        options: ["InfiniBand", "Ethernet fabric", "Mixed", "Not fixed"],
+        label: "Which compute fabric is required?",
+        hint: "The fabric must match the deployment variant.",
+        options: [
+          "InfiniBand",
+          "Ethernet, RoCE, or Ultra Ethernet",
+          "UALink or proprietary scale-up plus scale-out",
+        ],
+        required: true,
       },
       {
-        key: "carrier_count",
-        label: "Carrier diversity",
-        hint: "Number of physically diverse entries.",
+        key: "fabric_performance",
+        label: "What fabric performance is required?",
+        hint: "Topology and oversubscription affect predictable workload performance.",
+        options: [
+          "Validated nonblocking topology",
+          "Defined oversubscription",
+          "Reference default or unknown",
+        ],
+        required: true,
+      },
+      {
+        key: "cable_optics_basis",
+        label: "How should cable and optics be specified?",
+        hint: "Loss, reach, and interoperability require more than a media label.",
+        options: [
+          "Exact approved bill of materials",
+          "Performance envelope with approved equivalents",
+          "Media type only",
+        ],
+        required: true,
       },
       {
         key: "storage",
-        label: "Storage basis",
-        hint: "Initial workload storage approach.",
+        label: "What storage basis is required?",
+        hint: "Capacity, throughput, operations per second, and latency remain explicit.",
+        recommendation: "Exact workload storage requirements",
+        options: [
+          "Exact workload storage requirements",
+          "Reference storage ratio",
+          "Tenant-provided storage",
+        ],
+        required: true,
+      },
+      {
+        key: "carrier_diversity",
+        label: "How diverse must external connectivity be?",
+        hint: "Carrier and path diversity address different failure risks.",
+        recommendation: "Two carriers and two diverse entrances",
+        options: [
+          "Two carriers and two diverse entrances",
+          "One carrier and two paths",
+          "Single entrance",
+        ],
+        required: true,
       },
     ],
   },
@@ -672,12 +715,17 @@ export const demoSiteAnswers: SiteAnswerMap = {
   cooling_architecture: "Hybrid DLC + air",
   water_source: "Limited / dry cooling",
   coolant_supply_c: "32",
+  building_layout_family: "Skid Max",
+  module_compartmentation: "Fault-domain compartmentation",
+  module_electrical_placement: "East and west hall banks",
   yard_strategy: "Dedicated north yard",
   heat_rejection: "North equipment yard",
   structural_basis: "High-density equipment pads",
   fabric: "InfiniBand",
-  carrier_count: "2",
-  storage: "High-throughput parallel storage",
+  fabric_performance: "Validated nonblocking topology",
+  cable_optics_basis: "Performance envelope with approved equivalents",
+  storage: "Exact workload storage requirements",
+  carrier_diversity: "Two carriers and two diverse entrances",
   staging: "Outdoor laydown + enclosed receiving",
   access_constraint: "Oversize transformer route confirmation",
   procurement_strategy: "Long-lead first",
@@ -693,3 +741,148 @@ export const demoSiteAnswers: SiteAnswerMap = {
   review_owner: "Project development lead",
   review_status: "Draft — assumptions remain open",
 };
+
+const completePlanningBaseline = (overrides: SiteAnswerMap): SiteAnswerMap => {
+  const registeredAnswers = Object.fromEntries(
+    siteSections.flatMap((section) =>
+      section.questions.map((question) => [
+        question.key,
+        question.options?.[0] ?? "Planning assumption — confirm during review",
+      ]),
+    ),
+  );
+  const coolingDefaults: SiteAnswerMap = {
+    cooling_regime: "User-customized, OEM evidence required",
+    rack_air_inlet_design_c: "24",
+    rack_air_oem_max_c: "30",
+    tech_coolant_supply_c: "32",
+    tech_coolant_return_c: "42",
+    facility_water_supply_c: "30",
+    facility_water_return_c: "40",
+    chws_c: "7",
+    chwr_c: "13",
+    chilled_water_flow_ls: "420",
+    outdoor_dry_bulb_c: "40",
+    outdoor_wet_bulb_c: "27",
+    equipment_leaving_fluid_c: "38",
+    hx_approach_k: "3",
+    fluid_specific_heat: "4.05",
+    fluid_density: "995",
+    tech_fluid_flow_ls: "510",
+    tech_loop_pressure_kpa: "450",
+    tech_loop_pressure_drop_kpa: "120",
+    room_dew_point_c: "14",
+    dew_point_margin_k: "3",
+    oem_tech_supply_max_c: "35",
+    technology_fluid: "Treated water — final OEM approval pending",
+    water_boundary: "Facility heat exchanger",
+    fluid_evidence: "Baseline OEM interface schedule · planning reference",
+    dry_cooler_sound_dba: "75",
+    dry_cooler_coil_option: "Copper tube / aluminium fin",
+    dry_cooler_fan_option: "EC variable-speed fan array",
+    dry_cooler_redundancy: "N+1 fan per bank",
+    chiller_sound_option: "Low-noise acoustic package",
+    chiller_efficiency_option: "High-efficiency variable-speed package",
+    pump_wetted_materials: "Stainless-steel wetted parts",
+    pump_vfd_arrangement: "Duty/standby independent VFDs",
+    pump_control_arrangement: "Lead/lag with automatic alternation",
+    institutional_analysis_json:
+      "Planning baseline; controlled tariff and capital evidence required.",
+    temperature_state_evidence_json:
+      "Planning state points; OEM attestation and dated source hashes required.",
+    technology_reference: "Rack technology schedule · planning revision A",
+    technology_cost_usd_kw: "6200",
+    technology_lead_weeks: "44–60",
+    technology_cost_evidence: "Budget quotation · planning reference",
+    technology_lead_evidence: "Supplier planning letter",
+    heat_rejection_reference: "Dry-cooler selection · planning revision A",
+    heat_rejection_cost_usd_kw: "410",
+    heat_rejection_lead_weeks: "32–46",
+    heat_rejection_cost_evidence: "Budget quotation · planning reference",
+    heat_rejection_lead_evidence: "Supplier planning letter",
+    residual_air_reference: "Residual-air unit schedule · planning revision A",
+    residual_air_cost_usd_kw: "180",
+    residual_air_lead_weeks: "24–36",
+    residual_air_cost_evidence: "Budget quotation · planning reference",
+    residual_air_lead_evidence: "Supplier planning letter",
+    cooling_performance_reference:
+      "Cooling performance package · planning reference",
+    hourly_weather_reference:
+      "8760-hour design-weather dataset · planning reference",
+    cooling_capacity_reserve: "yes",
+    liquid_capacity_reserve_pct: "15",
+    air_capacity_reserve_pct: "10",
+  };
+  return { ...registeredAnswers, ...coolingDefaults, ...overrides };
+};
+
+export const siteBaselineOptions = [
+  {
+    id: "virginia-ai",
+    name: "Virginia AI Training Campus",
+    answers: completePlanningBaseline({
+      ...demoSiteAnswers,
+      source_confidence: "Controlled evidence",
+    }),
+  },
+  {
+    id: "mumbai-cloud",
+    name: "Navi Mumbai Cloud Campus",
+    answers: completePlanningBaseline({
+      ...demoSiteAnswers,
+      project_name: "Navi Mumbai Cloud Campus — Planning Baseline",
+      location: "Navi Mumbai, Maharashtra, India",
+      target_it_mw: "18",
+      utility_mw: "25",
+      parcel_acres: "24",
+      water_source: "Reclaimed water",
+      pue_target: "1.32",
+      platform: "Capacity-only / not fixed",
+      fabric: "Ethernet, RoCE, or Ultra Ethernet",
+      rfs_date: "Q2 2028",
+      budget_usd_mw: "6200000",
+    }),
+  },
+  {
+    id: "singapore-inference",
+    name: "Singapore Dense Inference Hub",
+    answers: completePlanningBaseline({
+      ...demoSiteAnswers,
+      project_name: "Singapore Dense Inference Hub — Planning Baseline",
+      location: "Jurong, Singapore",
+      target_it_mw: "12",
+      utility_mw: "18",
+      parcel_acres: "9",
+      workload: "Inference",
+      storeys: "4",
+      building_layout: "Multi-storey campus",
+      building_layout_family: "Stacked and partitioned",
+      water_source: "Municipal",
+      pue_target: "1.36",
+      carrier_diversity: "Two carriers and two diverse entrances",
+      rfs_date: "Q4 2027",
+      budget_usd_mw: "7800000",
+    }),
+  },
+  {
+    id: "frankfurt-sovereign",
+    name: "Frankfurt Sovereign Compute Centre",
+    answers: completePlanningBaseline({
+      ...demoSiteAnswers,
+      project_name: "Frankfurt Sovereign Compute Centre — Planning Baseline",
+      location: "Frankfurt, Hesse, Germany",
+      target_it_mw: "20",
+      utility_mw: "30",
+      parcel_acres: "17",
+      platform: "NVIDIA GB200 NVL72",
+      workload: "Mixed / high-performance computing",
+      availability_target: "2N",
+      security_level: "Critical infrastructure",
+      cooling_architecture: "DLC + dry cooler",
+      water_source: "Limited / dry cooling",
+      pue_target: "1.25",
+      rfs_date: "Q1 2029",
+      budget_usd_mw: "8400000",
+    }),
+  },
+] as const;

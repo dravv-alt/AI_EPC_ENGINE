@@ -8,6 +8,7 @@ import {
   coolingEquipmentGroups,
   coolingStatePointFields,
   demoSiteAnswers,
+  siteBaselineOptions,
   siteSections,
   type SiteAnswerMap,
 } from "@/lib/site-analysis/questions";
@@ -72,6 +73,9 @@ export function SiteAnalysisWorkbench({
   );
   const [busy, setBusy] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [baselineId, setBaselineId] = useState<string>(
+    siteBaselineOptions[0].id,
+  );
   const [coolingAnalysis, setCoolingAnalysis] =
     useState<CoolingAnalysis | null>(null);
   const section =
@@ -112,10 +116,20 @@ export function SiteAnalysisWorkbench({
       if (!response.ok)
         throw new Error(body.error ?? "Could not save site analysis.");
       setCompleted(body.analysis.completedSections ?? nextCompleted);
+      const insightResponse = await fetch(
+        `/api/projects/${projectId}/site-analysis/insights`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ includeAi: true }),
+        },
+      );
+      if (insightResponse.ok)
+        window.dispatchEvent(new CustomEvent("site-analysis-insights-updated"));
       setMessage(
         nextStatus === "review"
-          ? "Planning basis saved for stakeholder review. It remains non-certified."
-          : "Section saved to the active project.",
+          ? "Planning basis and its deterministic readiness interpretation were saved for stakeholder review. It remains non-certified."
+          : "Section saved. Deterministic issues and the Gemma advisory interpretation were recalculated.",
       );
     } catch (error) {
       setMessage(
@@ -130,10 +144,14 @@ export function SiteAnalysisWorkbench({
   function setAnswer(key: string, value: string) {
     setAnswers((current) => ({ ...current, [key]: value }));
   }
-  function loadDemo() {
-    setAnswers(demoSiteAnswers);
+  function loadBaseline(nextId: string) {
+    const baseline =
+      siteBaselineOptions.find((item) => item.id === nextId) ??
+      siteBaselineOptions[0];
+    setBaselineId(baseline.id);
+    setAnswers({ ...baseline.answers });
     setMessage(
-      "Demo Anthropic Virginia planning baseline restored. Save to write it into the project.",
+      `${baseline.name} planning baseline loaded across every Site Analysis field. Review and save to write it into the project.`,
     );
   }
   function importCsv(event: ChangeEvent<HTMLInputElement>) {
@@ -222,13 +240,19 @@ export function SiteAnalysisWorkbench({
           </p>
         </div>
         <div className="site-analysis-actions">
-          <button
-            className="button button-secondary"
-            type="button"
-            onClick={loadDemo}
-          >
-            Load demo baseline
-          </button>
+          <label className="site-baseline-picker">
+            Planning baseline
+            <select
+              value={baselineId}
+              onChange={(event) => loadBaseline(event.target.value)}
+            >
+              {siteBaselineOptions.map((baseline) => (
+                <option key={baseline.id} value={baseline.id}>
+                  {baseline.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="button button-secondary csv-upload">
             <FileUp size={16} /> Import CSV
             <input type="file" accept=".csv,text/csv" onChange={importCsv} />
@@ -302,80 +326,155 @@ export function SiteAnalysisWorkbench({
             {resolved.length} / {siteSections.length} sections resolved
           </span>
         </header>
-        {section.id === "building_systems" ? (
-          <div className="site-decision-list">
-            {section.questions.map((question, questionIndex) => (
-              <section key={question.key}>
-                <p className="eyebrow">
-                  Question {questionIndex + 1} of {section.questions.length}
-                </p>
-                <h3>{question.label}</h3>
-                <p>{question.hint}</p>
-                {question.options ? (
-                  <div>
-                    {question.options.map((option) => (
-                      <button
-                        type="button"
-                        key={option}
-                        className={
-                          answers[question.key] === option ? "is-selected" : ""
-                        }
-                        onClick={() => setAnswer(question.key, option)}
-                      >
-                        <b>{option}</b>
+        {section.id === "review" && (
+          <section className="site-requirement-review">
+            <div className="site-review-metrics">
+              <div>
+                <strong>
+                  {
+                    Object.values(answers).filter((value) => value?.trim())
+                      .length
+                  }
+                </strong>
+                <span>Confirmed inputs</span>
+              </div>
+              <div>
+                <strong>{resolved.length}</strong>
+                <span>Resolved sections</span>
+              </div>
+              <div>
+                <strong>{siteSections.length - resolved.length}</strong>
+                <span>Open sections</span>
+              </div>
+              <div>
+                <strong>
+                  {siteSections.reduce(
+                    (count, item) =>
+                      count +
+                      item.questions.filter(
+                        (question) =>
+                          question.required && !answers[question.key]?.trim(),
+                      ).length,
+                    0,
+                  )}
+                </strong>
+                <span>Blocking decisions</span>
+              </div>
+            </div>
+            <div className="site-review-progress">
+              {siteSections
+                .filter((item) => item.id !== "review")
+                .map((item) => {
+                  const answered = item.questions.filter((question) =>
+                    answers[question.key]?.trim(),
+                  ).length;
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => setSectionId(item.id)}
+                    >
+                      <span>
+                        <b>{item.title}</b>
                         <small>
-                          {option === "Skid Max"
-                            ? "Moves qualified support functions into detached support structures."
-                            : "Planning selection; retain evidence and review before release."}
+                          {answered} / {item.questions.length} resolved
                         </small>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <label>
-                    Planning input
-                    <input
-                      value={answers[question.key] ?? ""}
-                      onChange={(event) =>
-                        setAnswer(question.key, event.target.value)
-                      }
-                      placeholder={question.hint}
-                    />
-                  </label>
-                )}
-                <label className="site-custom-answer">
-                  Custom tenant requirement
-                  <input
-                    value={answers[`${question.key}_custom`] ?? ""}
-                    onChange={(event) =>
-                      setAnswer(`${question.key}_custom`, event.target.value)
-                    }
-                    placeholder="Optional; remains open until validated."
-                  />
-                </label>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <div className="site-question-grid">
-            {section.questions.map((question) => (
-              <label key={question.key}>
-                {question.label}
-                {question.options ? (
-                  <select
-                    value={answers[question.key] ?? ""}
-                    onChange={(event) =>
-                      setAnswer(question.key, event.target.value)
-                    }
+                      </span>
+                      <i>
+                        <em
+                          style={{
+                            width: `${item.questions.length ? (answered / item.questions.length) * 100 : 0}%`,
+                          }}
+                        />
+                      </i>
+                    </button>
+                  );
+                })}
+            </div>
+          </section>
+        )}
+        <div className="site-decision-list">
+          {section.questions.map((question, questionIndex) => (
+            <section key={question.key} className="site-guided-question">
+              {(() => {
+                const hasRequirement = Boolean(
+                  answers[question.key]?.trim() ||
+                  answers[`${question.key}_custom`]?.trim(),
+                );
+                const hasDecision =
+                  Boolean(answers[question.key]?.trim()) &&
+                  !/unknown|not fixed|to be defined|no document/i.test(
+                    answers[question.key],
+                  );
+                const hasVerification =
+                  hasDecision &&
+                  (answers.source_confidence === "Controlled evidence" ||
+                    Boolean(answers[`${question.key}_evidence`]?.trim()));
+                return (
+                  <div
+                    className="site-decision-flow"
+                    aria-label="Requirement decision verification progress"
                   >
-                    <option value="">Unknown / skip for now</option>
-                    {question.options.map((option) => (
-                      <option value={option} key={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                    <span
+                      className={hasRequirement ? "is-complete" : "is-pending"}
+                    >
+                      <b>01</b> Requirement
+                    </span>
+                    <i className={hasDecision ? "is-complete" : "is-pending"} />
+                    <span
+                      className={hasDecision ? "is-complete" : "is-pending"}
+                    >
+                      <b>02</b> Engine decision
+                    </span>
+                    <i
+                      className={hasVerification ? "is-complete" : "is-pending"}
+                    />
+                    <span
+                      className={hasVerification ? "is-complete" : "is-pending"}
+                    >
+                      <b>03</b> Verified outputs
+                    </span>
+                  </div>
+                );
+              })()}
+              <p className="eyebrow">
+                Question {questionIndex + 1} of {section.questions.length}
+              </p>
+              <h3>{question.label}</h3>
+              <p>{question.hint}</p>
+              {question.recommendation && (
+                <p className="site-recommendation">
+                  <Sparkles size={14} />
+                  <b>Planning recommendation:</b> {question.recommendation}.
+                  This remains provisional until supported by controlled
+                  evidence.
+                </p>
+              )}
+              {question.options ? (
+                <div>
+                  {question.options.map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      className={
+                        answers[question.key] === option ? "is-selected" : ""
+                      }
+                      onClick={() => setAnswer(question.key, option)}
+                    >
+                      <b>{option}</b>
+                      <small>
+                        {option === "Skid Max"
+                          ? "Moves qualified support functions into detached support structures."
+                          : option === question.recommendation
+                            ? "Recommended planning basis; confirm against workload and source evidence."
+                            : "Planning selection; retain evidence and review before release."}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <label>
+                  Planning input
                   <input
                     value={answers[question.key] ?? ""}
                     onChange={(event) =>
@@ -383,12 +482,28 @@ export function SiteAnalysisWorkbench({
                     }
                     placeholder={question.hint}
                   />
-                )}
-                <small>{question.hint}</small>
+                </label>
+              )}
+              <label className="site-custom-answer">
+                Custom tenant requirement
+                <input
+                  value={answers[`${question.key}_custom`] ?? ""}
+                  onChange={(event) =>
+                    setAnswer(`${question.key}_custom`, event.target.value)
+                  }
+                  placeholder="Optional; remains open until validated."
+                />
               </label>
-            ))}
-          </div>
-        )}
+              {!answers[question.key]?.trim() && (
+                <p className="site-skip-basis">
+                  <b>Unknown / open:</b> this decision remains visible in
+                  Requirement Review and cannot contribute to a fully resolved
+                  planning basis.
+                </p>
+              )}
+            </section>
+          ))}
+        </div>
         {section.id === "cooling" && (
           <section className="site-cooling-detail">
             <div className="site-cooling-architecture">

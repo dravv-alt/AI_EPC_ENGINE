@@ -10664,8 +10664,9 @@ body:has(.topbar) .theme-global-control {
   opacity: 0.72;
 }
 .pm-summary-grid article:nth-child(3) span,
+.pm-summary-grid article:nth-child(3) strong,
 .pm-summary-grid article:nth-child(3) small {
-  color: #d7ded8;
+  color: #fffaf0;
 }
 
 .pm-analytics {
@@ -12633,10 +12634,173 @@ html[data-theme="dark"] .requirement-document-states i {
   padding: 24px;
 }
 .site-decision-list > section {
+  position: relative;
+  overflow: hidden;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface-muted);
+}
+.site-decision-list > section > .site-decision-flow {
+  align-items: center;
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(130px, 1fr) minmax(38px, 0.22fr) minmax(
+      130px,
+      1fr
+    ) minmax(38px, 0.22fr) minmax(130px, 1fr);
+  margin: -18px -18px 22px;
+  max-width: none;
+}
+.site-decision-flow span {
+  background: var(--surface);
+  border-bottom: 2px solid var(--line);
+  font-size: 10px;
+  padding: 13px 16px;
+  text-align: center;
+  transition:
+    color 0.3s ease,
+    border-color 0.3s ease,
+    background 0.3s ease;
+}
+.site-decision-flow span b {
+  margin-right: 7px;
+  font: 700 9px var(--mono);
+  opacity: 0.7;
+}
+.site-decision-flow span.is-complete,
+.site-decision-flow i.is-complete {
+  animation: site-flow 7s linear infinite;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-primary) 16%, var(--surface)),
+    color-mix(in srgb, #63c7a7 25%, var(--surface)),
+    color-mix(in srgb, var(--accent-primary) 16%, var(--surface))
+  );
+  background-size: 220% 100%;
+  border-color: var(--accent-primary);
+  color: var(--ink);
+}
+.site-decision-flow i {
+  height: 2px;
+  position: relative;
+}
+.site-decision-flow i.is-pending {
+  border-top: 2px dotted var(--muted);
+}
+.site-decision-flow i.is-pending::after {
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--muted);
+  border-top: 4px solid transparent;
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -5px;
+}
+.site-decision-flow span.is-pending {
+  color: var(--muted);
+}
+@keyframes site-flow {
+  to {
+    background-position: -220% 0;
+  }
+}
+.site-baseline-picker {
+  color: var(--muted);
+  display: grid;
+  font: 700 9px var(--mono);
+  gap: 5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.site-baseline-picker select {
+  min-height: 40px;
+  min-width: 250px;
+  padding: 0 34px 0 12px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font: 12px var(--body);
+  text-transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-decision-flow span.is-complete,
+  .site-decision-flow i.is-complete {
+    animation: none;
+  }
+}
+.site-decision-list > section > .site-recommendation,
+.site-decision-list > section > .site-skip-basis {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 22%, var(--line));
+  border-radius: 10px;
+  display: flex;
+  gap: 7px;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+.site-decision-list > section > .site-skip-basis {
+  background: color-mix(in srgb, #d99b26 9%, var(--surface));
+  border-color: color-mix(in srgb, #d99b26 28%, var(--line));
+}
+.site-requirement-review {
+  margin: 0 24px 4px;
+}
+.site-review-metrics {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.site-review-metrics div {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+}
+.site-review-metrics strong {
+  font-size: 1.8rem;
+}
+.site-review-metrics span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.site-review-progress {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+}
+.site-review-progress button {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  text-align: left;
+}
+.site-review-progress button span {
+  display: flex;
+  justify-content: space-between;
+}
+.site-review-progress small {
+  color: var(--muted);
+}
+.site-review-progress i {
+  background: var(--surface-muted);
+  border-radius: 99px;
+  height: 5px;
+  overflow: hidden;
+}
+.site-review-progress em {
+  background: var(--accent-primary);
+  display: block;
+  height: 100%;
+  transition: width 0.55s ease;
 }
 .site-decision-list h3 {
   margin: 4px 0 6px;

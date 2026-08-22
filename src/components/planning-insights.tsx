@@ -45,16 +45,21 @@ export function PlanningInsights({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void fetch(`/api/projects/${projectId}/site-analysis/insights`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body) => {
-        const latest = body?.snapshots?.[0] as Snapshot | undefined;
-        if (latest) {
-          setSnapshot(latest);
-          setMessage(`Showing saved interpretation v${latest.version}.`);
-        }
-      })
-      .catch(() => undefined);
+    const load = () =>
+      void fetch(`/api/projects/${projectId}/site-analysis/insights`)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((body) => {
+          const latest = body?.snapshots?.[0] as Snapshot | undefined;
+          if (latest) {
+            setSnapshot(latest);
+            setMessage(`Showing saved interpretation v${latest.version}.`);
+          }
+        })
+        .catch(() => undefined);
+    load();
+    window.addEventListener("site-analysis-insights-updated", load);
+    return () =>
+      window.removeEventListener("site-analysis-insights-updated", load);
   }, [projectId]);
 
   async function generate() {
