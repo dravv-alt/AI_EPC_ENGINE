@@ -1456,6 +1456,10 @@ export const copilotMessages = pgTable("copilot_messages", {
   toolResult: jsonb("tool_result"),
   toolStatus: varchar("tool_status", { length: 20 }),     // executed | failed | skipped
   citations: jsonb("citations"),
+  // Complete rendered assistant response. `content` and `citations` remain
+  // separately indexed/auditable, while this restores the exact UI turn when
+  // a drawer is closed and reopened.
+  response: jsonb("response"),
   modelProvider: varchar("model_provider", { length: 20 }),
   modelVersion: varchar("model_version", { length: 80 }),
   // Real usage from the provider's own response (see ModelResult.usage) —

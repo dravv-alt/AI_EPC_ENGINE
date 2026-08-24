@@ -39,9 +39,25 @@ import { selectRelevantSkills } from "@/lib/copilot/skills";
 const CORE_TOOL_NAMES = ["project.overview", "knowledge.search", "readiness.gates", "findings.list", "schedule.current", "shipments.list", "alerts.list"];
 const MAX_SELECTED_TOOLS = 14;
 
+// Exact sentence triggers in skills.ts are intentionally conservative, but
+// users naturally phrase operations in many equivalent ways. These aliases
+// make the relevant action playbook available without exposing the entire
+// write-tool catalogue (which would exceed smaller providers' prompt budget).
+const ACTION_ALIASES: Array<{ pattern: RegExp; tools: string[] }> = [
+  { pattern: /\b(create|add|open|report|log|raise)\b.*\b(issue|finding|defect|problem)\b|\b(issue|finding|defect|problem)\b.*\b(create|add|open|report|log|raise)\b/i, tools: ["members.list", "findings.create"] },
+  { pattern: /\b(create|add|new)\b.*\bsystem\b/i, tools: ["records.create_system"] },
+  { pattern: /\b(create|add|new)\b.*\basset\b/i, tools: ["records.create_asset"] },
+  { pattern: /\b(create|add|new)\b.*\bgate\b/i, tools: ["records.create_gate"] },
+  { pattern: /\b(create|add|new)\b.*\b(shipment|delivery)\b/i, tools: ["shipments.create"] },
+  { pattern: /\b(update|change|edit)\b.*\b(shipment|eta|delivery)\b/i, tools: ["shipments.list", "shipments.update"] },
+  { pattern: /\b(generate|solve|create)\b.*\b(schedule|baseline)\b/i, tools: ["schedule.solve_baseline"] },
+  { pattern: /\b(export|download|generate)\b.*\b(report|project|csv|pdf|turnover)\b/i, tools: ["export.project", "export.turnover_pack"] }
+];
+
 export function selectRelevantToolNames(userMessage: string, alreadyUsedToolNames: string[] = []): string[] {
   const fromSkills = selectRelevantSkills(userMessage).flatMap((skill) => skill.tools);
-  const candidates = [...CORE_TOOL_NAMES, ...fromSkills, ...alreadyUsedToolNames].filter((name) => name in copilotTools);
+  const fromActionAliases = ACTION_ALIASES.filter(({ pattern }) => pattern.test(userMessage)).flatMap(({ tools }) => tools);
+  const candidates = [...CORE_TOOL_NAMES, ...fromSkills, ...fromActionAliases, ...alreadyUsedToolNames].filter((name) => name in copilotTools);
   const selected = [...new Set(candidates)].slice(0, MAX_SELECTED_TOOLS);
   return selected.length ? selected : Object.keys(copilotTools);
 }

@@ -41,6 +41,12 @@ export type CopilotToolResult = {
   status?: number;
   /** Set when the underlying route returned 202. */
   jobId?: string;
+  /**
+   * Present only when the model attempted a tool call without information
+   * required by that tool. The loop turns this into a direct question instead
+   * of treating it as an execution failure or retrying blindly.
+   */
+  needsInput?: { fields: string[] };
 };
 
 /** The shape `toolCatalogue()` returns for each tool, for the prompt. */

@@ -36,6 +36,43 @@ function errorEnvelope(summary: string, detail: string | null): CopilotResponseE
 
 const INITIAL_TRANSCRIPT: TranscriptEntry[] = [];
 
+type StoredMessage = {
+  id: string;
+  role: string;
+  content: string | null;
+  citations?: unknown;
+  response?: unknown;
+};
+
+function isEnvelope(value: unknown): value is CopilotResponseEnvelope {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<CopilotResponseEnvelope>;
+  return typeof candidate.summary === "string"
+    && Array.isArray(candidate.citations)
+    && Array.isArray(candidate.actions)
+    && Array.isArray(candidate.links)
+    && Array.isArray(candidate.renders)
+    && (candidate.authority === "advisory" || candidate.authority === "proposed_only" || candidate.authority === "recorded");
+}
+
+function transcriptFromMessages(messages: StoredMessage[]): TranscriptEntry[] {
+  const transcript: TranscriptEntry[] = [];
+  for (const message of messages) {
+    if (message.role === "user" && message.content) {
+      transcript.push({ id: message.id, role: "user", text: message.content });
+      continue;
+    }
+    if (message.role !== "assistant" || !message.content) continue;
+    const envelope = isEnvelope(message.response)
+      ? message.response
+      // Records created before full response persistence retain the essential
+      // conversational history and citations.
+      : { ...errorEnvelope(message.content, null), citations: Array.isArray(message.citations) ? message.citations as CopilotResponseEnvelope["citations"] : [] };
+    transcript.push({ id: message.id, role: "assistant", envelope });
+  }
+  return transcript;
+}
+
 async function autoDownload(envelope: CopilotResponseEnvelope) {
   for (const render of envelope.renders) {
     if (render.key !== "download" || !render.data || typeof render.data !== "object") continue;
@@ -75,6 +112,26 @@ export function CopilotDrawer({
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ block: "end" });
   }, [transcript, progressLabel]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      setTranscript(INITIAL_TRANSCRIPT);
+      return;
+    }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/copilot/conversations/${conversationId}/messages?limit=100`, { signal: controller.signal });
+        const body = await response.json().catch(() => null) as { messages?: StoredMessage[] } | null;
+        if (response.ok && body?.messages && !controller.signal.aborted) {
+          setTranscript(transcriptFromMessages(body.messages));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) console.warn("[copilot] unable to restore conversation:", error);
+      }
+    })();
+    return () => controller.abort();
+  }, [conversationId]);
 
   async function handleSubmit(event?: React.FormEvent, overrideMessage?: string) {
     event?.preventDefault();

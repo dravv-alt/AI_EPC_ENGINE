@@ -87,7 +87,7 @@ export const skills: Skill[] = [
   },
   {
     id: "raise-issue",
-    triggers: ["raise an issue", "log a finding", "flag a problem", "open a finding", "report a defect"],
+    triggers: ["raise an issue", "create an issue", "log a finding", "create a finding", "flag a problem", "open a finding", "report a defect", "report an issue"],
     permission: "finding:manage",
     tools: ["members.list", "findings.create"],
     steps: [
@@ -125,7 +125,7 @@ export const skills: Skill[] = [
   },
   {
     id: "add-controlled-record",
-    triggers: ["add a system", "add an asset", "create a gate", "add an edge", "create a claim"],
+    triggers: ["add a system", "create a system", "new system", "add an asset", "create an asset", "new asset", "create a gate", "add a gate", "new gate", "add an edge", "create an edge", "create a claim", "add a claim"],
     permission: "configuration:manage",
     tools: ["records.create_system", "records.create_asset", "records.create_gate", "records.create_edge", "claims.create"],
     steps: [
@@ -142,7 +142,7 @@ export const skills: Skill[] = [
   },
   {
     id: "manage-shipments",
-    triggers: ["create a shipment", "bulk import shipments", "update shipment eta", "approve shipment plan", "materialize shipment"],
+    triggers: ["create a shipment", "add a shipment", "bulk import shipments", "import shipments", "update shipment", "update shipment eta", "approve shipment plan", "materialize shipment", "generate shipment plan"],
     permission: "schedule:manage",
     tools: ["shipments.create", "shipments.bulk_import", "shipments.update", "shipment_plans.act"],
     steps: [

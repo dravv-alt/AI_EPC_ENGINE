@@ -82,8 +82,22 @@ function forceDone(observations: Observation[], kind: "step-limit" | "repeated-f
   return { ...emptyEnvelope(summary, null), renders: collectRenders(observations), actions: collectActions(observations), links: collectLinks(observations), authority: authorityFor(observations) };
 }
 
+function clarificationForToolInput(tool: string, fields: string[]): CopilotResponseEnvelope {
+  const action = copilotTools[tool]?.description.replace(/\.$/, "") ?? "complete that task";
+  const requested = fields.length === 1 ? fields[0] : fields.slice(0, 5).join(", ");
+  return emptyEnvelope(`I can ${action.charAt(0).toLowerCase()}${action.slice(1)}, but I need ${requested} first. What should I use?`);
+}
+
+// A current-work question is only useful when grounded in the live project
+// register. Some smaller models otherwise emit the user's wording as `done`.
+function requiredReadToolFor(userMessage: string): string | null {
+  return /\b(to[ -]?do(?:s)?|open (?:items|work|issues|findings)|current (?:work|tasks|priorities)|what(?:'s| is) (?:left|pending))\b/i.test(userMessage)
+    ? "findings.list"
+    : null;
+}
+
 async function persistAssistant(conversationId: string, envelope: CopilotResponseEnvelope, provider?: string, model?: string, usage?: { inputTokens?: number; outputTokens?: number }) {
-  await db.insert(copilotMessages).values({ conversationId, role: "assistant", content: envelope.summary, citations: envelope.citations, modelProvider: provider, modelVersion: model, modelInputTokens: usage?.inputTokens, modelOutputTokens: usage?.outputTokens });
+  await db.insert(copilotMessages).values({ conversationId, role: "assistant", content: envelope.summary, citations: envelope.citations, response: envelope, modelProvider: provider, modelVersion: model, modelInputTokens: usage?.inputTokens, modelOutputTokens: usage?.outputTokens });
 }
 
 // Compact, not pretty-printed: this only ever feeds a char-budgeted model
@@ -167,7 +181,7 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
     // 2026-08-24: the single biggest cost in a multi-step turn).
     const prompt = [
       "You are executing one bounded copilot turn. Respond only with a JSON step matching the supplied schema.",
-      "Use tools for project facts. Never invent project data, citations, or action results. When enough information is available, return kind=done.",
+      "Use tools for project facts and requested operations. Never invent project data, citations, or action results. Never answer a project-status, to-do, task, finding, schedule, shipment, alert, or readiness question by repeating or paraphrasing the user's question: call an appropriate read tool first. Before an action tool needs information that is not in the message or observations, return kind=ask and request only the missing fields; do not call the tool with guessed IDs, dates, owners, or values. When enough information is available, return kind=done.",
       "Write summary as one to three sentences of plain, warm, conversational English — how a knowledgeable colleague would say it out loud. Lead with the answer, not with what you did. Do not narrate your tool calls. Do not write bullet lists, headings, or markdown; the interface renders tables, links, and citations itself, so never retype data a tool already returned. Use detail only for a genuine caveat or next step, and leave it null otherwise.",
       `User message:\n${userMessage}`,
       iteration === 0 ? `Conversation history:\n${serialize(history)}` : "",
@@ -198,6 +212,13 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
       return envelope;
     }
     if (step.kind === "done") {
+      const requiredReadTool = observations.length === 0 ? requiredReadToolFor(userMessage) : null;
+      if (requiredReadTool) {
+        const result = await invokeTool(ctx, requiredReadTool, {});
+        observations.push({ tool: requiredReadTool, result });
+        await db.insert(copilotMessages).values({ conversationId, role: "tool", toolName: requiredReadTool, toolArgs: {}, toolResult: result.data ?? result.error ?? null, toolStatus: result.ok ? "executed" : "failed", modelProvider: generated.provider, modelVersion: generated.model, modelInputTokens: generated.usage?.inputTokens, modelOutputTokens: generated.usage?.outputTokens });
+        continue;
+      }
       // Runtime shape is guaranteed correct here — stepSchema's `.catch(undefined)`
       // on `remember` (prompts.ts) already normalized any incomplete object to
       // `undefined`, so a truthy value always has all three fields. The `as`
@@ -217,6 +238,11 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
     observations.push({ tool: step.tool, result });
     await db.insert(copilotMessages).values({ conversationId, role: "tool", toolName: step.tool, toolArgs: step.args, toolResult: result.data ?? result.error ?? null, toolStatus: result.ok ? "executed" : "failed", modelProvider: generated.provider, modelVersion: generated.model, modelInputTokens: generated.usage?.inputTokens, modelOutputTokens: generated.usage?.outputTokens });
     if (!result.ok) {
+      if (result.needsInput?.fields.length) {
+        const envelope = clarificationForToolInput(step.tool, result.needsInput.fields);
+        await persistAssistant(conversationId, envelope, generated.provider, generated.model, generated.usage);
+        return envelope;
+      }
       const failures = (failuresByTool.get(step.tool) ?? 0) + 1;
       failuresByTool.set(step.tool, failures);
       if (failures >= 2) {

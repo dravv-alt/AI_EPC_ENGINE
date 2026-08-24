@@ -72,12 +72,26 @@ function stripNullFields(args: unknown): unknown {
   return Object.fromEntries(Object.entries(args as Record<string, unknown>).filter(([, value]) => value !== null));
 }
 
+function missingInputFields(error: { issues: Array<{ path: (string | number)[]; code: string }> }): string[] {
+  return [...new Set(error.issues
+    .filter((issue) => issue.code === "invalid_type" || issue.code === "too_small")
+    .map((issue) => issue.path.map(String).join("."))
+    .filter(Boolean))];
+}
+
 export async function invokeTool(ctx: CopilotContext, name: string, rawArgs: unknown): Promise<CopilotToolResult> {
   const tool = copilotTools[name];
   if (!tool) return { ok: false, error: "Unknown tool" };
 
   const parsed = tool.input.safeParse(stripNullFields(rawArgs));
-  if (!parsed.success) return { ok: false, error: JSON.stringify(parsed.error.flatten()) };
+  if (!parsed.success) {
+    const fields = missingInputFields(parsed.error);
+    return {
+      ok: false,
+      error: "The request is missing or has invalid required information.",
+      ...(fields.length ? { needsInput: { fields } } : {})
+    };
+  }
 
   try {
     await requireProjectPermission(ctx.projectId, tool.permission);
