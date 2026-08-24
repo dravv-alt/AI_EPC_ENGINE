@@ -1,0 +1,287 @@
+{
+  "schemaVersion": "1.0",
+  "name": "Pramana Cx controlled compliance comparator set",
+  "labelSource": "controlled_fixture",
+  "cases": [
+    {
+      "id": "NUM-001",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Operating pressure: 1 bar.",
+      "expectedVerdict": "conforms",
+      "rationale": "Equivalent pressure units."
+    },
+    {
+      "id": "NUM-002",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Operating pressure: 120 kPa.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Exact-value deviation."
+    },
+    {
+      "id": "NUM-003",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa plus or minus 2 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "2",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Operating pressure: 102 kPa.",
+      "expectedVerdict": "conforms",
+      "rationale": "Value is on tolerance boundary."
+    },
+    {
+      "id": "NUM-004",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa plus or minus 2 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "2",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Operating pressure: 103 kPa.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Value exceeds tolerance."
+    },
+    {
+      "id": "NUM-005",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Available capacity shall be at least 100 kW.",
+        "numericValue": "100",
+        "unit": "kW",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Available capacity: 120 kW.",
+      "expectedVerdict": "conforms",
+      "rationale": "Minimum constraint is exceeded."
+    },
+    {
+      "id": "NUM-006",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Available capacity shall be at least 100 kW.",
+        "numericValue": "100",
+        "unit": "kW",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Available capacity: 90 kW.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Minimum constraint is not met."
+    },
+    {
+      "id": "NUM-007",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Ambient temperature shall not exceed 40 °C.",
+        "numericValue": "40",
+        "unit": "°C",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Maximum ambient: 100 °F.",
+      "expectedVerdict": "conforms",
+      "rationale": "100 F converts below 40 C."
+    },
+    {
+      "id": "NUM-008",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Ambient temperature shall not exceed 40 °C.",
+        "numericValue": "40",
+        "unit": "°C",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Maximum ambient: 113 °F.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "113 F converts above 40 C."
+    },
+    {
+      "id": "NUM-009",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Bus rating shall be 2 kA.",
+        "numericValue": "2",
+        "unit": "kA",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Bus rating: 2000 A.",
+      "expectedVerdict": "conforms",
+      "rationale": "Equivalent current units."
+    },
+    {
+      "id": "NUM-010",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Design flow shall be 60 LPM.",
+        "numericValue": "60",
+        "unit": "LPM",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Design flow: 1 L/s.",
+      "expectedVerdict": "conforms",
+      "rationale": "Equivalent flow units."
+    },
+    {
+      "id": "NUM-011",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Operating range: 90 kPa to 110 kPa.",
+      "expectedVerdict": "needs_engineering_judgment",
+      "rationale": "Multiple compatible values require a precise controlled line."
+    },
+    {
+      "id": "NUM-012",
+      "modality": "numeric",
+      "requirement": {
+        "statement": "Operating pressure shall be 100 kPa.",
+        "numericValue": "100",
+        "unit": "kPa",
+        "tolerance": "0",
+        "comparisonModality": "numeric"
+      },
+      "targetText": "Motor rating: 100 kW.",
+      "expectedVerdict": "needs_engineering_judgment",
+      "rationale": "An incompatible dimension cannot prove a deviation."
+    },
+    {
+      "id": "BOOL-001",
+      "modality": "boolean",
+      "requirement": {
+        "statement": "A remote alarm shall be provided.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "boolean"
+      },
+      "targetText": "Remote alarm: provided.",
+      "expectedVerdict": "conforms",
+      "rationale": "Explicit presence match."
+    },
+    {
+      "id": "BOOL-002",
+      "modality": "boolean",
+      "requirement": {
+        "statement": "A remote alarm shall be provided.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "boolean"
+      },
+      "targetText": "Remote alarm: not provided.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Explicit presence conflict."
+    },
+    {
+      "id": "CAT-001",
+      "modality": "categorical",
+      "requirement": {
+        "statement": "Conductor material: copper.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "categorical"
+      },
+      "targetText": "Conductor material: copper.",
+      "expectedVerdict": "conforms",
+      "rationale": "Exact controlled category."
+    },
+    {
+      "id": "CAT-002",
+      "modality": "categorical",
+      "requirement": {
+        "statement": "Conductor material: copper.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "categorical"
+      },
+      "targetText": "Conductor material: aluminum.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Controlled material conflict."
+    },
+    {
+      "id": "CAT-003",
+      "modality": "categorical",
+      "requirement": {
+        "statement": "The enclosure shall have a minimum rating of IP54.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "categorical"
+      },
+      "targetText": "Enclosure rating is IP55 to IEC 60529.",
+      "expectedVerdict": "conforms",
+      "rationale": "Both target ingress digits meet or exceed the requirement."
+    },
+    {
+      "id": "CAT-004",
+      "modality": "categorical",
+      "requirement": {
+        "statement": "The enclosure shall have a minimum rating of IP54.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "categorical"
+      },
+      "targetText": "Enclosure rating is IP44 to IEC 60529.",
+      "expectedVerdict": "deterministic_flag",
+      "rationale": "Solid ingress digit is below requirement."
+    },
+    {
+      "id": "NAR-001",
+      "modality": "narrative",
+      "requirement": {
+        "statement": "The enclosure finish shall be suitable for the operating environment.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "narrative"
+      },
+      "targetText": "Finish system: vendor marine coating arrangement.",
+      "expectedVerdict": "possible_mismatch",
+      "rationale": "Suitability requires engineering judgment."
+    },
+    {
+      "id": "NAR-002",
+      "modality": "narrative",
+      "requirement": {
+        "statement": "Access shall allow safe maintenance of the equipment.",
+        "numericValue": null,
+        "unit": null,
+        "tolerance": null,
+        "comparisonModality": "narrative"
+      },
+      "targetText": "Maintenance access is shown on drawing detail M-401.",
+      "expectedVerdict": "possible_mismatch",
+      "rationale": "The text alone cannot establish safe access."
+    }
+  ]
+}

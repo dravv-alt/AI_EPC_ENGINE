@@ -9,6 +9,7 @@ import {
   Boxes,
   Camera,
   CalendarRange,
+  Cuboid,
   CircleAlert,
   ChartNoAxesCombined,
   ClipboardCheck,
@@ -32,7 +33,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { Route } from "next";
 
-type WorkspaceHref = "/" | "/projects" | "/sources" | "/requirements" | "/systems" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover" | "/financial-modeler" | "/technology-drafts" | "/site-analysis";
+type WorkspaceHref = "/" | "/projects" | "/sources" | "/requirements" | "/systems" | "/rack-model" | "/evidence" | "/field-capture" | "/readiness" | "/schedule" | "/actions" | "/cx" | "/shipments" | "/compliance" | "/knowledge" | "/graph" | "/command-center" | "/changes" | "/turnover" | "/financial-modeler" | "/technology-drafts" | "/site-analysis";
 export type WorkspaceLink = [LucideIcon, string, WorkspaceHref];
 
 export const primaryWorkspaceLinks: WorkspaceLink[] = [
@@ -44,7 +45,7 @@ export const primaryWorkspaceLinks: WorkspaceLink[] = [
 ];
 
 export const workspaceGroups: Array<{ label: string; links: WorkspaceLink[] }> = [
-  { label: "Project records", links: [[FolderOpen, "Documents", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems & Assets", "/systems"], [Archive, "Evidence", "/evidence"], [Camera, "Capture Evidence", "/field-capture"]] },
+  { label: "Project records", links: [[FolderOpen, "Documents", "/sources"], [ListChecks, "Requirements", "/requirements"], [Wrench, "Systems & Assets", "/systems"], [Cuboid, "Digital Rack Model", "/rack-model"], [Archive, "Evidence", "/evidence"], [Camera, "Capture Evidence", "/field-capture"]] },
   { label: "Delivery", links: [[CalendarRange, "Schedule", "/schedule"], [Boxes, "Commissioning Tests", "/cx"], [Ship, "Shipments & Logistics", "/shipments"]] },
   { label: "Assurance", links: [[FileCheck2, "Compliance", "/compliance"], [GitCompareArrows, "Change Control", "/changes"], [Network, "Traceability", "/graph"], [ShieldCheck, "Turnover & Closeout", "/turnover"]] },
   { label: "Commercial", links: [[ChartNoAxesCombined, "Financial Modeler · Beta", "/financial-modeler"], [FilePenLine, "Technology Draft Studio", "/technology-drafts"]] },

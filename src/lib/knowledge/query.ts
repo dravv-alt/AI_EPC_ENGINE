@@ -286,5 +286,9 @@ export async function retrieveSemanticCitations(options: {
   // a deterministic lexical fallback until indexing catches up. If vector rows
   // exist but all are below threshold, preserve the semantic "no match" result.
   if (!rows.length) return retrieveLexicalCitations({ ...options, limit });
+  // Development mock vectors are not a semantic authority. If they return no
+  // threshold-qualified result, use the exact metadata-scoped lexical ranker.
+  if (!candidates.length && env.EMBEDDING_PROVIDER !== "service")
+    return retrieveLexicalCitations({ ...options, limit });
   return rerankCitations(options.query, candidates, limit);
 }
