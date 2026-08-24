@@ -1701,3 +1701,63 @@ export const teachbackNotes = pgTable(
     ),
   ],
 );
+
+export const copilotConversations = pgTable("copilot_conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  title: varchar("title", { length: 200 }).notNull().default("New conversation"),
+  lastPageContext: jsonb("last_page_context"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  ...timestamps,
+}, (t) => [index("copilot_conversations_user_project_idx").on(t.userId, t.projectId, t.updatedAt)]);
+
+export const copilotMessages = pgTable("copilot_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id").notNull().references(() => copilotConversations.id),
+  role: varchar("role", { length: 12 }).notNull(),        // user | assistant | tool
+  content: text("content"),
+  toolName: varchar("tool_name", { length: 80 }),
+  toolArgs: jsonb("tool_args"),
+  toolResult: jsonb("tool_result"),
+  toolStatus: varchar("tool_status", { length: 20 }),     // executed | failed | skipped
+  citations: jsonb("citations"),
+  // Complete rendered assistant response. `content` and `citations` remain
+  // separately indexed/auditable, while this restores the exact UI turn when
+  // a drawer is closed and reopened.
+  response: jsonb("response"),
+  modelProvider: varchar("model_provider", { length: 20 }),
+  modelVersion: varchar("model_version", { length: 80 }),
+  // Real usage from the provider's own response (see ModelResult.usage) —
+  // one row per model call, so spend against a hosted provider's per-day/
+  // per-account budget (MODEL_DAILY_TOKEN_BUDGET) is inspectable and
+  // summable, not just estimated. Null for the mock provider and for the
+  // initial "user" role message, which never triggers a model call itself.
+  modelInputTokens: integer("model_input_tokens"),
+  modelOutputTokens: integer("model_output_tokens"),
+  ...timestamps,
+}, (t) => [index("copilot_messages_conversation_idx").on(t.conversationId, t.createdAt)]);
+
+export const copilotAttachments = pgTable("copilot_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id").notNull().references(() => copilotConversations.id),
+  storageObjectId: uuid("storage_object_id").references(() => storageObjects.id),
+  originalName: varchar("original_name", { length: 300 }).notNull(),
+  mediaType: varchar("media_type", { length: 120 }).notNull(),
+  byteSize: integer("byte_size").notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  routedTo: varchar("routed_to", { length: 40 }),         // source | cx_standard | field_capture | revision | duplicate
+  routedEntityId: uuid("routed_entity_id"),
+  routingReason: text("routing_reason"),
+  ...timestamps,
+});
+
+export const copilotMemories = pgTable("copilot_memories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
+  kind: varchar("kind", { length: 20 }).notNull(),        // preference | fact
+  key: varchar("key", { length: 120 }).notNull(),
+  value: text("value").notNull(),
+  ...timestamps,
+}, (t) => [uniqueIndex("copilot_memories_scope_key_unique").on(t.projectId, t.userId, t.kind, t.key)]);

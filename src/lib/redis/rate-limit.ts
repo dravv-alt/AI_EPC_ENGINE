@@ -79,3 +79,63 @@ export async function enforceExportRateLimit(scope: string) {
 export function clientIp(request: Request) {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 100) || "unknown";
 }
+
+const tokenFallback = new Map<string, { used: number; resetAt: number }>();
+
+/**
+ * Reserves `estimatedTokens` against a rolling per-minute token budget,
+ * mirroring checkRateLimit's INCR/EXPIRE pattern but summing token counts
+ * (INCRBY) instead of counting calls. Tentatively adds the reservation, and
+ * releases it (DECRBY) if that would exceed budget, so a rejected request
+ * never permanently eats budget it didn't use.
+ */
+async function checkTokenBudget(key: string, estimatedTokens: number, budget: number, windowSeconds: number) {
+  const namespaced = `${env.REDIS_PREFIX}:tokenbudget:${key}`;
+  try {
+    const redis = getRedis();
+    if (redis.status === "wait") await redis.connect();
+    const used = await redis.incrby(namespaced, estimatedTokens);
+    if (used === estimatedTokens) await redis.expire(namespaced, windowSeconds);
+    if (used > budget) {
+      await redis.decrby(namespaced, estimatedTokens);
+      const ttl = Math.max(await redis.ttl(namespaced), 1);
+      return { allowed: false, retryAfter: ttl, backend: "redis" as const };
+    }
+    return { allowed: true, retryAfter: 0, backend: "redis" as const };
+  } catch (error) {
+    if (!env.INFRA_ALLOW_DEGRADED) throw error;
+    const now = Date.now();
+    const current = tokenFallback.get(namespaced);
+    const bucket = !current || current.resetAt <= now ? { used: 0, resetAt: now + windowSeconds * 1000 } : current;
+    if (bucket.used + estimatedTokens > budget) {
+      tokenFallback.set(namespaced, bucket);
+      return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000), backend: "memory-degraded" as const };
+    }
+    bucket.used += estimatedTokens;
+    tokenFallback.set(namespaced, bucket);
+    return { allowed: true, retryAfter: 0, backend: "memory-degraded" as const };
+  }
+}
+
+/**
+ * Waits, rather than immediately failing, for enough per-minute token budget
+ * to free up before a model call — the user asked to actually get a
+ * response paced to the provider's real limit instead of firing requests
+ * that just 429. Scoped per provider (env.MODEL_PROVIDER) via `scope`, so
+ * switching providers/models never shares a stale counter. No-op (always
+ * allowed) when `budget` is undefined — this only activates when
+ * MODEL_TOKENS_PER_MINUTE is explicitly configured for the active provider.
+ * Bounded to at most one full window's wait before giving up, so a genuinely
+ * exhausted budget still fails fast rather than hanging the request forever.
+ */
+export async function waitForTokenBudget(scope: string, estimatedTokens: number, budget: number | undefined, windowSeconds = 60) {
+  if (!budget) return;
+  const deadline = Date.now() + windowSeconds * 1000;
+  for (;;) {
+    const outcome = await checkTokenBudget(scope, estimatedTokens, budget, windowSeconds);
+    if (outcome.allowed) return;
+    if (Date.now() >= deadline) throw new Error(`Token budget for ${scope} (${budget}/${windowSeconds}s) has no room for an estimated ${estimatedTokens}-token request after waiting the full window; retry later.`);
+    const waitSeconds = Math.min(outcome.retryAfter, Math.max(1, Math.ceil((deadline - Date.now()) / 1000)));
+    await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+  }
+}

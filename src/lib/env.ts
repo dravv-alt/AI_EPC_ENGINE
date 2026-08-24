@@ -37,7 +37,7 @@ const environmentSchema = z.object({
   REQUIRE_PRODUCTION_CONFIG: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   // Local Ollama is the normal runtime. Mock remains available only for
   // deterministic tests and explicitly opted-in development scenarios.
-  MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim"]).default("ollama"),
+  MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim", "groq", "cerebras"]).default("ollama"),
   OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
   OLLAMA_MODEL: z.string().min(1).default("gemma4:e2b"),
   OLLAMA_EMBEDDING_MODEL: z.string().min(1).default("nomic-embed-text:latest"),
@@ -49,12 +49,39 @@ const environmentSchema = z.object({
   MODEL_PROMPT_MAX_CHARS: z.coerce.number().int().min(1_000).max(250_000).default(60_000),
   MODEL_OUTPUT_MAX_TOKENS: z.coerce.number().int().min(16).max(4_096).default(512),
   MODEL_CONTEXT_TOKENS: z.coerce.number().int().min(512).max(32_768).default(8_192),
+  // Optional per-minute token budget for the currently active MODEL_PROVIDER.
+  // Unset (default) = no throttling, unchanged behavior. Set this whenever a
+  // provider/model has its own hard TPM ceiling (e.g. a hosted free tier) so
+  // requests are paced to actually succeed instead of firing and 429ing —
+  // edit this one number when switching provider/model rather than changing
+  // code. Scoped by MODEL_PROVIDER internally, so switching providers never
+  // reuses a stale budget counter.
+  MODEL_TOKENS_PER_MINUTE: z.coerce.number().int().min(100).max(10_000_000).optional(),
+  // Optional rolling-24h token spend cap for the copilot specifically,
+  // summed from real usage already persisted on copilot_messages (see
+  // ModelResult.usage) for whichever provider is currently active. Unset
+  // (default) = no cap. Exists for a metered/paid provider on a small
+  // credit balance (e.g. Cerebras) so a runaway or repeatedly-retried
+  // conversation can't silently burn the whole balance — the copilot
+  // refuses new turns with a clear message once exceeded, rather than
+  // failing opaquely against the provider's own billing limit.
+  MODEL_DAILY_TOKEN_BUDGET: z.coerce.number().int().min(1_000).max(1_000_000_000).optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().min(1).default("gemini-2.5-flash"),
   GEMINI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-004"),
   NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NIM_API_KEY: z.string().optional(),
   NIM_MODEL: z.string().min(1).default("meta/llama-3.3-70b-instruct"),
+  // Groq: OpenAI-compatible chat-completions endpoint, same shape as NIM below.
+  GROQ_BASE_URL: z.string().url().default("https://api.groq.com/openai/v1"),
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().min(1).default("openai/gpt-oss-20b"),
+  // Cerebras: OpenAI-compatible chat-completions endpoint, same shape as NIM
+  // above. Offered by the user for gpt-oss-120b (bigger than Groq's 20b) on
+  // a small metered credit balance — pair with MODEL_DAILY_TOKEN_BUDGET.
+  CEREBRAS_BASE_URL: z.string().url().default("https://api.cerebras.ai/v1"),
+  CEREBRAS_API_KEY: z.string().optional(),
+  CEREBRAS_MODEL: z.string().min(1).default("gpt-oss-120b"),
   // Embeddings intentionally remain independently selected. Choosing Gemini
   // for generation must never silently change an existing vector space.
   EMBEDDING_PROVIDER: z.enum(["mock", "ollama", "gemini", "service"]).default("ollama"),
@@ -136,12 +163,20 @@ export const env = environmentSchema.parse({
   MODEL_PROMPT_MAX_CHARS: process.env.MODEL_PROMPT_MAX_CHARS,
   MODEL_OUTPUT_MAX_TOKENS: process.env.MODEL_OUTPUT_MAX_TOKENS,
   MODEL_CONTEXT_TOKENS: process.env.MODEL_CONTEXT_TOKENS,
+  MODEL_TOKENS_PER_MINUTE: process.env.MODEL_TOKENS_PER_MINUTE,
+  MODEL_DAILY_TOKEN_BUDGET: process.env.MODEL_DAILY_TOKEN_BUDGET,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
   GEMINI_EMBEDDING_MODEL: process.env.GEMINI_EMBEDDING_MODEL,
   NIM_BASE_URL: process.env.NIM_BASE_URL,
   NIM_API_KEY: process.env.NIM_API_KEY,
   NIM_MODEL: process.env.NIM_MODEL,
+  GROQ_BASE_URL: process.env.GROQ_BASE_URL,
+  GROQ_API_KEY: process.env.GROQ_API_KEY,
+  GROQ_MODEL: process.env.GROQ_MODEL,
+  CEREBRAS_BASE_URL: process.env.CEREBRAS_BASE_URL,
+  CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+  CEREBRAS_MODEL: process.env.CEREBRAS_MODEL,
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
   RETRIEVAL_SERVICE_URL: process.env.RETRIEVAL_SERVICE_URL,
   KNOWLEDGE_RERANK_THRESHOLD: process.env.KNOWLEDGE_RERANK_THRESHOLD,
@@ -201,6 +236,8 @@ if (env.REQUIRE_PRODUCTION_CONFIG) {
   }
   if (env.MODEL_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when MODEL_PROVIDER=gemini.");
   if (env.MODEL_PROVIDER === "nim" && !env.NIM_API_KEY) throw new Error("NIM_API_KEY is required when MODEL_PROVIDER=nim.");
+  if (env.MODEL_PROVIDER === "groq" && !env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is required when MODEL_PROVIDER=groq.");
+  if (env.MODEL_PROVIDER === "cerebras" && !env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is required when MODEL_PROVIDER=cerebras.");
   if (env.EMBEDDING_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini.");
   if (env.AUTH_MODE === "clerk" && !(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY)) {
     throw new Error("Clerk keys are required when AUTH_MODE=clerk and REQUIRE_PRODUCTION_CONFIG=true.");
