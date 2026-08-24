@@ -2,11 +2,32 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { env, modelRequestTimeoutMs } from "@/lib/env";
+import { waitForTokenBudget } from "@/lib/redis/rate-limit";
 
 export const EMBEDDING_DIMENSIONS = 768;
 
-export interface ModelRequest<T> { system: string; prompt: string; schema: z.ZodType<T>; mock: T }
-export interface ModelResult<T> { data: T; provider: "mock" | "ollama" | "gemini" | "nim"; model: string; usage?: { inputTokens?: number; outputTokens?: number } }
+export interface ModelRequest<T> {
+  system: string;
+  prompt: string;
+  schema: z.ZodType<T>;
+  mock: T;
+  /** Optional per-call overrides. Omitted by every pre-existing call site. */
+  limits?: { outputMaxTokens?: number; contextTokens?: number; timeoutMs?: number };
+  /**
+   * Optional hand-written, compact schema description for providers that
+   * embed the schema as TEXT in the prompt (NIM, Groq — see
+   * requestStructuredJson callers below). When omitted, those providers fall
+   * back to auto-generating one via zodToJsonSchema, as before. Ollama and
+   * Gemini bind `schema` natively (structured-output APIs) and never read
+   * this field. Added for the copilot's own step schema (Opus consult,
+   * 2026-08-24): the auto-generated $ref/definitions JSON dump cost real
+   * tokens on every call and, empirically, a terse hand-written spec is also
+   * followed more reliably by a small/hosted model than a verbose schema
+   * dump. Every other existing call site omits this and is unaffected.
+   */
+  schemaDescription?: string;
+}
+export interface ModelResult<T> { data: T; provider: "mock" | "ollama" | "gemini" | "nim" | "groq" | "cerebras"; model: string; usage?: { inputTokens?: number; outputTokens?: number } }
 
 export interface GenerationProvider {
   generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>>;
@@ -55,7 +76,7 @@ async function fetchWithinDeadline(url: string, init: RequestInit, deadline: num
 
 export type ProviderHealth = {
   status: "ok" | "unavailable";
-  provider: "mock" | "ollama" | "gemini" | "nim" | "service";
+  provider: "mock" | "ollama" | "gemini" | "nim" | "groq" | "cerebras" | "service";
   model: string;
   reason?: string;
 };
@@ -103,27 +124,78 @@ function extractJsonObject(text: string): string | null {
   return text.slice(start, end + 1);
 }
 
+/**
+ * Thrown by a provider's `callModel` when the PROVIDER rejected the model's
+ * output format before we ever got text to parse (e.g. Groq's json_object
+ * validator: the model wrote plain prose, or tried its own native
+ * tool-calling syntax instead of the prompted JSON schema — both observed
+ * live with openai/gpt-oss-20b). Distinguished from a generic thrown error
+ * (network failure, auth, rate limit/429, 5xx) so the repair-retry below
+ * only fires for genuine content-quality issues — retrying a 429 immediately
+ * would just burn more of an already-exhausted token budget for no benefit.
+ */
+export class RetryableModelOutputError extends Error {}
+
+// Error codes an OpenAI-compatible endpoint (NIM, Groq) returns when it
+// rejected the MODEL'S output format, not the request itself — retryable.
+// Both observed live on Groq with openai/gpt-oss-20b: "output_parse_failed"
+// (wrote plain prose instead of JSON) and "tool_use_failed" (emitted its own
+// native tool-call syntax — a natively tool-use-trained model sometimes
+// defaults to that instead of the prompted JSON schema, even though we never
+// declare a `tools` param). Checked defensively on NIM too since it shares
+// the same error shape, even though not observed there yet.
+const OPENAI_COMPATIBLE_RETRYABLE_OUTPUT_CODES = new Set(["output_parse_failed", "tool_use_failed"]);
+
+function parseRetryableOutputCode(bodyText: string): string | undefined {
+  try {
+    return (JSON.parse(bodyText) as { error?: { code?: string } })?.error?.code;
+  } catch {
+    return undefined;
+  }
+}
+
 // Shared repair-retry loop: call the model once, try to parse; on failure,
 // call it again with the validation error appended to the prompt; fail hard
 // only after the second attempt. Keeps a single sloppy token from failing an
-// entire job outright, for any real (non-mock) provider.
+// entire job outright, for any real (non-mock) provider. Covers two distinct
+// failure points: the model returned text that didn't parse (first try/catch
+// only, pre-existing), and the provider rejected the request outright before
+// any text came back (outer try/catch — only for RetryableModelOutputError).
 export async function requestStructuredJson<T>(options: {
   schema: z.ZodType<T>;
   callModel: (promptSuffix: string) => Promise<string>;
 }): Promise<T> {
-  const first = await options.callModel("");
+  let first: string;
+  try {
+    first = await options.callModel("");
+  } catch (error) {
+    if (!(error instanceof RetryableModelOutputError)) throw error;
+    return repairRetry(options, error.message);
+  }
   try {
     return parseStructuredResponse(first, options.schema);
   } catch (firstError) {
     const reason = firstError instanceof Error ? firstError.message : String(firstError);
-    const second = await options.callModel(`\n\nYour previous response could not be parsed as valid JSON matching the required schema (${reason}). Respond again with ONLY the corrected JSON object, no markdown fences, no commentary.`);
-    try {
-      return parseStructuredResponse(second, options.schema);
-    } catch (secondError) {
-      const secondReason = secondError instanceof Error ? secondError.message : String(secondError);
-      throw new Error(`Model returned invalid structured output after a repair retry: ${secondReason}`);
-    }
+    return repairRetry(options, reason);
   }
+}
+
+async function repairRetry<T>(options: { schema: z.ZodType<T>; callModel: (promptSuffix: string) => Promise<string> }, reason: string): Promise<T> {
+  try {
+    const second = await options.callModel(`\n\nYour previous response could not be completed (${reason}). Respond again with ONLY a plain JSON object matching the required schema — no markdown fences, no commentary, no function/tool-call syntax.`);
+    return parseStructuredResponse(second, options.schema);
+  } catch (secondError) {
+    const secondReason = secondError instanceof Error ? secondError.message : String(secondError);
+    throw new Error(`Model returned invalid structured output after a repair retry: ${secondReason}`);
+  }
+}
+
+// Rough chars/4 estimate — no real tokenizer dependency for this; only used
+// to pace requests against MODEL_TOKENS_PER_MINUTE, not for billing/limits
+// enforcement, so an approximation is fine (and matches the ballpark a
+// provider's own error message reports, e.g. Groq's "Requested N tokens").
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 export class MockModelProvider implements ModelProvider {
@@ -139,7 +211,7 @@ export class MockModelProvider implements ModelProvider {
 export class OllamaModelProvider implements GenerationProvider {
   async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
     const schema = zodToJsonSchema(request.schema, "response");
-    const deadline = Date.now() + modelRequestTimeoutMs;
+    const deadline = Date.now() + (request.limits?.timeoutMs ?? modelRequestTimeoutMs);
     let usage: { inputTokens?: number; outputTokens?: number } | undefined;
     const data = await requestStructuredJson({
       schema: request.schema,
@@ -157,7 +229,7 @@ export class OllamaModelProvider implements GenerationProvider {
               { role: "system", content: `${boundedPrompt(request.system, "System prompt")}\nReturn only JSON that satisfies the supplied schema.` },
               { role: "user", content: prompt }
             ],
-            options: { temperature: 0, num_predict: env.MODEL_OUTPUT_MAX_TOKENS, num_ctx: env.MODEL_CONTEXT_TOKENS },
+            options: { temperature: 0, num_predict: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS, num_ctx: request.limits?.contextTokens ?? env.MODEL_CONTEXT_TOKENS },
             keep_alive: "5m"
           }),
         }, deadline, "Ollama structured generation");
@@ -193,7 +265,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 export class GeminiModelProvider implements ModelProvider {
   async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
     if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when MODEL_PROVIDER=gemini.");
-    const deadline = Date.now() + modelRequestTimeoutMs;
+    const deadline = Date.now() + (request.limits?.timeoutMs ?? modelRequestTimeoutMs);
     let usage: { inputTokens?: number; outputTokens?: number } | undefined;
     const data = await requestStructuredJson({
       schema: request.schema,
@@ -210,7 +282,7 @@ export class GeminiModelProvider implements ModelProvider {
               responseMimeType: "application/json",
               responseJsonSchema: zodToJsonSchema(request.schema, "response"),
               temperature: 0,
-              maxOutputTokens: env.MODEL_OUTPUT_MAX_TOKENS
+              maxOutputTokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS
             }
           })
         }, deadline, "Gemini structured generation");
@@ -252,28 +324,46 @@ export class GeminiModelProvider implements ModelProvider {
 export class NimModelProvider implements GenerationProvider {
   async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
     if (!env.NIM_API_KEY) throw new Error("NIM_API_KEY is required when MODEL_PROVIDER=nim.");
-    const jsonSchema = JSON.stringify(zodToJsonSchema(request.schema, "response"));
+    const jsonSchema = request.schemaDescription ?? JSON.stringify(zodToJsonSchema(request.schema, "response"));
     let usage: { inputTokens?: number; outputTokens?: number } | undefined;
     const systemMessage = boundedPrompt(`${request.system}\n\nRespond with ONLY a JSON object matching this schema, no markdown fences, no commentary:\n${jsonSchema}`, "System prompt");
-    const deadline = Date.now() + modelRequestTimeoutMs;
+    const deadline = Date.now() + (request.limits?.timeoutMs ?? modelRequestTimeoutMs);
     const data = await requestStructuredJson({
       schema: request.schema,
       callModel: async (promptSuffix) => {
+        const userContent = boundedPrompt(`${request.prompt}${promptSuffix}`, "Model prompt");
+        // Scoped by the literal provider name ("nim"), not env.MODEL_PROVIDER
+        // — this class can be instantiated directly regardless of which
+        // provider is currently active (verify-provider-safety.ts does
+        // exactly that), and scoping by the active config caused it to wait
+        // on a DIFFERENT provider's exhausted budget (found live: this
+        // script hung ~60s waiting on Groq's budget while testing NIM).
+        // MODEL_TOKENS_PER_MINUTE is only meaningful for whichever provider
+        // is actually active; a direct-instantiation test naturally gets an
+        // unused, always-fresh "nim" counter instead.
+        await waitForTokenBudget("model-provider:nim", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "nim" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
         const response = await fetchWithinDeadline(`${env.NIM_BASE_URL}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${env.NIM_API_KEY}` },
           body: JSON.stringify({
             model: env.NIM_MODEL,
             temperature: 0,
-            max_tokens: env.MODEL_OUTPUT_MAX_TOKENS,
+            max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
             response_format: { type: "json_object" },
             messages: [
               { role: "system", content: systemMessage },
-              { role: "user", content: boundedPrompt(`${request.prompt}${promptSuffix}`, "Model prompt") }
+              { role: "user", content: userContent }
             ]
           })
         }, deadline, "NIM structured generation");
-        if (!response.ok) throw new Error(`NIM request failed with ${response.status}: ${await response.text()}`);
+        if (!response.ok) {
+          const bodyText = await response.text();
+          const code = parseRetryableOutputCode(bodyText);
+          if (response.status === 400 && code && OPENAI_COMPATIBLE_RETRYABLE_OUTPUT_CODES.has(code)) {
+            throw new RetryableModelOutputError(`NIM rejected the model's output format (${code}): ${bodyText}`);
+          }
+          throw new Error(`NIM request failed with ${response.status}: ${bodyText}`);
+        }
         const body = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
         const text = body.choices?.[0]?.message?.content;
         if (!text) throw new Error("NIM returned no structured response.");
@@ -282,6 +372,118 @@ export class NimModelProvider implements GenerationProvider {
       }
     });
     return { data, provider: "nim", model: env.NIM_MODEL, usage };
+  }
+}
+
+// Groq: same OpenAI-compatible chat-completions shape as NIM above, added at
+// the user's request after `meta/llama-3.1-8b-instruct` on NIM proved
+// unreliable at tool-use/structured output for anything but very directive
+// phrasing. `reasoning_effort: "low"` is Groq-specific and only meaningful
+// for reasoning-style models (gpt-oss); it keeps chain-of-thought token
+// spend down so `max_tokens` is spent on the actual JSON answer rather than
+// getting truncated mid-response (the exact failure mode observed earlier
+// this build with a different reasoning model on NIM, where `content` came
+// back null with `finish_reason: "length"`). Harmless no-op for a
+// non-reasoning model if this provider is ever pointed at one.
+export class GroqModelProvider implements GenerationProvider {
+  async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
+    if (!env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is required when MODEL_PROVIDER=groq.");
+    const jsonSchema = request.schemaDescription ?? JSON.stringify(zodToJsonSchema(request.schema, "response"));
+    let usage: { inputTokens?: number; outputTokens?: number } | undefined;
+    const systemMessage = boundedPrompt(`${request.system}\n\nRespond with ONLY a JSON object matching this schema, no markdown fences, no commentary:\n${jsonSchema}`, "System prompt");
+    const deadline = Date.now() + (request.limits?.timeoutMs ?? modelRequestTimeoutMs);
+    const data = await requestStructuredJson({
+      schema: request.schema,
+      callModel: async (promptSuffix) => {
+        const userContent = boundedPrompt(`${request.prompt}${promptSuffix}`, "Model prompt");
+        // Waits for real per-minute token budget room (MODEL_TOKENS_PER_MINUTE)
+        // instead of firing and hoping — see rate-limit.ts's waitForTokenBudget.
+        // Scoped by the literal provider name ("groq"), not env.MODEL_PROVIDER
+        // — see the matching comment in NimModelProvider for why.
+        await waitForTokenBudget("model-provider:groq", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "groq" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
+        const response = await fetchWithinDeadline(`${env.GROQ_BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${env.GROQ_API_KEY}` },
+          body: JSON.stringify({
+            model: env.GROQ_MODEL,
+            temperature: 0,
+            max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
+            response_format: { type: "json_object" },
+            reasoning_effort: "low",
+            messages: [
+              { role: "system", content: systemMessage },
+              { role: "user", content: userContent }
+            ]
+          })
+        }, deadline, "Groq structured generation");
+        if (!response.ok) {
+          const bodyText = await response.text();
+          const code = parseRetryableOutputCode(bodyText);
+          if (response.status === 400 && code && OPENAI_COMPATIBLE_RETRYABLE_OUTPUT_CODES.has(code)) {
+            throw new RetryableModelOutputError(`Groq rejected the model's output format (${code}): ${bodyText}`);
+          }
+          throw new Error(`Groq request failed with ${response.status}: ${bodyText}`);
+        }
+        const body = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+        const text = body.choices?.[0]?.message?.content;
+        if (!text) throw new Error("Groq returned no structured response.");
+        usage = { inputTokens: body.usage?.prompt_tokens, outputTokens: body.usage?.completion_tokens };
+        return text;
+      }
+    });
+    return { data, provider: "groq", model: env.GROQ_MODEL, usage };
+  }
+}
+
+// Cerebras: same OpenAI-compatible chat-completions shape as Groq above —
+// offered by the user for gpt-oss-120b on a small metered credit balance
+// (a few dollars). Not yet live-tested against a real key; `reasoning_effort`
+// is carried over from Groq's gpt-oss-20b integration on the assumption
+// Cerebras' gpt-oss-120b supports the same param (same underlying model
+// family) — remove it if a real call rejects the field once tested.
+export class CerebrasModelProvider implements GenerationProvider {
+  async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
+    if (!env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is required when MODEL_PROVIDER=cerebras.");
+    const jsonSchema = request.schemaDescription ?? JSON.stringify(zodToJsonSchema(request.schema, "response"));
+    let usage: { inputTokens?: number; outputTokens?: number } | undefined;
+    const systemMessage = boundedPrompt(`${request.system}\n\nRespond with ONLY a JSON object matching this schema, no markdown fences, no commentary:\n${jsonSchema}`, "System prompt");
+    const deadline = Date.now() + (request.limits?.timeoutMs ?? modelRequestTimeoutMs);
+    const data = await requestStructuredJson({
+      schema: request.schema,
+      callModel: async (promptSuffix) => {
+        const userContent = boundedPrompt(`${request.prompt}${promptSuffix}`, "Model prompt");
+        await waitForTokenBudget("model-provider:cerebras", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "cerebras" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
+        const response = await fetchWithinDeadline(`${env.CEREBRAS_BASE_URL}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${env.CEREBRAS_API_KEY}` },
+          body: JSON.stringify({
+            model: env.CEREBRAS_MODEL,
+            temperature: 0,
+            max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
+            response_format: { type: "json_object" },
+            reasoning_effort: "low",
+            messages: [
+              { role: "system", content: systemMessage },
+              { role: "user", content: userContent }
+            ]
+          })
+        }, deadline, "Cerebras structured generation");
+        if (!response.ok) {
+          const bodyText = await response.text();
+          const code = parseRetryableOutputCode(bodyText);
+          if (response.status === 400 && code && OPENAI_COMPATIBLE_RETRYABLE_OUTPUT_CODES.has(code)) {
+            throw new RetryableModelOutputError(`Cerebras rejected the model's output format (${code}): ${bodyText}`);
+          }
+          throw new Error(`Cerebras request failed with ${response.status}: ${bodyText}`);
+        }
+        const body = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+        const text = body.choices?.[0]?.message?.content;
+        if (!text) throw new Error("Cerebras returned no structured response.");
+        usage = { inputTokens: body.usage?.prompt_tokens, outputTokens: body.usage?.completion_tokens };
+        return text;
+      }
+    });
+    return { data, provider: "cerebras", model: env.CEREBRAS_MODEL, usage };
   }
 }
 
@@ -309,6 +511,8 @@ export function getGenerationProvider(): GenerationProvider {
   if (env.MODEL_PROVIDER === "ollama") return new OllamaModelProvider();
   if (env.MODEL_PROVIDER === "gemini") return new GeminiModelProvider();
   if (env.MODEL_PROVIDER === "nim") return new NimModelProvider();
+  if (env.MODEL_PROVIDER === "groq") return new GroqModelProvider();
+  if (env.MODEL_PROVIDER === "cerebras") return new CerebrasModelProvider();
   return new MockModelProvider();
 }
 
@@ -345,16 +549,44 @@ export async function generationProviderHealth(): Promise<ProviderHealth> {
       await assertHealthResponse(response, "Gemini");
     });
   }
-  if (!env.NIM_API_KEY) return { status: "unavailable", provider: "nim", model: env.NIM_MODEL, reason: "NIM_API_KEY is not configured." };
-  return providerHealth("nim", env.NIM_MODEL, async () => {
+  if (env.MODEL_PROVIDER === "nim") {
+    if (!env.NIM_API_KEY) return { status: "unavailable", provider: "nim", model: env.NIM_MODEL, reason: "NIM_API_KEY is not configured." };
+    return providerHealth("nim", env.NIM_MODEL, async () => {
+      const deadline = Date.now() + modelRequestTimeoutMs;
+      const response = await fetchWithinDeadline(`${env.NIM_BASE_URL}/models`, {
+        headers: { authorization: `Bearer ${env.NIM_API_KEY}` }
+      }, deadline, "NIM health check");
+      await assertHealthResponse(response, "NIM");
+      const payload = await response.json() as { data?: Array<{ id?: string }> };
+      if (payload.data?.length && !payload.data.some((model) => model.id === env.NIM_MODEL)) {
+        throw new Error(`NIM model ${env.NIM_MODEL} is not available from this endpoint.`);
+      }
+    });
+  }
+  if (env.MODEL_PROVIDER === "groq") {
+    if (!env.GROQ_API_KEY) return { status: "unavailable", provider: "groq", model: env.GROQ_MODEL, reason: "GROQ_API_KEY is not configured." };
+    return providerHealth("groq", env.GROQ_MODEL, async () => {
+      const deadline = Date.now() + modelRequestTimeoutMs;
+      const response = await fetchWithinDeadline(`${env.GROQ_BASE_URL}/models`, {
+        headers: { authorization: `Bearer ${env.GROQ_API_KEY}` }
+      }, deadline, "Groq health check");
+      await assertHealthResponse(response, "Groq");
+      const payload = await response.json() as { data?: Array<{ id?: string }> };
+      if (payload.data?.length && !payload.data.some((model) => model.id === env.GROQ_MODEL)) {
+        throw new Error(`Groq model ${env.GROQ_MODEL} is not available from this endpoint.`);
+      }
+    });
+  }
+  if (!env.CEREBRAS_API_KEY) return { status: "unavailable", provider: "cerebras", model: env.CEREBRAS_MODEL, reason: "CEREBRAS_API_KEY is not configured." };
+  return providerHealth("cerebras", env.CEREBRAS_MODEL, async () => {
     const deadline = Date.now() + modelRequestTimeoutMs;
-    const response = await fetchWithinDeadline(`${env.NIM_BASE_URL}/models`, {
-      headers: { authorization: `Bearer ${env.NIM_API_KEY}` }
-    }, deadline, "NIM health check");
-    await assertHealthResponse(response, "NIM");
+    const response = await fetchWithinDeadline(`${env.CEREBRAS_BASE_URL}/models`, {
+      headers: { authorization: `Bearer ${env.CEREBRAS_API_KEY}` }
+    }, deadline, "Cerebras health check");
+    await assertHealthResponse(response, "Cerebras");
     const payload = await response.json() as { data?: Array<{ id?: string }> };
-    if (payload.data?.length && !payload.data.some((model) => model.id === env.NIM_MODEL)) {
-      throw new Error(`NIM model ${env.NIM_MODEL} is not available from this endpoint.`);
+    if (payload.data?.length && !payload.data.some((model) => model.id === env.CEREBRAS_MODEL)) {
+      throw new Error(`Cerebras model ${env.CEREBRAS_MODEL} is not available from this endpoint.`);
     }
   });
 }

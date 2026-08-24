@@ -1,0 +1,4 @@
+import { z } from "zod";
+import { callProjectRoute } from "@/lib/copilot/invoke";
+import type { CopilotTool } from "@/lib/copilot/types";
+export const tools: CopilotTool[] = [{ name: "schedule.solve_baseline", description: "Start a schedule baseline solve from accepted tasks; solver failures are reported without writing a version.", permission: "schedule:manage", rateLimit: "schedule", mutating: true, input: z.object({ horizonStart: z.string().datetime(), reason: z.string().trim().min(5).max(2000), idempotencyKey: z.string().min(8).max(200).optional() }), transport: { kind: "http", method: "POST", path: (a) => `/api/projects/${a.projectId}/schedule/baseline` }, async execute(ctx, args) { return callProjectRoute(ctx, "POST", (a) => `/api/projects/${a.projectId}/schedule/baseline`, args, "scheduleTimeline"); } }];

@@ -68,6 +68,7 @@
     "verify:teachback-http": "tsx scripts/verify-teachback-http.ts",
     "verify:rfi-resolution": "tsx scripts/verify-rfi-resolution.ts",
     "verify:knowledge-filters": "tsx scripts/verify-knowledge-filters.ts",
+    "verify:copilot": "tsx scripts/verify-copilot-http.ts",
     "verify:all": "tsx scripts/verify-all.ts"
   },
   "dependencies": {

@@ -110,6 +110,7 @@ async function main() {
   run("Overdue findings in blocker views", "npm", ["run", "verify:overdue-findings"], developmentEnv);
   run("Change blast radius", "npm", ["run", "verify:change-impact-http"], { ...developmentEnv, CHANGE_IMPACT_TEST_URL: developmentBase });
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
+  run("Copilot agentic harness hardening", "npm", ["run", "verify:copilot"], developmentEnv);
 
   // Slice 15 hardening: a dedicated server with a low AI rate limit so the 429 is
   // reachable, and the S3 driver pointed at MinIO for the storage round-trip.

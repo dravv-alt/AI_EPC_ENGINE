@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getGenerationProvider } from "@/lib/model/provider";
+import { getGenerationProvider, type ModelResult } from "@/lib/model/provider";
 import type { RiskSignalType } from "@/lib/predictive-risk/clients";
 
 export interface MitigationOption { id: string; label: string; description: string }
@@ -50,7 +50,7 @@ export interface MitigationContext {
 
 export interface MitigationGenerationResult {
   options: MitigationOption[];
-  provider: "mock" | "ollama" | "gemini" | "nim";
+  provider: ModelResult<unknown>["provider"];
   model: string;
 }
 
