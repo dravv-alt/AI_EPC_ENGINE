@@ -18,10 +18,12 @@ async function main() {
   const projectCode = argument("project", "MDC-07");
   const actorEmail = argument("actor");
   const documentType = argument("type", "standard");
+  const status = argument("status", "draft");
+  if (!['draft', 'approved'].includes(status)) throw new Error("--status must be draft or approved.");
 
   const fileInfo = await stat(filePath);
-  if (!fileInfo.isFile() || fileInfo.size < 5 || fileInfo.size > 20 * 1024 * 1024) {
-    throw new Error("Source PDF must be a file between 5 bytes and 20 MB.");
+  if (!fileInfo.isFile() || fileInfo.size < 5 || fileInfo.size > 100 * 1024 * 1024) {
+    throw new Error("Source PDF must be a file between 5 bytes and 100 MB.");
   }
   const bytes = await readFile(filePath);
   if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") throw new Error("Source does not have valid PDF magic bytes.");
@@ -74,6 +76,7 @@ async function main() {
         objectKey: stored.objectKey,
         mediaType: stored.mediaType,
         extractionStatus: "processing"
+        , status
       }).returning();
       await tx.insert(storageObjects).values({
         tenantId: authority.project.tenantId,
@@ -95,6 +98,11 @@ async function main() {
       entityId: version.id,
       after: { sha256: stored.sha256, objectKey: stored.objectKey, title, revision }
     });
+  }
+
+  if (version.status !== status) {
+    [version] = await db.update(documentVersions).set({ status, updatedAt: new Date() }).where(eq(documentVersions.id, version.id)).returning();
+    await writeAuditEvent({ projectId: authority.project.id, actorId: authority.actor.id, action: "source.status_set", entityType: "document_version", entityId: version.id, after: { status } });
   }
 
   const extraction = await extractDocument({ documentVersionId: version.id, objectKey: version.objectKey });

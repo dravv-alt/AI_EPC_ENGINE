@@ -24,16 +24,16 @@ export async function GET(_: Request, { params }: { params: Promise<{ shipmentId
       && shipment.currentLng !== null
       && Number.isFinite(Number(shipment.currentLat))
       && Number.isFinite(Number(shipment.currentLng));
-    const routeStart = hasCurrentPosition
+    const currentPosition = hasCurrentPosition
       ? { lat: Number(shipment.currentLat), lng: Number(shipment.currentLng), source: shipment.positionSource === "live" || shipment.positionSource === "aisstream" ? "live AIS position" : "latest simulated position" }
-      : { lat: Number(shipment.originLat), lng: Number(shipment.originLng), source: "shipment origin" };
+      : null;
+    const routeStart = { lat: Number(shipment.originLat), lng: Number(shipment.originLng), source: "shipment origin" };
     const route = await getShipmentRoute(
       routeStart.lat,
       routeStart.lng,
       Number(shipment.destinationLat),
       Number(shipment.destinationLng),
-      mode,
-      { originIsInTransit: hasCurrentPosition }
+      mode
     );
     const weather = route.length
       ? await assessRouteThreats(route.flatMap((segment) => segment.coords))
@@ -42,6 +42,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ shipmentId
       shipment,
       route,
       routeStart,
+      currentPosition,
       weather: { ...weather, source: "Open-Meteo current conditions", observedAt: new Date().toISOString() },
       estimate: true,
       routeAvailable: route.length > 0,

@@ -286,5 +286,10 @@ export async function retrieveSemanticCitations(options: {
   // a deterministic lexical fallback until indexing catches up. If vector rows
   // exist but all are below threshold, preserve the semantic "no match" result.
   if (!rows.length) return retrieveLexicalCitations({ ...options, limit });
+  // Deterministic mock vectors are a development substitute, not a semantic
+  // model. When they produce no threshold-qualified result, use the exact,
+  // metadata-scoped lexical ranker instead of presenting a false "no match".
+  // Service-backed embeddings retain strict threshold behavior.
+  if (!candidates.length && env.EMBEDDING_PROVIDER !== "service") return retrieveLexicalCitations({ ...options, limit });
   return rerankCitations(options.query, candidates, limit);
 }

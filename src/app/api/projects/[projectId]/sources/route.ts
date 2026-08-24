@@ -14,7 +14,7 @@ import { enforceUploadRateLimit } from "@/lib/redis/rate-limit";
 export const runtime = "nodejs";
 
 const metadataSchema = z.object({ title: z.string().trim().min(3).max(300), revision: z.string().trim().min(1).max(80), documentType: z.string().trim().min(2).max(40).default("procedure") });
-const maxSourceBytes = 20 * 1024 * 1024;
+const maxSourceBytes = 100 * 1024 * 1024;
 
 const XLSX_CONTENT_TYPES = new Set(["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]);
 const CSV_CONTENT_TYPES = new Set(["text/csv", "application/csv", "application/vnd.ms-excel.sheet.csv"]);
@@ -52,7 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const file = form.get("file");
     if (!metadata.success) return NextResponse.json({ error: "Invalid source metadata", details: metadata.error.flatten() }, { status: 400 });
     if (!(file instanceof File)) return NextResponse.json({ error: "A PDF, CSV, or XLSX file is required." }, { status: 400 });
-    if (file.size === 0 || file.size > maxSourceBytes) return NextResponse.json({ error: "Source file must be between 1 byte and 20 MB." }, { status: 413 });
+    if (file.size === 0 || file.size > maxSourceBytes) return NextResponse.json({ error: "Source file must be between 1 byte and 100 MB." }, { status: 413 });
 
     const mediaType = detectMediaType(file);
     if (!mediaType) return NextResponse.json({ error: "Only PDF, CSV, and XLSX uploads are accepted." }, { status: 415 });

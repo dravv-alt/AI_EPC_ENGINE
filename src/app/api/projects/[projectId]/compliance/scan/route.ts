@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createComplianceCheck } from "@/lib/compliance/create-check";
+import { normalizedContentHash } from "@/lib/compliance/compare";
 import { discoverCandidateTargets } from "@/lib/compliance/discover";
 import { db } from "@/lib/db/client";
 import { projects, requirements } from "@/lib/db/schema";
@@ -67,7 +68,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
           name: "compliance.check.candidate",
           tenantId: project.tenantId,
           projectId,
-          idempotencyKey: `compliance-check:${requirement.id}:${candidate.targetSourceRegionId}`,
+          idempotencyKey: `compliance-check:${requirement.id}:${normalizedContentHash(requirement.statement).slice(0, 16)}:${candidate.targetSourceRegionId}:${candidate.contentHash.slice(0, 16)}`,
           payload: { projectId, requirementId: requirement.id, targetSourceRegionId: candidate.targetSourceRegionId, actorId: actor.userId }
         });
         items.push({ requirementId: requirement.id, targetSourceRegionId: candidate.targetSourceRegionId, jobId: queued.job.id, duplicate: queued.duplicate, queuedInRedis: queued.queuedInRedis });

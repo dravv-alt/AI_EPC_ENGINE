@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import { applyVerdictSafetyDowngrades } from "../src/lib/compliance/assess";
+import { applyDeterministicSafetyFloor, applyVerdictSafetyDowngrades } from "../src/lib/compliance/assess";
+import { compareCompliance } from "../src/lib/compliance/compare";
 import type { SemanticCitation } from "../src/lib/knowledge/query";
 import { db } from "../src/lib/db/client";
 import { complianceChecks, documentVersions, documents, edges, findings, gates, requirements, sourceRegions } from "../src/lib/db/schema";
@@ -14,8 +15,9 @@ function fakeCitation(overrides: Partial<SemanticCitation> = {}): SemanticCitati
   return { chunkId: randomUUID(), content: "text", text: "text", sourceRegionId: randomUUID(), documentVersionId: null, documentType: "standard", contentHash: "hash", similarity: 0.9, ...overrides };
 }
 
-// Slice 6: the LLM owns the compliance verdict in real mode (decision #7).
-// compareCompliance is demoted to mock-supplier + recorded cross-check, which
+// The model proposes a compliance verdict in real mode, but deterministic
+// deviations and qualitative uncertainty are non-negotiable safety floors.
+// compareCompliance remains the mock supplier and recorded cross-check, which
 // is what keeps this pipeline reproducible offline: MockModelProvider echoes
 // the deterministic verdict/confidence/reason back verbatim, so
 // verify-compliance-http.ts (unmodified) still passes byte-for-byte under
@@ -82,10 +84,13 @@ async function main() {
     });
     assert.equal(exactPrecedentOk.verdict, "equivalent_by_precedent");
 
+    const hardDeviation = compareCompliance({ statement: "Pressure shall be 100 kPa.", numericValue: "100", unit: "kPa", tolerance: "0", comparisonModality: "numeric" }, "Pressure: 120 kPa.");
+    assert.equal(applyDeterministicSafetyFloor({ modelVerdict: "conforms", modelReason: "Model suggested conformity after semantic review.", deterministic: hardDeviation }).verdict, "deterministic_flag", "A model must not erase a deterministic deviation.");
+
     console.log("Unit-level safety downgrades verified: unverified grounding forces needs_engineering_judgment, verified grounding is untouched, semantic-only precedent can never yield equivalent_by_precedent, exact-hash accepted precedent is unaffected.");
 
     // --- Part B: full HTTP pipeline, MODEL_PROVIDER=mock ---
-    // This must reproduce createComplianceCheck's LLM-owned verdict path
+    // This must reproduce createComplianceCheck's advisory verdict path
     // exactly as the deterministic comparator would, byte-for-byte on
     // verdict/confidence/reason, while additionally tagging the check as
     // AI-authored-but-deterministic-mock per ADR-019's "always visibly
@@ -110,7 +115,7 @@ async function main() {
 
     const conforming = await request(`${base}/api/projects/${developmentProjectId}/compliance/checks`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requirementId: numericRequirement.id, targetSourceRegionId: conformingLine.id }) });
     checkIds.push(conforming.check.id);
-    assert.equal(conforming.check.verdict, "conforms", "Under MODEL_PROVIDER=mock, the LLM-owned verdict must reproduce the deterministic verdict exactly.");
+    assert.equal(conforming.check.verdict, "conforms", "Under MODEL_PROVIDER=mock, the advisory verdict must reproduce the deterministic verdict exactly.");
     assert.match(conforming.check.reason, /1 bar = 100 kPa/, "The mock-supplier pattern must reproduce the deterministic reason verbatim under MODEL_PROVIDER=mock.");
     assert.equal(conforming.check.suggestionSource, "deterministic", "MODEL_PROVIDER=mock must record suggestionSource as 'deterministic'.");
     assert.equal(conforming.check.suggestionModelVersion, "deterministic-mock-v1", "MODEL_PROVIDER=mock must record the mock model version tag.");
@@ -132,7 +137,7 @@ async function main() {
     assert.equal(deviatingCrossCheck!.verdict, "deterministic_flag");
     assert.equal((await db.query.gates.findFirst({ where: eq(gates.id, gate.id) }))?.status, originalGateStatus, "A machine-proposed finding must not change gate authority.");
 
-    console.log("HTTP mock-mode verification passed: LLM-owned verdict reproduces the deterministic comparator byte-for-byte, suggestionSource/suggestionModelVersion correctly tagged 'deterministic'/'deterministic-mock-v1', deterministicCrossCheck always recorded, reviewState always 'proposed'.");
+    console.log("HTTP mock-mode verification passed: advisory verdict reproduces the deterministic comparator byte-for-byte, suggestionSource/suggestionModelVersion correctly tagged 'deterministic'/'deterministic-mock-v1', deterministicCrossCheck always recorded, reviewState always 'proposed'.");
   } finally {
     if (checkIds.length) await db.delete(complianceChecks).where(inArray(complianceChecks.id, checkIds));
     if (findingIds.length) await db.delete(findings).where(inArray(findings.id, findingIds));

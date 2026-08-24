@@ -1,7 +1,9 @@
 import { and, asc, eq } from "drizzle-orm";
-import { writeAuditEvent } from "@/lib/audit/write-event";
+import { writeAuditEventInTransaction } from "@/lib/audit/write-event";
 import { assessCompliance } from "@/lib/compliance/assess";
 import { normalizedContentHash } from "@/lib/compliance/compare";
+import { complianceTargetDocumentTypes } from "@/lib/compliance/discover";
+import { selectControlledTargetExcerpt } from "@/lib/compliance/target-excerpt";
 import { db } from "@/lib/db/client";
 import { complianceChecks, compliancePrecedents, documents, documentVersions, edges, findings, gates, projectMembers, requirements, sourceRegions } from "@/lib/db/schema";
 import { retrieveSemanticCitations } from "@/lib/knowledge/query";
@@ -58,6 +60,7 @@ export async function citation(regionId: string) {
     versionId: documentVersions.id,
     revision: documentVersions.revision,
     versionStatus: documentVersions.status,
+    extractionStatus: documentVersions.extractionStatus,
     versionCreatedAt: documentVersions.createdAt,
     documentId: documents.id,
     documentTitle: documents.title,
@@ -67,7 +70,7 @@ export async function citation(regionId: string) {
 }
 
 export function hierarchy(documentType: string) {
-  const rank: Record<string, number> = { client_spec: 100, specification: 100, standard: 80, procedure: 70, submittal: 50, shop_drawing: 50, drawing: 50, po: 50 };
+  const rank: Record<string, number> = { client_spec: 100, specification: 100, procurement_justification: 90, standard: 80, procedure: 70, submittal: 50, shop_drawing: 50, drawing: 50, po: 50 };
   return rank[documentType.toLowerCase()] ?? 40;
 }
 
@@ -103,6 +106,29 @@ export async function createComplianceCheck(input: {
   const targetDocument = await db.query.documents.findFirst({ where: and(eq(documents.id, targetCitation.documentId), eq(documents.projectId, projectId)) });
   const requirementDocument = await db.query.documents.findFirst({ where: and(eq(documents.id, requirementCitation.documentId), eq(documents.projectId, projectId)) });
   if (!targetDocument || !requirementDocument) throw new CreateComplianceCheckError("Both citations must belong to this project.", 422);
+  if (requirementCitation.versionStatus !== "approved" || requirementCitation.extractionStatus !== "completed") {
+    throw new CreateComplianceCheckError("The accepted requirement must cite a completed, approved controlled version.", 409);
+  }
+  if (targetCitation.versionStatus !== "approved" || targetCitation.extractionStatus !== "completed") {
+    throw new CreateComplianceCheckError("The target must cite a completed, approved controlled version.", 409);
+  }
+  if (!complianceTargetDocumentTypes.includes(targetDocument.documentType as (typeof complianceTargetDocumentTypes)[number])) {
+    throw new CreateComplianceCheckError("The target must be a submittal, PO, shop drawing, or drawing.", 422);
+  }
+  if (targetDocument.id === requirementDocument.id) {
+    throw new CreateComplianceCheckError("A requirement cannot be checked against its own source document.", 422);
+  }
+  const pendingDuplicate = await db.query.complianceChecks.findFirst({
+    where: and(
+      eq(complianceChecks.projectId, projectId),
+      eq(complianceChecks.requirementId, requirement.id),
+      eq(complianceChecks.targetSourceRegionId, targetCitation.regionId),
+      eq(complianceChecks.reviewState, "proposed"),
+    ),
+  });
+  if (pendingDuplicate) {
+    throw new CreateComplianceCheckError("This requirement and controlled target already have a pending compliance review.", 409);
+  }
 
   let acceptedPrecedent: typeof compliancePrecedents.$inferSelect | undefined;
   if (precedentId) {
@@ -118,9 +144,10 @@ export async function createComplianceCheck(input: {
   const requirementContext = { documentType: requirementDocument.documentType, documentTitle: requirementDocument.title, revision: requirementCitation.revision, hierarchy: hierarchy(requirementDocument.documentType) };
   const targetContext = { documentType: targetDocument.documentType, documentTitle: targetDocument.title, revision: targetCitation.revision, hierarchy: hierarchy(targetDocument.documentType) };
 
+  const controlledTargetExcerpt = selectControlledTargetExcerpt(requirement.statement, targetCitation.text);
   const assessment = await assessCompliance({
     requirement,
-    targetText: targetCitation.text,
+    targetText: controlledTargetExcerpt,
     acceptedPrecedent: Boolean(acceptedPrecedent),
     groundingCandidates,
     requirementContext,
@@ -138,6 +165,9 @@ export async function createComplianceCheck(input: {
   const sourceConflict = hierarchy(requirementDocument.documentType) !== hierarchy(targetDocument.documentType) && !["conforms", "equivalent_by_precedent"].includes(result.verdict);
   result.requirementSnapshot.source = { regionId: requirementCitation.regionId, ...requirementContext, createdAt: requirementCitation.versionCreatedAt };
   result.targetSnapshot.source = { regionId: targetCitation.regionId, ...targetContext, createdAt: targetCitation.versionCreatedAt };
+  result.targetSnapshot.regionContentHash = targetCitation.contentHash;
+  result.targetSnapshot.excerptHash = normalizedContentHash(controlledTargetExcerpt);
+  result.targetSnapshot.excerptSelection = controlledTargetExcerpt === targetCitation.text ? "complete_region" : "deterministic_fragment";
   result.targetSnapshot.sourceConflict = sourceConflict;
   // Record only the comparison outcome, not compareCompliance's own
   // requirementSnapshot/targetSnapshot — those ARE (by reference) this same
@@ -166,17 +196,19 @@ export async function createComplianceCheck(input: {
       suggestionSource: assessment.suggestionSource,
       suggestionModelVersion: assessment.suggestionModelVersion
     }).returning();
-    if (!["deterministic_flag", "possible_mismatch"].includes(result.verdict)) return { check, finding: null };
-    const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, requirement.id), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
-    const proposedGateId = gateEdge?.toId ?? null;
-    const proposedSeverity = result.verdict === "deterministic_flag" ? "high" : "medium";
-    const ownerId = await deriveFindingOwner(tx, projectId, proposedGateId, requirement.reviewedBy ?? null);
-    const [finding] = await tx.insert(findings).values({ projectId, gateId: proposedGateId, title: `Proposed compliance ${result.verdict.replaceAll("_", " ")}`, description: `${result.reason}\n\nRequirement citation: ${requirement.sourceRegionId}\nTarget citation: ${targetCitation.regionId}`, severity: proposedSeverity, status: "proposed", ownerId, dueAt: findingDueAt(proposedSeverity) }).returning();
-    const [updated] = await tx.update(complianceChecks).set({ proposedFindingId: finding.id, updatedAt: new Date() }).where(eq(complianceChecks.id, check.id)).returning();
-    return { check: updated, finding };
+    let outcome: { check: typeof check; finding: typeof findings.$inferSelect | null } = { check, finding: null };
+    if (["deterministic_flag", "possible_mismatch"].includes(result.verdict)) {
+      const gateEdge = await tx.query.edges.findFirst({ where: and(eq(edges.projectId, projectId), eq(edges.fromType, "requirement"), eq(edges.fromId, requirement.id), eq(edges.relationshipType, "AFFECTS"), eq(edges.toType, "gate")) });
+      const proposedGateId = gateEdge?.toId ?? null;
+      const proposedSeverity = result.verdict === "deterministic_flag" ? "high" : "medium";
+      const ownerId = await deriveFindingOwner(tx, projectId, proposedGateId, requirement.reviewedBy ?? null);
+      const [finding] = await tx.insert(findings).values({ projectId, gateId: proposedGateId, title: `Proposed compliance ${result.verdict.replaceAll("_", " ")}`, description: `${result.reason}\n\nRequirement citation: ${requirement.sourceRegionId}\nTarget citation: ${targetCitation.regionId}`, severity: proposedSeverity, status: "proposed", ownerId, dueAt: findingDueAt(proposedSeverity) }).returning();
+      const [updated] = await tx.update(complianceChecks).set({ proposedFindingId: finding.id, updatedAt: new Date() }).where(eq(complianceChecks.id, check.id)).returning();
+      outcome = { check: updated, finding };
+    }
+    await writeAuditEventInTransaction(tx, { projectId, actorId, action: "compliance.check.proposed", entityType: "compliance_check", entityId: outcome.check.id, after: { ...outcome.check, sourceConflict, advisory: true, findingStatus: outcome.finding?.status ?? null } });
+    return outcome;
   });
-
-  await writeAuditEvent({ projectId, actorId, action: "compliance.check.proposed", entityType: "compliance_check", entityId: created.check.id, after: { ...created.check, sourceConflict, advisory: true, findingStatus: created.finding?.status ?? null } });
 
   return { check: created.check, proposedFinding: created.finding, requirementCitation, targetCitation, sourceConflict };
 }

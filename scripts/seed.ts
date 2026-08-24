@@ -108,12 +108,20 @@ const T = {
   doc_chw_proc: "10000000-0000-4000-8000-000000000050",
   doc_ashrae:   "10000000-0000-4000-8000-000000000051",
   doc_nfpa:     "10000000-0000-4000-8000-000000000052",
+  doc_demo_chw: "10000000-0000-4000-8000-000000000053",
+  doc_demo_mcc: "10000000-0000-4000-8000-000000000054",
+  doc_demo_fire:"10000000-0000-4000-8000-000000000055",
+  doc_demo_ups: "10000000-0000-4000-8000-000000000056",
 
   // Document versions
   ver_chw_prev: "10000000-0000-4000-8000-000000000063",
   ver_chw_proc: "10000000-0000-4000-8000-000000000060",
   ver_ashrae:   "10000000-0000-4000-8000-000000000061",
   ver_nfpa:     "10000000-0000-4000-8000-000000000062",
+  ver_demo_chw: "10000000-0000-4000-8000-000000000064",
+  ver_demo_mcc: "10000000-0000-4000-8000-000000000065",
+  ver_demo_fire:"10000000-0000-4000-8000-000000000066",
+  ver_demo_ups: "10000000-0000-4000-8000-000000000067",
 
   // Source regions
   reg_r1:       "10000000-0000-4000-8000-000000000070",
@@ -123,6 +131,10 @@ const T = {
   reg_r5:       "10000000-0000-4000-8000-000000000074",
   reg_r6:       "10000000-0000-4000-8000-000000000075",
   reg_prev_r1:  "10000000-0000-4000-8000-000000000076",
+  reg_demo_chw: "10000000-0000-4000-8000-000000000077",
+  reg_demo_mcc: "10000000-0000-4000-8000-000000000078",
+  reg_demo_fire:"10000000-0000-4000-8000-000000000079",
+  reg_demo_ups: "10000000-0000-4000-8000-00000000007A",
 
   // Requirements
   req_r1:       "10000000-0000-4000-8000-000000000080",
@@ -215,6 +227,10 @@ const T = {
   kc_1:         "10000000-0000-4000-8000-000000000120",
   kc_3:         "10000000-0000-4000-8000-000000000121",
   kc_5:         "10000000-0000-4000-8000-000000000122",
+  kc_demo_chw:  "10000000-0000-4000-8000-000000000123",
+  kc_demo_mcc:  "10000000-0000-4000-8000-000000000124",
+  kc_demo_fire: "10000000-0000-4000-8000-000000000125",
+  kc_demo_ups:  "10000000-0000-4000-8000-000000000126",
 };
 
 function sha256(value: string): string {
@@ -307,9 +323,17 @@ async function seed() {
     { id: T.doc_chw_proc, projectId: T.project, documentType: "procedure", title: "CHW Plant Commissioning Procedure" },
     { id: T.doc_ashrae,   projectId: T.project, documentType: "standard",  title: "ASHRAE Std 90.1-2022 — Energy Standard",    standardSet: "ASHRAE" },
     { id: T.doc_nfpa,     projectId: T.project, documentType: "standard",  title: "NFPA 2001 — Clean Agent Fire Suppression",   standardSet: "NFPA" },
+    { id: T.doc_demo_chw, projectId: T.project, documentType: "submittal", title: "AquaFlow CHWP-02 Vendor Submittal (Controlled Demo)" },
+    { id: T.doc_demo_mcc, projectId: T.project, documentType: "shop_drawing", title: "MCC-01 Panel Shop Drawing (Controlled Demo)" },
+    { id: T.doc_demo_fire, projectId: T.project, documentType: "submittal", title: "FM-200 Suppression Vendor Submittal (Controlled Demo)" },
+    { id: T.doc_demo_ups, projectId: T.project, documentType: "po", title: "UPS-01 Purchase Order Technical Schedule (Controlled Demo)" },
   ]).onConflictDoNothing();
 
   await db.insert(documentVersions).values([
+    { id: T.ver_demo_chw, documentId: T.doc_demo_chw, revision: "Demo Rev 1", status: "approved", sha256: sha256("demo-chw-submittal"), objectKey: "seed/demo/chw-submittal.txt", mediaType: "text/plain", extractionStatus: "completed" },
+    { id: T.ver_demo_mcc, documentId: T.doc_demo_mcc, revision: "Demo Rev 1", status: "approved", sha256: sha256("demo-mcc-shop-drawing"), objectKey: "seed/demo/mcc-shop-drawing.txt", mediaType: "text/plain", extractionStatus: "completed" },
+    { id: T.ver_demo_fire, documentId: T.doc_demo_fire, revision: "Demo Rev 1", status: "approved", sha256: sha256("demo-fire-submittal"), objectKey: "seed/demo/fire-submittal.txt", mediaType: "text/plain", extractionStatus: "completed" },
+    { id: T.ver_demo_ups, documentId: T.doc_demo_ups, revision: "Demo Rev 1", status: "approved", sha256: sha256("demo-ups-po"), objectKey: "seed/demo/ups-po.txt", mediaType: "text/plain", extractionStatus: "completed" },
     { id: T.ver_chw_prev, documentId: T.doc_chw_proc, revision: "Rev B",    status: "superseded",  sha256: sha256("chw-proc-rev-b"),    objectKey: "seed/chw-procedure-rev-b.pdf",     mediaType: "application/pdf", extractionStatus: "completed", createdAt: daysAgo(60) },
     { id: T.ver_chw_proc, documentId: T.doc_chw_proc, revision: "Rev C",    status: "approved",    sha256: sha256("chw-proc-rev-c"),    objectKey: "seed/chw-procedure-rev-c.pdf",     mediaType: "application/pdf", extractionStatus: "completed" },
     { id: T.ver_ashrae,   documentId: T.doc_ashrae,   revision: "Rev 2022", status: "approved",    sha256: sha256("ashrae-90.1-2022"),  objectKey: "seed/ashrae-90-1-2022.pdf",        mediaType: "application/pdf", extractionStatus: "completed" },
@@ -352,6 +376,10 @@ async function seed() {
   ];
   await db.insert(sourceRegions).values([
     ...regions,
+    { id: T.reg_demo_chw, documentVersionId: T.ver_demo_chw, pageNumber: "4", bbox: [72, 120, 530, 205], contentHash: sha256("reg-demo-chw"), extractedText: "Controlled demo vendor duty point: CHWP-02 rated flow is 410 LPM at design head." },
+    { id: T.reg_demo_mcc, documentVersionId: T.ver_demo_mcc, pageNumber: "2", bbox: [72, 210, 530, 285], contentHash: sha256("reg-demo-mcc"), extractedText: "Controlled demo enclosure schedule: MCC-01 ingress protection rating is IP55 to IEC 60529." },
+    { id: T.reg_demo_fire, documentVersionId: T.ver_demo_fire, pageNumber: "6", bbox: [72, 300, 530, 380], contentHash: sha256("reg-demo-fire"), extractedText: "Controlled demo design calculation: FM-200 agent concentration reaches 6.5% v/v within 10 seconds." },
+    { id: T.reg_demo_ups, documentVersionId: T.ver_demo_ups, pageNumber: "3", bbox: [72, 390, 530, 465], contentHash: sha256("reg-demo-ups"), extractedText: "Controlled demo technical schedule: UPS-01 transfer time to battery is guaranteed not to exceed 8 ms at full load." },
     {
       id: T.reg_prev_r1, documentVersionId: T.ver_chw_prev, pageNumber: "14",
       bbox: [72, 162, 530, 240], contentHash: sha256("reg-prev-r1"),
@@ -483,14 +511,14 @@ async function seed() {
       id: T.comp_c1,
       projectId: T.project,
       requirementId: T.req_r1,
-      targetSourceRegionId: T.reg_r2,
+      targetSourceRegionId: T.reg_demo_chw,
       comparisonType: "numeric",
       requirementSnapshot: { statement: "CHW pumps shall maintain 450 LPM", numericValue: "450", unit: "LPM", tolerance: "22.5" },
-      targetSnapshot:      { text: "Flow rate: 1.2 bar minimum at header", rawUnit: "bar" },
+      targetSnapshot:      { text: "Controlled demo vendor duty point: CHWP-02 rated flow is 410 LPM at design head.", numericValue: "410", rawUnit: "LPM" },
       verdict: "deviation",
       reviewState: "proposed",
       confidence: "0.8700",
-      reason: "Target uses bar pressure, not LPM flow — units are not directly comparable. Engineer review required to determine equivalence.",
+      reason: "Controlled demo target is 410 LPM, below the accepted 450 LPM requirement and its ±5% tolerance.",
       findingDisposition: "not_applicable",
       version: 1,
     },
@@ -498,19 +526,27 @@ async function seed() {
       id: T.comp_c2,
       projectId: T.project,
       requirementId: T.req_r4,
-      targetSourceRegionId: T.reg_r4,
+      targetSourceRegionId: T.reg_demo_mcc,
       comparisonType: "qualitative",
       requirementSnapshot: { statement: "Electrical panels shall be rated IP54 (IEC 60529)" },
-      targetSnapshot:      { text: "All panels in scope of this contract shall achieve ingress protection suitable for indoor industrial environments." },
-      verdict: "needs_engineering_judgment",
+      targetSnapshot:      { text: "Controlled demo enclosure schedule: MCC-01 ingress protection rating is IP55 to IEC 60529." },
+      verdict: "conforms",
       reviewState: "proposed",
       confidence: "0.6200",
-      reason: "Target clause does not specify an IP rating numerically. Qualitative equivalence cannot be determined without engineer review.",
+      reason: "Controlled demo target specifies IP55, which meets or exceeds the IP54 minimum requirement; engineer acceptance is still required.",
       findingDisposition: "not_applicable",
       version: 1,
     },
-  ]).onConflictDoNothing();
-  console.log("  ✓ Compliance checks (1 numeric deviation, 1 qualitative — both proposed)");
+  ]).onConflictDoUpdate({
+    target: complianceChecks.id,
+    set: {
+      targetSourceRegionId: sql`excluded.target_source_region_id`,
+      targetSnapshot: sql`excluded.target_snapshot`,
+      verdict: sql`excluded.verdict`,
+      reason: sql`excluded.reason`,
+    },
+  });
+  console.log("  ✓ Compliance checks (controlled demo: 1 numeric deviation, 1 conforming target — both proposed)");
 
   // ── Schedule resources ────────────────────────────────────────────────────
   await db.insert(scheduleResources).values([
@@ -691,6 +727,10 @@ async function seed() {
     { id: T.kc_1, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r1, documentType: "procedure", content: regions[0]!.extractedText, contentHash: sha256("kc-1") },
     { id: T.kc_3, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r3, documentType: "standard",  content: regions[2]!.extractedText, contentHash: sha256("kc-3") },
     { id: T.kc_5, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_r5, documentType: "standard",  content: regions[4]!.extractedText, contentHash: sha256("kc-5") },
+    { id: T.kc_demo_chw, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_demo_chw, documentType: "submittal", content: "Controlled demo vendor duty point: CHWP-02 rated flow is 410 LPM at design head.", contentHash: sha256("kc-demo-chw") },
+    { id: T.kc_demo_mcc, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_demo_mcc, documentType: "shop_drawing", content: "Controlled demo enclosure schedule: MCC-01 ingress protection rating is IP55 to IEC 60529.", contentHash: sha256("kc-demo-mcc") },
+    { id: T.kc_demo_fire, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_demo_fire, documentType: "submittal", content: "Controlled demo design calculation: FM-200 agent concentration reaches 6.5% v/v within 10 seconds.", contentHash: sha256("kc-demo-fire") },
+    { id: T.kc_demo_ups, tenantId: T.tenant, projectId: T.project, sourceRegionId: T.reg_demo_ups, documentType: "po", content: "Controlled demo technical schedule: UPS-01 transfer time to battery is guaranteed not to exceed 8 ms at full load.", contentHash: sha256("kc-demo-ups") },
   ]).onConflictDoNothing();
   console.log("  ✓ Knowledge chunks (3 — for full-text search in /knowledge)");
 

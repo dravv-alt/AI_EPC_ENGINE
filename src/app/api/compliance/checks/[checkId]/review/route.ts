@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { writeAuditEvent } from "@/lib/audit/write-event";
+import { writeAuditEventInTransaction } from "@/lib/audit/write-event";
 import { deriveFindingOwner, findingDueAt } from "@/lib/compliance/create-check";
 import { db } from "@/lib/db/client";
 import { complianceChecks, edges, findings, requirements } from "@/lib/db/schema";
@@ -101,9 +101,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ch
           embedText: existing.reason
         });
       }
+      await writeAuditEventInTransaction(tx, { projectId: existing.projectId, actorId: actor.userId, action: `compliance.check.${parsed.data.action === "reject" ? "rejected" : parsed.data.action === "edit" ? "edited" : "accepted"}`, entityType: "compliance_check", entityId: existing.id, before: existing, after: { check, finding } });
       return { check, finding };
     });
-    await writeAuditEvent({ projectId: existing.projectId, actorId: actor.userId, action: `compliance.check.${parsed.data.action === "reject" ? "rejected" : parsed.data.action === "edit" ? "edited" : "accepted"}`, entityType: "compliance_check", entityId: existing.id, before: existing, after: { check: outcome.check, finding: outcome.finding } });
     if (outcome.finding) await persistProjectGateReadiness(existing.projectId);
     return NextResponse.json(outcome);
   } catch (error) {

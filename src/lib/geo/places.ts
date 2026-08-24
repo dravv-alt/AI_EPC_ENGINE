@@ -12,7 +12,7 @@ export interface Place {
 
 export const places: Place[] = [
   // Major Ports
-  { id: 'p_nhavasheva', name: 'Nhava Sheva', country: 'India', lat: 18.949, lng: 72.951, type: 'port', seaRouteWaypoints: [[18.92, 72.90], [18.88, 72.82], [18.80, 72.75]] }, // Mumbai port exit
+  { id: 'p_nhavasheva', name: 'Nhava Sheva', country: 'India', lat: 18.949, lng: 72.951, type: 'port', seaRouteWaypoints: [[18.92, 72.93], [18.88, 72.90], [18.84, 72.87], [18.79, 72.84], [18.72, 72.78], [18.62, 72.65], [18.52, 72.50], [18.50, 72.40], [19.00, 72.40]] }, // South through Mumbai Harbour, around the peninsula, then north offshore to the MARNET node
   { id: 'p_nynj', name: 'Port of New York and New Jersey', country: 'United States', lat: 40.670, lng: -74.043, type: 'port', seaRouteWaypoints: [[40.60, -74.04], [40.54, -73.98], [40.48, -73.85]] },
   { id: 'p_houston', name: 'Port of Houston', country: 'United States', lat: 29.743, lng: -95.271, type: 'port', seaRouteWaypoints: [[29.65, -95.00], [29.35, -94.75], [29.25, -94.60]] }, // Galveston Bay exit
   { id: 'p_shanghai', name: 'Port of Shanghai', country: 'China', lat: 31.350, lng: 121.573, type: 'port' },

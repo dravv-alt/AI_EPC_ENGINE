@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { documents, documentVersions, requirements, sourceRegions } from "@/lib/db/schema";
 import { retrieveSemanticCitations } from "@/lib/knowledge/query";
 
-const targetDocumentTypes = ["submittal", "po", "shop_drawing", "drawing"] as const;
+export const complianceTargetDocumentTypes = ["submittal", "po", "shop_drawing", "drawing"] as const;
 
 export type CandidateTarget = {
   targetSourceRegionId: string;
@@ -11,6 +11,7 @@ export type CandidateTarget = {
   documentType: string;
   documentTitle: string;
   text: string;
+  contentHash: string;
 };
 
 // Given an accepted requirement, semantically searches the project's
@@ -25,31 +26,69 @@ export async function discoverCandidateTargets(input: {
   limit?: number;
 }): Promise<CandidateTarget[]> {
   const limit = input.limit ?? 5;
+  const retrievalLimit = Math.max(20, limit * 4);
 
   const requirement = await db.query.requirements.findFirst({ where: and(eq(requirements.id, input.requirementId), eq(requirements.projectId, input.projectId)) });
   if (!requirement || requirement.reviewState !== "accepted") return [];
 
   const perTypeResults = await Promise.all(
-    targetDocumentTypes.map((documentType) => retrieveSemanticCitations({ projectId: input.projectId, query: requirement.statement, documentType, limit }))
+    complianceTargetDocumentTypes.map((documentType) => retrieveSemanticCitations({ projectId: input.projectId, query: requirement.statement, documentType, limit: retrievalLimit }))
   );
 
   const union = perTypeResults.flat().filter((candidate) => candidate.sourceRegionId !== requirement.sourceRegionId);
-  const ranked = union.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+  const ranked = union.sort((a, b) => b.similarity - a.similarity);
   if (!ranked.length) return [];
 
-  const documentTitles = await db
-    .select({ regionId: sourceRegions.id, documentTitle: documents.title })
+  const [requirementSource] = await db
+    .select({ documentId: documents.id, versionStatus: documentVersions.status, extractionStatus: documentVersions.extractionStatus })
+    .from(sourceRegions)
+    .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
+    .innerJoin(documents, eq(documentVersions.documentId, documents.id))
+    .where(and(eq(documents.projectId, input.projectId), eq(sourceRegions.id, requirement.sourceRegionId)))
+    .limit(1);
+  if (!requirementSource || requirementSource.versionStatus !== "approved" || requirementSource.extractionStatus !== "completed") return [];
+
+  const targetSources = await db
+    .select({ regionId: sourceRegions.id, documentId: documents.id, documentTitle: documents.title, versionStatus: documentVersions.status, extractionStatus: documentVersions.extractionStatus })
     .from(sourceRegions)
     .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
     .innerJoin(documents, eq(documentVersions.documentId, documents.id))
     .where(and(eq(documents.projectId, input.projectId), inArray(sourceRegions.id, ranked.map((candidate) => candidate.sourceRegionId))));
-  const titleByRegion = new Map(documentTitles.map((row) => [row.regionId, row.documentTitle]));
+  const sourceByRegion = new Map(targetSources.map((row) => [row.regionId, row]));
+  const eligible = ranked.filter((candidate) => {
+    const source = sourceByRegion.get(candidate.sourceRegionId);
+    return source?.versionStatus === "approved"
+      && source.extractionStatus === "completed"
+      && source.documentId !== requirementSource?.documentId;
+  });
 
-  return ranked.map((candidate) => ({
+  // Preserve source diversity before filling remaining slots by relevance. A
+  // global top-k can otherwise return five adjacent chunks from one drawing
+  // and completely miss a relevant PO or vendor submittal.
+  const selected: typeof eligible = [];
+  const selectedRegionIds = new Set<string>();
+  const representedDocuments = new Set<string>();
+  for (const candidate of eligible) {
+    const documentId = sourceByRegion.get(candidate.sourceRegionId)!.documentId;
+    if (representedDocuments.has(documentId)) continue;
+    selected.push(candidate);
+    selectedRegionIds.add(candidate.sourceRegionId);
+    representedDocuments.add(documentId);
+    if (selected.length === limit) break;
+  }
+  for (const candidate of eligible) {
+    if (selected.length === limit) break;
+    if (selectedRegionIds.has(candidate.sourceRegionId)) continue;
+    selected.push(candidate);
+    selectedRegionIds.add(candidate.sourceRegionId);
+  }
+
+  return selected.map((candidate) => ({
     targetSourceRegionId: candidate.sourceRegionId,
     similarity: candidate.similarity,
     documentType: candidate.documentType,
-    documentTitle: titleByRegion.get(candidate.sourceRegionId) ?? "",
-    text: candidate.text
+    documentTitle: sourceByRegion.get(candidate.sourceRegionId)?.documentTitle ?? "",
+    text: candidate.text,
+    contentHash: candidate.contentHash
   }));
 }

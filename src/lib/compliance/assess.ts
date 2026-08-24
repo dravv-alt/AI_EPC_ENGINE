@@ -86,6 +86,38 @@ export function applyVerdictSafetyDowngrades(input: {
   return { verdict, reason };
 }
 
+// Deterministic comparisons are the safety floor, not optional context for a
+// generative model. A model may escalate an otherwise deterministic match to
+// human review, but it must never erase an exact numeric/unit/boolean/category
+// deviation. Narrative comparisons likewise cannot be machine-certified as
+// conforming because the deterministic layer has no basis for that decision.
+export function applyDeterministicSafetyFloor(input: {
+  modelVerdict: ComplianceVerdict;
+  modelReason: string;
+  deterministic: ComparisonResult;
+}): { verdict: ComplianceVerdict; reason: string; deterministicOverride: boolean } {
+  if (input.deterministic.verdict === "deterministic_flag" && input.modelVerdict !== "deterministic_flag") {
+    return {
+      verdict: "deterministic_flag",
+      reason: `${input.deterministic.reason}\n\nThe deterministic safety check overrode the model suggestion (${input.modelVerdict}); an exact controlled deviation cannot be downgraded by generative output.`,
+      deterministicOverride: true,
+    };
+  }
+
+  if (
+    ["possible_mismatch", "needs_engineering_judgment"].includes(input.deterministic.verdict)
+    && input.modelVerdict === "conforms"
+  ) {
+    return {
+      verdict: "needs_engineering_judgment",
+      reason: `${input.modelReason}\n\nThe deterministic layer could not establish conformity for this qualitative comparison, so an engineer must make the final disposition.`,
+      deterministicOverride: true,
+    };
+  }
+
+  return { verdict: input.modelVerdict, reason: input.modelReason, deterministicOverride: false };
+}
+
 const SYSTEM_PROMPT = "You are assisting a licensed engineer with a professional compliance comparison between an accepted controlled requirement and a cited target document line (submittal, PO, shop drawing, or drawing). Write in a professional engineering register. You never certify, approve, or close a finding, and you never assert final compliance authority — every assessment you produce is advisory and requires human engineering review before it has any effect. If you assert an equivalence claim or cite a standards clause to support your reasoning, you must ground it in one of the supplied grounding candidate region IDs, or your assessment will be automatically downgraded to require engineering judgment. Output JSON only, matching the required schema.";
 
 export async function assessCompliance(input: AssessComplianceInput): Promise<AssessComplianceResult> {
@@ -118,20 +150,25 @@ export async function assessCompliance(input: AssessComplianceInput): Promise<As
 
   const result = await getGenerationProvider().generateStructured({ system: SYSTEM_PROMPT, prompt, schema: assessmentSchema, mock });
 
-  const { verdict, reason } = applyVerdictSafetyDowngrades({
+  const grounded = applyVerdictSafetyDowngrades({
     verdict: result.data.verdict,
     reason: result.data.reason,
     groundingRegionIds: result.data.groundingRegionIds ?? [],
     groundingCandidates: input.groundingCandidates,
     acceptedPrecedent: input.acceptedPrecedent
   });
+  const safe = applyDeterministicSafetyFloor({
+    modelVerdict: grounded.verdict,
+    modelReason: grounded.reason,
+    deterministic
+  });
 
   const suggestionSource: "deterministic" | "model" = result.provider === "mock" ? "deterministic" : "model";
 
   return {
-    verdict,
-    confidence: result.data.confidence.toFixed(4),
-    reason,
+    verdict: safe.verdict,
+    confidence: safe.deterministicOverride ? deterministic.confidence : result.data.confidence.toFixed(4),
+    reason: safe.reason,
     suggestionSource,
     suggestionModelVersion: result.model,
     deterministicCrossCheck: deterministic,

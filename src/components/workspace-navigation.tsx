@@ -20,8 +20,6 @@ import {
   Grid2X2,
   ListChecks,
   Network,
-  PanelLeftClose,
-  PanelLeftOpen,
   Search,
   Settings,
   MapPinned,
@@ -72,23 +70,6 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
   const [collapsed, setCollapsed] = useState(true);
 
   useEffect(() => {
-    setCollapsed(localStorage.getItem("pramana-sidebar-collapsed") !== "false");
-  }, []);
-
-  function toggleSidebar() {
-    setCollapsed((current) => {
-      const next = !current;
-      localStorage.setItem("pramana-sidebar-collapsed", String(next));
-      return next;
-    });
-  }
-
-  function handleBrandClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (!collapsed) return;
-    event.preventDefault();
-    toggleSidebar();
-  }
-  useEffect(() => {
     Promise.all([
       fetch("/api/projects").then((response) => response.ok ? response.json() : Promise.reject(new Error("projects"))),
       fetch("/api/profile").then((response) => response.ok ? response.json() : Promise.reject(new Error("profile")))
@@ -118,10 +99,18 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
     .join(""), [profile]);
 
   return (
-    <aside className={`sidebar ${collapsed ? "is-collapsed" : ""}`} aria-label="Primary navigation">
+    <aside
+      className={`sidebar ${collapsed ? "is-collapsed" : ""}`}
+      aria-label="Primary navigation"
+      onMouseEnter={() => setCollapsed(false)}
+      onMouseLeave={() => setCollapsed(true)}
+      onFocusCapture={() => setCollapsed(false)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCollapsed(true);
+      }}
+    >
       <div className="sidebar-brand-row">
-        <Link className="brand" href="/" onClick={handleBrandClick} title={collapsed ? "Expand navigation" : "Pramana Control Center"}><span className="brand-mark">P</span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
-        <button className="sidebar-toggle" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSidebar(); }} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
+        <Link className="brand" href="/" title="Pramana Control Center"><span className="brand-mark">P</span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
       </div>
       <label className="project-switcher">
         <span className="project-dot" />

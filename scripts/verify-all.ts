@@ -48,6 +48,7 @@ async function main() {
   run("Database migrations", "npm", ["run", "db:migrate"]);
   run("TypeScript", "npm", ["run", "typecheck"]);
   run("Config targets", "npm", ["run", "verify:config-targets"]);
+  run("Compliance controlled golden set", "npm", ["run", "verify:compliance-golden"]);
   run("Model provider foundation", "npm", ["run", "verify:model-provider"]);
   run("Deep-link targets and public-geocoder safety", "npm", ["run", "verify:deep-links"]);
   // Skips cleanly when EMBEDDING_PROVIDER !== "service" (the offline default),
@@ -56,6 +57,7 @@ async function main() {
   run("Production build", "npm", ["run", "build"]);
   run("Seed prerequisites", "npm", ["run", "db:seed"]);
   run("Relational and cross-feature data integrity", "npm", ["run", "verify:data-integrity"]);
+  run("Compliance controlled-source authority", "npm", ["run", "verify:compliance-authority"]);
 
   const developmentBase = `http://localhost:${devPort}`;
   const developmentEnv = { ...shared, AUTH_MODE: "development", APP_BASE_URL: developmentBase, REDIS_PREFIX: redisPrefix };
@@ -85,7 +87,7 @@ async function main() {
   run("Governed Cx", "npm", ["run", "verify:cx-http"], { ...developmentEnv, CX_TEST_URL: developmentBase });
   run("Governed compliance", "npm", ["run", "verify:compliance-http"], { ...developmentEnv, COMPLIANCE_TEST_URL: developmentBase });
   run("Compliance semantic candidate scan", "npm", ["run", "verify:compliance-scan-http"], { ...developmentEnv, COMPLIANCE_SCAN_TEST_URL: developmentBase });
-  run("Compliance LLM-owned verdict", "npm", ["run", "verify:compliance-llm-http"], { ...developmentEnv, COMPLIANCE_LLM_TEST_URL: developmentBase });
+  run("Compliance model advisory verdict with deterministic safety floor", "npm", ["run", "verify:compliance-llm-http"], { ...developmentEnv, COMPLIANCE_LLM_TEST_URL: developmentBase });
   run("Compliance modality tiering", "npm", ["run", "verify:compliance-modality-http"], developmentEnv);
   run("Compliance finding owner/due-date fields", "npm", ["run", "verify:compliance-finding-fields"], { ...developmentEnv, COMPLIANCE_FINDING_FIELDS_TEST_URL: developmentBase });
   run("Teach-back generalized capture and surfacing", "npm", ["run", "verify:teachback-http"], { ...developmentEnv, TEACHBACK_TEST_URL: developmentBase });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, MapContainer, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import { latLngBounds, type LatLngExpression } from "leaflet";
 
@@ -73,22 +73,33 @@ const weatherCondition = (weatherCode: number, windSpeed: number, precipitation:
 
 function Navigator({ shipment, route }: { shipment?: MapShipment; route: RouteSegment[] }) {
   const map = useMap();
+  const hasPositionedViewport = useRef(false);
   useEffect(() => {
+    // Position the map once when a shipment is selected. Telemetry, route and
+    // weather refreshes update overlays only; they must not override the
+    // user's pan/zoom state on either map.
+    if (hasPositionedViewport.current) return;
     const points = route.flatMap((segment) => segment.coords).map(([lat, lng]) => [lat, lng] as LatLngExpression);
-    let revealTimer: ReturnType<typeof setTimeout> | undefined;
     if (points.length > 1) {
+      hasPositionedViewport.current = true;
       const bounds = latLngBounds(points);
-      if (shipment?.currentLat && shipment.currentLng) {
-        map.flyTo([Number(shipment.currentLat), Number(shipment.currentLng)], 7, { animate: true, duration: .8 });
-        revealTimer = setTimeout(() => map.flyToBounds(bounds, { padding: [42, 42], maxZoom: 8, animate: true, duration: 1.25 }), 700);
-      } else {
-        map.flyToBounds(bounds, { padding: [42, 42], maxZoom: 8, animate: true, duration: 1.25 });
-      }
+      map.flyToBounds(bounds, { padding: [42, 42], maxZoom: 8, animate: true, duration: 1.1 });
     } else if (shipment?.currentLat && shipment.currentLng) {
-      map.flyTo([Number(shipment.currentLat), Number(shipment.currentLng)], 6, { animate: true, duration: 1.1 });
+      // Wait for the selected shipment's route to load before fitting. The
+      // MapContainer's initial center already provides a useful fallback.
+      return;
     }
-    return () => { if (revealTimer) clearTimeout(revealTimer); };
-  }, [map, route, shipment]);
+  }, [map, route, shipment?.id, shipment?.currentLat, shipment?.currentLng]);
+  return null;
+}
+
+function MapVisibility({ visible }: { visible: boolean }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!visible) return;
+    const frame = requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+    return () => cancelAnimationFrame(frame);
+  }, [map, visible]);
   return null;
 }
 
@@ -97,13 +108,15 @@ function MapPanel({
   selected,
   route,
   assessment,
-  routeMessage
+  routeMessage,
+  visible
 }: {
   kind: "route" | "weather";
   selected?: MapShipment;
   route: RouteSegment[];
   assessment?: RouteThreatAssessment;
   routeMessage: string;
+  visible: boolean;
 }) {
   const center = useMemo<LatLngExpression>(
     () => selected?.currentLat && selected.currentLng
@@ -137,7 +150,7 @@ function MapPanel({
         ? `${threats.length} weather threat${threats.length === 1 ? "" : "s"} overlaid on this route.`
         : "Weather assessment complete: no route threats detected.";
 
-  return <section className={`shipment-map-frame shipment-map-panel shipment-map-panel-${kind}`} aria-label={`${kind === "route" ? "Shipment route" : "Route weather"} map`}>
+  return <section hidden={!visible} className={`shipment-map-frame shipment-map-panel shipment-map-panel-${kind}`} aria-label={`${kind === "route" ? "Shipment route" : "Route weather"} map`}>
     <header className="shipment-map-panel-heading">
       <div>
         <span>{kind === "route" ? "Dynamic route overlay" : "Waypoint weather overlay"}</span>
@@ -148,10 +161,11 @@ function MapPanel({
         : <span className={`map-live-chip ${assessment?.dataAvailable ? "is-ready" : "is-waiting"}`}>{assessment?.dataAvailable ? "Open-Meteo live" : "Loading weather"}</span>}
     </header>
     <MapContainer className={`shipment-map ${kind === "weather" ? "shipment-weather-map" : ""}`} center={center} zoom={5} scrollWheelZoom>
+      <MapVisibility visible={visible} />
       {kind === "route"
         ? <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · ODbL' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         : <TileLayer attribution='&copy; OpenStreetMap contributors · &copy; CARTO' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />}
-      <Navigator shipment={selected} route={route} />
+      <Navigator key={`${kind}-${selected?.id ?? "empty"}`} shipment={selected} route={route} />
       {route.map((segment, index) => <Polyline
         positions={segment.coords}
         pathOptions={{
@@ -211,6 +225,7 @@ export default function ShipmentMap({
 }) {
   const selected = shipments.find((shipment) => shipment.id === selectedId) ?? shipments[0];
   const [route, setRoute] = useState<RouteSegment[]>([]);
+  const [routeOwnerId, setRouteOwnerId] = useState<string>();
   const [routeMessage, setRouteMessage] = useState("");
   const [liveAssessment, setLiveAssessment] = useState<RouteThreatAssessment>();
   const [view, setView] = useState<"both" | "route" | "weather">("both");
@@ -218,12 +233,13 @@ export default function ShipmentMap({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | undefined;
-    if (!selected) { setRoute([]); setLiveAssessment(undefined); setRouteMessage("Register a shipment to view a route."); return; }
-    if (!validCoordinates(selected)) { setRoute([]); setLiveAssessment(undefined); setRouteMessage("Route unavailable: this shipment has no saved origin and destination coordinates."); return; }
+    if (!selected) { setRoute([]); setRouteOwnerId(undefined); setLiveAssessment(undefined); setRouteMessage("Register a shipment to view a route."); return; }
+    if (!validCoordinates(selected)) { setRoute([]); setRouteOwnerId(undefined); setLiveAssessment(undefined); setRouteMessage("Route unavailable: this shipment has no saved origin and destination coordinates."); return; }
 
     const refreshRouteAndWeather = async (initial: boolean) => {
       if (initial) {
         setRoute([]);
+        setRouteOwnerId(undefined);
         setLiveAssessment(undefined);
         setRouteMessage("Calculating the live remaining route and weather…");
       }
@@ -232,14 +248,18 @@ export default function ShipmentMap({
         const body = await response.json().catch(() => ({}));
         if (cancelled) return;
         if (!response.ok || !body.routeAvailable) {
-          setRoute([]);
+          if (initial) {
+            setRoute([]);
+            setRouteOwnerId(undefined);
+          }
           setLiveAssessment(body.weather);
           setRouteMessage(body.reason ?? "A verified route is unavailable for this shipment.");
           return;
         }
         setRoute(body.route);
+        setRouteOwnerId(selected.id);
         setLiveAssessment(body.weather);
-        setRouteMessage(`Remaining route recalculated from ${body.routeStart?.source ?? "latest position"} · refreshes every 30 seconds.`);
+        setRouteMessage(`Full route recalculated from ${body.routeStart?.source ?? "shipment origin"} · vessel position refreshes every 30 seconds.`);
       } catch {
         if (!cancelled) setRouteMessage("Live route or weather service is unavailable; the last verified overlay remains visible.");
       }
@@ -250,6 +270,7 @@ export default function ShipmentMap({
   }, [selected?.id]);
 
   const assessment = selected ? threatAssessments[selected.id] ?? liveAssessment : liveAssessment;
+  const selectedRoute = selected && routeOwnerId === selected.id ? route : [];
   return <div className="shipment-map-workspace">
     <div className="shipment-map-tabs" role="tablist" aria-label="Shipment map views">
       <button type="button" role="tab" aria-selected={view === "both"} onClick={() => setView("both")}>Monitor both</button>
@@ -257,8 +278,8 @@ export default function ShipmentMap({
       <button type="button" role="tab" aria-selected={view === "weather"} onClick={() => setView("weather")}>Weather map</button>
     </div>
     <div className={`shipment-map-grid ${view === "both" ? "is-split" : ""}`}>
-      {(view === "both" || view === "route") && <MapPanel kind="route" selected={selected} route={route} assessment={assessment} routeMessage={routeMessage} />}
-      {(view === "both" || view === "weather") && <MapPanel kind="weather" selected={selected} route={route} assessment={assessment} routeMessage={routeMessage} />}
+      <MapPanel kind="route" selected={selected} route={selectedRoute} assessment={assessment} routeMessage={routeMessage} visible={view === "both" || view === "route"} />
+      <MapPanel kind="weather" selected={selected} route={selectedRoute} assessment={assessment} routeMessage={routeMessage} visible={view === "both" || view === "weather"} />
     </div>
   </div>;
 }

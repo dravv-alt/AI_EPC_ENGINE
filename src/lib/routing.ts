@@ -3,8 +3,7 @@
 // @ts-ignore
 import searoute from "searoute-js";
 import { greatCircle } from "@turf/great-circle";
-import { point, lineString } from "@turf/helpers";
-import bezierSpline from "@turf/bezier-spline";
+import { point } from "@turf/helpers";
 import { findNearestPort, findNearestAirport, getDistance } from "./geo/nearest";
 
 // Haversine distance in km
@@ -24,7 +23,7 @@ export async function getShipmentRoute(
   destLat: number,
   destLng: number,
   mode: "sea" | "air" | "land",
-  options: { originIsInTransit?: boolean } = {}
+  _options: { originIsInTransit?: boolean } = {}
 ): Promise<{ mode: "sea" | "air" | "land", coords: [number, number][] }[]> {
   try {
     const segments: { mode: "sea" | "air" | "land", coords: [number, number][] }[] = [];
@@ -76,51 +75,34 @@ export async function getShipmentRoute(
       const oPort = findNearestPort(originLat, originLng);
       const dPort = findNearestPort(destLat, destLng);
 
-      const oDist = oPort ? getDistance(originLat, originLng, oPort.lat, oPort.lng) : 0;
-      const dDist = dPort ? getDistance(destLat, destLng, dPort.lat, dPort.lng) : 0;
+      // Hard invariant: a marine segment can only run from a known port to a
+      // known port. Current/simulated vessel coordinates are display data and
+      // must never replace either endpoint of the planned marine corridor.
+      if (!oPort || !dPort) return [];
 
-      let actualOriginLat = originLat, actualOriginLng = originLng;
-      let actualDestLat = destLat, actualDestLng = destLng;
+      const oDist = getDistance(originLat, originLng, oPort.lat, oPort.lng);
+      const dDist = getDistance(destLat, destLng, dPort.lat, dPort.lng);
 
-      // A vessel fix is already on the voyage. Never send that point through a
-      // road router merely because our finite port catalogue finds a distant
-      // "nearest" port; OSRM will snap an offshore point onto land and invent
-      // a cross-country route.
-      if (!options.originIsInTransit && oPort && oDist > 1) { // > 1km from port, add land leg
+      if (oDist > 1) { // > 1km from port, add the required road leg
         const landSegs = await getLandRoute(originLat, originLng, oPort.lat, oPort.lng);
-        if (landSegs.length > 0) {
-          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
-          actualOriginLat = oPort.lat;
-          actualOriginLng = oPort.lng;
-        }
-      }
-
-      if (dPort && dDist > 1) {
-        actualDestLat = dPort.lat;
-        actualDestLng = dPort.lng;
+        if (!landSegs.length) return [];
+        segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
       }
 
       const seaSegs = getMarineRoute(
-        actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
-        options.originIsInTransit ? undefined : oPort?.seaRouteWaypoints,
-        dPort?.seaRouteWaypoints
+        oPort.lat, oPort.lng, dPort.lat, dPort.lng,
+        oPort.seaRouteWaypoints,
+        dPort.seaRouteWaypoints
       );
       // Fail closed instead of presenting land legs without a verified marine
       // middle. A straight great-circle is an air route and can cross land.
       if (!seaSegs.length) return [];
-      if (options.originIsInTransit) {
-        const first = seaSegs[0]?.[0];
-        if (first && haversineKm(originLat, originLng, first[0], first[1]) > 1) {
-          seaSegs[0].unshift([originLat, originLng]);
-        }
-      }
       segments.push(...seaSegs.map(coords => ({ mode: "sea" as const, coords })));
 
-      if (dPort && dDist > 1) {
-        const landSegs = await getLandRoute(actualDestLat, actualDestLng, destLat, destLng);
-        if (landSegs.length > 0) {
-          segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
-        }
+      if (dDist > 1) {
+        const landSegs = await getLandRoute(dPort.lat, dPort.lng, destLat, destLng);
+        if (!landSegs.length) return [];
+        segments.push(...landSegs.map(coords => ({ mode: "land" as const, coords })));
       }
     }
 
@@ -146,44 +128,81 @@ function getMarineRoute(
   const oEntry = oWaypoints && oWaypoints.length > 0 ? oWaypoints[oWaypoints.length - 1] : undefined;
   const dEntry = dWaypoints && dWaypoints.length > 0 ? dWaypoints[dWaypoints.length - 1] : undefined;
 
-  let feature;
+  const trimGraphPath = (
+    raw: [number, number][],
+    requestedStart: [number, number],
+    requestedEnd: [number, number]
+  ) => {
+    if (raw.length < 2) return [];
+    const distance = (coordinate: [number, number], requested: [number, number]) =>
+      haversineKm(coordinate[1], coordinate[0], requested[1], requested[0]);
+    let startIndex = 0;
+    for (let index = 1; index < raw.length; index++) {
+      if (distance(raw[index], requestedStart) < distance(raw[startIndex], requestedStart)) startIndex = index;
+    }
+    let endIndex = startIndex;
+    for (let index = startIndex + 1; index < raw.length; index++) {
+      if (distance(raw[index], requestedEnd) < distance(raw[endIndex], requestedEnd)) endIndex = index;
+    }
+    return endIndex > startIndex ? raw.slice(startIndex, endIndex + 1) : [];
+  };
+
+  const withoutAdjacentDuplicates = (coordinates: [number, number][]) =>
+    coordinates.filter((coordinate, index) => index === 0
+      || coordinate[0] !== coordinates[index - 1][0]
+      || coordinate[1] !== coordinates[index - 1][1]);
+
+  let feature: { geometry: { type: "LineString"; coordinates: [number, number][] } } | null;
   try {
     if (oEntry && dEntry) {
       const f1 = searoute([oEntry[1], oEntry[0]], [dEntry[1], dEntry[0]]);
+      const graphPath = trimGraphPath(
+        f1?.geometry?.coordinates || [],
+        [oEntry[1], oEntry[0]],
+        [dEntry[1], dEntry[0]]
+      );
       feature = {
         geometry: {
           type: "LineString",
-          coordinates: [
+          coordinates: withoutAdjacentDuplicates([
             ...oWaypoints!.map(p => [p[1], p[0]]),
-            ...(f1?.geometry?.coordinates || []),
+            ...graphPath,
             ...[...dWaypoints!].reverse().map(p => [p[1], p[0]])
-          ]
+          ] as [number, number][])
         }
       };
     } else if (oEntry) {
       const f1 = searoute([oEntry[1], oEntry[0]], dest);
+      const graphPath = trimGraphPath(f1?.geometry?.coordinates || [], [oEntry[1], oEntry[0]], dest as [number, number]);
       feature = {
         geometry: {
           type: "LineString",
-          coordinates: [
+          coordinates: withoutAdjacentDuplicates([
             ...oWaypoints!.map(p => [p[1], p[0]]),
-            ...(f1?.geometry?.coordinates || [])
-          ]
+            ...graphPath
+          ] as [number, number][])
         }
       };
     } else if (dEntry) {
       const f1 = searoute(origin, [dEntry[1], dEntry[0]]);
+      const graphPath = trimGraphPath(f1?.geometry?.coordinates || [], origin as [number, number], [dEntry[1], dEntry[0]]);
       feature = {
         geometry: {
           type: "LineString",
-          coordinates: [
-            ...(f1?.geometry?.coordinates || []),
+          coordinates: withoutAdjacentDuplicates([
+            ...graphPath,
             ...[...dWaypoints!].reverse().map(p => [p[1], p[0]])
-          ]
+          ] as [number, number][])
         }
       };
     } else {
-      feature = searoute(origin, dest);
+      const rawFeature = searoute(origin, dest);
+      feature = {
+        geometry: {
+          type: "LineString",
+          coordinates: trimGraphPath(rawFeature?.geometry?.coordinates || [], origin as [number, number], dest as [number, number])
+        }
+      };
     }
   } catch {
     // A live vessel can be between graph nodes in open water. If the nautical
@@ -200,14 +219,25 @@ function getMarineRoute(
     return [];
   }
 
-  const coordinates =
-    feature.geometry.type === "MultiLineString"
-      ? feature.geometry.coordinates
-      : [feature.geometry.coordinates];
+  const coordinates = [feature.geometry.coordinates];
 
-  return coordinates.map((segment: [number, number][]) => {
+  const segments = coordinates.map((segment: [number, number][]) => {
     return segment.map(([lng, lat]) => [lat, lng] as [number, number]);
   });
+
+  // searoute-js snaps inputs onto its graph. Restore the exact validated port
+  // coordinates so the rendered blue geometry has port-to-port boundaries.
+  const firstSegment = segments[0];
+  const lastSegment = segments[segments.length - 1];
+  if (!firstSegment || !lastSegment) return [];
+  if (haversineKm(originLat, originLng, firstSegment[0][0], firstSegment[0][1]) > 0.01) {
+    firstSegment.unshift([originLat, originLng]);
+  }
+  const lastPoint = lastSegment[lastSegment.length - 1];
+  if (haversineKm(destLat, destLng, lastPoint[0], lastPoint[1]) > 0.01) {
+    lastSegment.push([destLat, destLng]);
+  }
+  return segments;
 }
 
 function getAirRoute(originLat: number, originLng: number, destLat: number, destLng: number): [number, number][][] {
