@@ -221,6 +221,14 @@ export const technologyPluginDrafts = pgTable(
     claims: jsonb("claims").notNull(),
     parameters: jsonb("parameters").notNull(),
     commercialChecklist: jsonb("commercial_checklist").notNull(),
+    vendorDetails: jsonb("vendor_details").notNull().default({}),
+    procurementDetails: jsonb("procurement_details").notNull().default({}),
+    projectContext: jsonb("project_context").notNull().default({}),
+    draftMessage: text("draft_message"),
+    generationProvider: varchar("generation_provider", { length: 30 }),
+    generationModel: varchar("generation_model", { length: 100 }),
+    artifactObjectId: uuid("artifact_object_id"),
+    documentVersionId: uuid("document_version_id"),
     status: varchar("status", { length: 20 }).notNull().default("draft"),
     ...timestamps,
   },
@@ -396,6 +404,264 @@ export const assets = pgTable(
   },
   (table) => [
     uniqueIndex("assets_project_tag_unique").on(table.projectId, table.tag),
+  ],
+);
+
+// Versioned, source-traceable rack planning models. A generated model is a
+// planning artifact until a reviewer explicitly approves it. The geometry is
+// stored in millimetres so the browser, RackDB adapter, and export formats all
+// consume the same canonical coordinates without unit drift.
+export const rackModels = pgTable(
+  "rack_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    siteAnalysisId: uuid("site_analysis_id").references(() => siteAnalyses.id),
+    siteAnalysisSnapshotId: uuid("site_analysis_snapshot_id").references(
+      () => siteAnalysisSnapshots.id,
+    ),
+    sourceType: varchar("source_type", { length: 24 }).notNull().default("generated"),
+    sourceObjectId: uuid("source_object_id").references(() => storageObjects.id),
+    sourceFormat: varchar("source_format", { length: 16 }),
+    originalFileName: varchar("original_file_name", { length: 260 }),
+    name: varchar("name", { length: 220 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull().default("generated"),
+    revision: integer("revision").notNull(),
+    sourceHash: varchar("source_hash", { length: 64 }).notNull(),
+    rackdbVersion: varchar("rackdb_version", { length: 24 })
+      .notNull()
+      .default("0.7"),
+    basis: jsonb("basis").notNull().default({}),
+    summary: jsonb("summary").notNull().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("rack_models_project_revision_unique").on(
+      table.projectId,
+      table.revision,
+    ),
+    index("rack_models_project_status_idx").on(table.projectId, table.status),
+  ],
+);
+
+export const rackModelRacks = pgTable(
+  "rack_model_racks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    sourceSystemId: uuid("source_system_id").references(() => systems.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    rowLabel: varchar("row_label", { length: 40 }).notNull(),
+    positionIndex: integer("position_index").notNull(),
+    xMm: integer("x_mm").notNull(),
+    yMm: integer("y_mm").notNull(),
+    zMm: integer("z_mm").notNull().default(0),
+    widthMm: integer("width_mm").notNull().default(600),
+    depthMm: integer("depth_mm").notNull().default(1200),
+    heightMm: integer("height_mm").notNull().default(2200),
+    totalUnits: integer("total_units").notNull().default(48),
+    maxPowerKw: numeric("max_power_kw", { precision: 12, scale: 3 }),
+    tags: jsonb("tags").notNull().default([]),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("rack_model_racks_model_name_unique").on(
+      table.rackModelId,
+      table.name,
+    ),
+    index("rack_model_racks_model_row_idx").on(
+      table.rackModelId,
+      table.rowLabel,
+      table.positionIndex,
+    ),
+  ],
+);
+
+export const rackModelClusters = pgTable(
+  "rack_model_clusters",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    name: varchar("name", { length: 160 }).notNull(),
+    workload: varchar("workload", { length: 120 }),
+    topology: varchar("topology", { length: 80 }).notNull().default("leaf_spine"),
+    networkFabric: varchar("network_fabric", { length: 100 }),
+    color: varchar("color", { length: 16 }).notNull().default("#65c7b7"),
+    status: varchar("status", { length: 24 }).notNull().default("planning"),
+    metadata: jsonb("metadata").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("rack_model_clusters_model_name_unique").on(
+      table.rackModelId,
+      table.name,
+    ),
+    index("rack_model_clusters_model_idx").on(table.rackModelId),
+  ],
+);
+
+export const rackModelGpuProfiles = pgTable(
+  "rack_model_gpu_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    clusterId: uuid("cluster_id")
+      .notNull()
+      .references(() => rackModelClusters.id),
+    profileKey: varchar("profile_key", { length: 80 }).notNull(),
+    vendor: varchar("vendor", { length: 120 }).notNull(),
+    model: varchar("model", { length: 160 }).notNull(),
+    architecture: varchar("architecture", { length: 120 }),
+    gpusPerNode: integer("gpus_per_node").notNull(),
+    nodesPerRack: integer("nodes_per_rack").notNull(),
+    nodeUnitHeight: integer("node_unit_height").notNull(),
+    nodePowerKw: numeric("node_power_kw", { precision: 12, scale: 3 }).notNull(),
+    nodeHeatKw: numeric("node_heat_kw", { precision: 12, scale: 3 }).notNull(),
+    coolingClass: varchar("cooling_class", { length: 80 }),
+    fabricType: varchar("fabric_type", { length: 100 }),
+    fabricPortsPerNode: integer("fabric_ports_per_node").notNull().default(1),
+    portSpeedGbps: integer("port_speed_gbps").notNull().default(400),
+    metadata: jsonb("metadata").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("rack_model_gpu_profiles_model_key_unique").on(
+      table.rackModelId,
+      table.profileKey,
+    ),
+    index("rack_model_gpu_profiles_cluster_idx").on(table.clusterId),
+  ],
+);
+
+export const rackModelEquipment = pgTable(
+  "rack_model_equipment",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    rackId: uuid("rack_id")
+      .notNull()
+      .references(() => rackModelRacks.id),
+    sourceAssetId: uuid("source_asset_id").references(() => assets.id),
+    clusterId: uuid("cluster_id").references(() => rackModelClusters.id),
+    gpuProfileId: uuid("gpu_profile_id").references(() => rackModelGpuProfiles.id),
+    name: varchar("name", { length: 220 }).notNull(),
+    equipmentType: varchar("equipment_type", { length: 80 }).notNull(),
+    modelReference: varchar("model_reference", { length: 180 }),
+    vendor: varchar("vendor", { length: 180 }),
+    startUnit: integer("start_unit").notNull(),
+    unitHeight: integer("unit_height").notNull(),
+    powerKw: numeric("power_kw", { precision: 12, scale: 3 }),
+    heatKw: numeric("heat_kw", { precision: 12, scale: 3 }),
+    weightKg: numeric("weight_kg", { precision: 12, scale: 3 }),
+    coolingClass: varchar("cooling_class", { length: 80 }),
+    nodeCount: integer("node_count"),
+    acceleratorCount: integer("accelerator_count"),
+    provenance: jsonb("provenance").notNull().default({}),
+    metadata: jsonb("metadata").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("rack_model_equipment_rack_slot_idx").on(
+      table.rackId,
+      table.startUnit,
+    ),
+    index("rack_model_equipment_model_idx").on(table.rackModelId),
+  ],
+);
+
+export const rackModelPorts = pgTable(
+  "rack_model_ports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    equipmentId: uuid("equipment_id")
+      .notNull()
+      .references(() => rackModelEquipment.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    portType: varchar("port_type", { length: 60 }).notNull(),
+    protocol: varchar("protocol", { length: 80 }),
+    connector: varchar("connector", { length: 80 }),
+    speedGbps: integer("speed_gbps"),
+    positionIndex: integer("position_index").notNull().default(0),
+    metadata: jsonb("metadata").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("rack_model_ports_equipment_name_unique").on(
+      table.equipmentId,
+      table.name,
+    ),
+    index("rack_model_ports_model_idx").on(table.rackModelId),
+  ],
+);
+
+export const rackModelLinks = pgTable(
+  "rack_model_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    clusterId: uuid("cluster_id").references(() => rackModelClusters.id),
+    sourcePortId: uuid("source_port_id")
+      .notNull()
+      .references(() => rackModelPorts.id),
+    targetPortId: uuid("target_port_id")
+      .notNull()
+      .references(() => rackModelPorts.id),
+    name: varchar("name", { length: 180 }).notNull(),
+    linkType: varchar("link_type", { length: 60 }).notNull(),
+    cableType: varchar("cable_type", { length: 100 }),
+    lengthM: numeric("length_m", { precision: 12, scale: 3 }),
+    redundancyGroup: varchar("redundancy_group", { length: 40 }),
+    color: varchar("color", { length: 16 }).notNull().default("#65c7b7"),
+    status: varchar("status", { length: 24 }).notNull().default("planned"),
+    path: jsonb("path").notNull().default([]),
+    metadata: jsonb("metadata").notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    index("rack_model_links_model_idx").on(table.rackModelId),
+    index("rack_model_links_cluster_idx").on(table.clusterId),
+  ],
+);
+
+export const rackModelArtifacts = pgTable(
+  "rack_model_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rackModelId: uuid("rack_model_id")
+      .notNull()
+      .references(() => rackModels.id),
+    storageObjectId: uuid("storage_object_id")
+      .notNull()
+      .references(() => storageObjects.id),
+    format: varchar("format", { length: 32 }).notNull(),
+    fileName: varchar("file_name", { length: 260 }).notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => [
+    index("rack_model_artifacts_model_idx").on(
+      table.rackModelId,
+      table.createdAt,
+    ),
   ],
 );
 

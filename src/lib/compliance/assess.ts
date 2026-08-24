@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { compareCompliance, type ComparisonResult, type ComplianceVerdict, type RequirementInput } from "@/lib/compliance/compare";
+import {
+  compareCompliance,
+  type ComparisonResult,
+  type ComplianceVerdict,
+  type RequirementInput,
+} from "@/lib/compliance/compare";
 import type { SemanticCitation } from "@/lib/knowledge/query";
 import { getGenerationProvider } from "@/lib/model/provider";
 
@@ -9,10 +14,16 @@ import { getGenerationProvider } from "@/lib/model/provider";
 // is what MockModelProvider echoes back verbatim under MODEL_PROVIDER=mock,
 // which is what keeps verify:compliance-http byte-identical offline.
 export const assessmentSchema = z.object({
-  verdict: z.enum(["conforms", "deterministic_flag", "possible_mismatch", "needs_engineering_judgment", "equivalent_by_precedent"]),
+  verdict: z.enum([
+    "conforms",
+    "deterministic_flag",
+    "possible_mismatch",
+    "needs_engineering_judgment",
+    "equivalent_by_precedent",
+  ]),
   confidence: z.number().min(0).max(1),
   reason: z.string().min(20).max(4000),
-  groundingRegionIds: z.array(z.string().uuid()).default([])
+  groundingRegionIds: z.array(z.string().uuid()).default([]),
 });
 
 export interface DocumentContext {
@@ -47,9 +58,14 @@ export interface AssessComplianceResult {
 // instead of throwing: an assessment should still be produced, just forced
 // down to require human judgment when the model's cited region IDs cannot be
 // verified against the candidate set retrieved in code.
-export function validateGrounding(groundingRegionIds: string[], candidates: SemanticCitation[]): { valid: boolean; unverifiedIds: string[] } {
+export function validateGrounding(
+  groundingRegionIds: string[],
+  candidates: SemanticCitation[],
+): { valid: boolean; unverifiedIds: string[] } {
   if (!groundingRegionIds.length) return { valid: true, unverifiedIds: [] };
-  const allowed = new Set(candidates.map((candidate) => candidate.sourceRegionId));
+  const allowed = new Set(
+    candidates.map((candidate) => candidate.sourceRegionId),
+  );
   const unverifiedIds = groundingRegionIds.filter((id) => !allowed.has(id));
   return { valid: unverifiedIds.length === 0, unverifiedIds };
 }
@@ -72,7 +88,10 @@ export function applyVerdictSafetyDowngrades(input: {
   let verdict = input.verdict;
   let reason = input.reason;
 
-  const grounding = validateGrounding(input.groundingRegionIds, input.groundingCandidates);
+  const grounding = validateGrounding(
+    input.groundingRegionIds,
+    input.groundingCandidates,
+  );
   if (!grounding.valid) {
     verdict = "needs_engineering_judgment";
     reason = `${reason}\n\nGrounding could not be verified: the assessment referenced region ID(s) not present in the retrieved standards-clause candidates, so this verdict has been downgraded to require engineering judgment.`;
@@ -86,16 +105,68 @@ export function applyVerdictSafetyDowngrades(input: {
   return { verdict, reason };
 }
 
-const SYSTEM_PROMPT = "You are assisting a licensed engineer with a professional compliance comparison between an accepted controlled requirement and a cited target document line (submittal, PO, shop drawing, or drawing). Write in a professional engineering register. You never certify, approve, or close a finding, and you never assert final compliance authority — every assessment you produce is advisory and requires human engineering review before it has any effect. If you assert an equivalence claim or cite a standards clause to support your reasoning, you must ground it in one of the supplied grounding candidate region IDs, or your assessment will be automatically downgraded to require engineering judgment. Output JSON only, matching the required schema.";
+// Deterministic comparisons are the safety floor, not optional context for a
+// generative model. A model may escalate an otherwise deterministic match to
+// human review, but it must never erase an exact numeric/unit/boolean/category
+// deviation. Narrative comparisons likewise cannot be machine-certified as
+// conforming because the deterministic layer has no basis for that decision.
+export function applyDeterministicSafetyFloor(input: {
+  modelVerdict: ComplianceVerdict;
+  modelReason: string;
+  deterministic: ComparisonResult;
+}): {
+  verdict: ComplianceVerdict;
+  reason: string;
+  deterministicOverride: boolean;
+} {
+  if (
+    input.deterministic.verdict === "deterministic_flag" &&
+    input.modelVerdict !== "deterministic_flag"
+  ) {
+    return {
+      verdict: "deterministic_flag",
+      reason: `${input.deterministic.reason}\n\nThe deterministic safety check overrode the model suggestion (${input.modelVerdict}); an exact controlled deviation cannot be downgraded by generative output.`,
+      deterministicOverride: true,
+    };
+  }
 
-export async function assessCompliance(input: AssessComplianceInput): Promise<AssessComplianceResult> {
-  const deterministic = compareCompliance(input.requirement, input.targetText, input.acceptedPrecedent);
+  if (
+    ["possible_mismatch", "needs_engineering_judgment"].includes(
+      input.deterministic.verdict,
+    ) &&
+    input.modelVerdict === "conforms"
+  ) {
+    return {
+      verdict: "needs_engineering_judgment",
+      reason: `${input.modelReason}\n\nThe deterministic layer could not establish conformity for this qualitative comparison, so an engineer must make the final disposition.`,
+      deterministicOverride: true,
+    };
+  }
+
+  return {
+    verdict: input.modelVerdict,
+    reason: input.modelReason,
+    deterministicOverride: false,
+  };
+}
+
+const SYSTEM_PROMPT =
+  "You are assisting a licensed engineer with a professional compliance comparison between an accepted controlled requirement and a cited target document line (submittal, PO, shop drawing, or drawing). Write in a professional engineering register. You never certify, approve, or close a finding, and you never assert final compliance authority — every assessment you produce is advisory and requires human engineering review before it has any effect. If you assert an equivalence claim or cite a standards clause to support your reasoning, you must ground it in one of the supplied grounding candidate region IDs, or your assessment will be automatically downgraded to require engineering judgment. Output JSON only, matching the required schema.";
+
+export async function assessCompliance(
+  input: AssessComplianceInput,
+): Promise<AssessComplianceResult> {
+  const deterministic = compareCompliance(
+    input.requirement,
+    input.targetText,
+    input.acceptedPrecedent,
+  );
 
   const mock = {
     verdict: deterministic.verdict,
     confidence: Number(deterministic.confidence),
     reason: deterministic.reason,
-    groundingRegionIds: [] as string[]
+    groundingRegionIds: [] as string[],
   };
 
   const prompt = JSON.stringify({
@@ -104,38 +175,62 @@ export async function assessCompliance(input: AssessComplianceInput): Promise<As
       numericValue: input.requirement.numericValue,
       unit: input.requirement.unit,
       tolerance: input.requirement.tolerance,
-      source: input.requirementContext
+      source: input.requirementContext,
     },
     target: {
       text: input.targetText,
-      source: input.targetContext
+      source: input.targetContext,
     },
-    hierarchyMismatch: input.requirementContext.hierarchy !== input.targetContext.hierarchy,
+    hierarchyMismatch:
+      input.requirementContext.hierarchy !== input.targetContext.hierarchy,
     acceptedPrecedent: input.acceptedPrecedent,
-    groundingCandidates: input.groundingCandidates.map((candidate) => ({ regionId: candidate.sourceRegionId, documentType: candidate.documentType, text: candidate.text, similarity: candidate.similarity })),
-    deterministicCrossCheck: { comparisonType: deterministic.comparisonType, verdict: deterministic.verdict, confidence: deterministic.confidence, reason: deterministic.reason }
+    groundingCandidates: input.groundingCandidates.map((candidate) => ({
+      regionId: candidate.sourceRegionId,
+      documentType: candidate.documentType,
+      text: candidate.text,
+      similarity: candidate.similarity,
+    })),
+    deterministicCrossCheck: {
+      comparisonType: deterministic.comparisonType,
+      verdict: deterministic.verdict,
+      confidence: deterministic.confidence,
+      reason: deterministic.reason,
+    },
   });
 
-  const result = await getGenerationProvider().generateStructured({ system: SYSTEM_PROMPT, prompt, schema: assessmentSchema, mock });
+  const result = await getGenerationProvider().generateStructured({
+    system: SYSTEM_PROMPT,
+    prompt,
+    schema: assessmentSchema,
+    mock,
+  });
 
-  const { verdict, reason } = applyVerdictSafetyDowngrades({
+  const grounded = applyVerdictSafetyDowngrades({
     verdict: result.data.verdict,
     reason: result.data.reason,
     groundingRegionIds: result.data.groundingRegionIds ?? [],
     groundingCandidates: input.groundingCandidates,
-    acceptedPrecedent: input.acceptedPrecedent
+    acceptedPrecedent: input.acceptedPrecedent,
+  });
+  const safe = applyDeterministicSafetyFloor({
+    modelVerdict: grounded.verdict,
+    modelReason: grounded.reason,
+    deterministic,
   });
 
-  const suggestionSource: "deterministic" | "model" = result.provider === "mock" ? "deterministic" : "model";
+  const suggestionSource: "deterministic" | "model" =
+    result.provider === "mock" ? "deterministic" : "model";
 
   return {
-    verdict,
-    confidence: result.data.confidence.toFixed(4),
-    reason,
+    verdict: safe.verdict,
+    confidence: safe.deterministicOverride
+      ? deterministic.confidence
+      : result.data.confidence.toFixed(4),
+    reason: safe.reason,
     suggestionSource,
     suggestionModelVersion: result.model,
     deterministicCrossCheck: deterministic,
     requirementSnapshot: deterministic.requirementSnapshot,
-    targetSnapshot: deterministic.targetSnapshot
+    targetSnapshot: deterministic.targetSnapshot,
   };
 }
