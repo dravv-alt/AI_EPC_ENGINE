@@ -87,7 +87,7 @@ export const skills: Skill[] = [
   },
   {
     id: "raise-issue",
-    triggers: ["raise an issue", "create an issue", "log a finding", "create a finding", "flag a problem", "open a finding", "report a defect", "report an issue"],
+    triggers: ["raise an issue", "create an issue", "log a finding", "create a finding", "new finding", "a finding for", "flag a problem", "open a finding", "report a defect", "report an issue"],
     permission: "finding:manage",
     tools: ["members.list", "findings.create"],
     steps: [

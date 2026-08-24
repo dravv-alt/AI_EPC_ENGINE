@@ -167,11 +167,43 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
 
   const memories = await recallMemories(ctx.projectId, ctx.userId);
   const system = await assembleSystemPrompt({ projectId: ctx.projectId, pathname: ctx.pathname, searchParams: ctx.searchParams, role: ctx.role, memories });
-  const recentHistory = await db.select({ role: copilotMessages.role, content: copilotMessages.content, toolName: copilotMessages.toolName, toolStatus: copilotMessages.toolStatus }).from(copilotMessages).where(eq(copilotMessages.conversationId, conversationId)).orderBy(desc(copilotMessages.createdAt)).limit(HISTORY_MESSAGE_LIMIT);
+  const [recentHistory, recentUserTurns, lastAssistantRows] = await Promise.all([
+    db.select({ role: copilotMessages.role, content: copilotMessages.content, toolName: copilotMessages.toolName, toolStatus: copilotMessages.toolStatus }).from(copilotMessages).where(eq(copilotMessages.conversationId, conversationId)).orderBy(desc(copilotMessages.createdAt)).limit(HISTORY_MESSAGE_LIMIT),
+    // Keep the task specification across clarification turns without
+    // reintroducing the old unbounded all-message prompt growth.
+    db.select({ content: copilotMessages.content }).from(copilotMessages).where(and(eq(copilotMessages.conversationId, conversationId), eq(copilotMessages.role, "user"))).orderBy(desc(copilotMessages.createdAt)).limit(8),
+    // Fetch the last assistant message to detect if we are in an ask-answer
+    // state. The model correctly calls members.list on follow-up turns but then
+    // generates another kind=ask instead of kind=act findings.create because it
+    // has no signal that the user's current message IS the answer to its own
+    // previous question.
+    db.select({ content: copilotMessages.content, response: copilotMessages.response }).from(copilotMessages).where(and(eq(copilotMessages.conversationId, conversationId), eq(copilotMessages.role, "assistant"))).orderBy(desc(copilotMessages.createdAt)).limit(1)
+  ]);
   const history = historyForPrompt(recentHistory.reverse());
   const observations: Observation[] = [];
   const failuresByTool = new Map<string, number>();
-  const skills = serializeSkillsForPrompt(selectRelevantSkills(userMessage));
+  // The visible reply often contains only a short value such as "Bhavik".
+  // Route tools from the recent user turns as a whole, so a follow-up retains
+  // the capability required by its original request (e.g. members.list to
+  // resolve that owner name before findings.create).
+  const taskContext = recentUserTurns
+    .reverse()
+    .map((entry) => entry.content ?? "")
+    .concat(userMessage)
+    .join("\n")
+    .slice(-3_000);
+  const skills = serializeSkillsForPrompt(selectRelevantSkills(taskContext));
+
+  // Detect ask-answer state: if the previous assistant turn was a clarifying
+  // question (has options presented to user, OR content ends with "?"), the
+  // current userMessage is the user's direct answer. Inject an explicit note
+  // so the model does not generate another kind=ask for the same information.
+  const lastAsst = lastAssistantRows[0];
+  const lastResponse = lastAsst?.response as CopilotResponseEnvelope | null | undefined;
+  const lastWasAsk = (Array.isArray(lastResponse?.options) && (lastResponse?.options as string[]).length > 0) || lastAsst?.content?.trimEnd().endsWith("?") === true;
+  const prevAnswerNote = lastWasAsk && lastAsst?.content
+    ? `The previous assistant message was a clarifying question: "${lastAsst.content}". The current user message is the direct answer to that question. Do NOT ask the same question again. Use the answer immediately to call the appropriate tool (e.g. match the name to a member from members.list and call findings.create).`
+    : "";
 
   for (let iteration = 0; iteration < MAX_STEPS; iteration += 1) {
     // History is only useful for orienting the FIRST step of a turn ("what
@@ -181,11 +213,13 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
     // 2026-08-24: the single biggest cost in a multi-step turn).
     const prompt = [
       "You are executing one bounded copilot turn. Respond only with a JSON step matching the supplied schema.",
-      "Use tools for project facts and requested operations. Never invent project data, citations, or action results. Never answer a project-status, to-do, task, finding, schedule, shipment, alert, or readiness question by repeating or paraphrasing the user's question: call an appropriate read tool first. Before an action tool needs information that is not in the message or observations, return kind=ask and request only the missing fields; do not call the tool with guessed IDs, dates, owners, or values. When enough information is available, return kind=done.",
+      "Use tools for project facts and requested operations. Never invent project data, citations, or action results. Never answer a project-status, to-do, task, finding, schedule, shipment, alert, or readiness question by repeating or paraphrasing the user's question: call an appropriate read tool first. If a user gives an owner name, resolve it with members.list before using an ownerId. If a user gives an unambiguous calendar date with a year, convert it to an ISO-8601 timestamp for a datetime field instead of asking for it again. Before an action tool needs information that is not in the message or observations, return kind=ask and request only the missing fields; do not call the tool with guessed IDs, dates, owners, or values. When enough information is available, return kind=done.",
       "Write summary as one to three sentences of plain, warm, conversational English — how a knowledgeable colleague would say it out loud. Lead with the answer, not with what you did. Do not narrate your tool calls. Do not write bullet lists, headings, or markdown; the interface renders tables, links, and citations itself, so never retype data a tool already returned. Use detail only for a genuine caveat or next step, and leave it null otherwise.",
       `User message:\n${userMessage}`,
+      `Relevant user task context:\n${taskContext}`,
+      prevAnswerNote,
       iteration === 0 ? `Conversation history:\n${serialize(history)}` : "",
-      `Available tools:\n${serialize(toolCatalogue(selectRelevantToolNames(userMessage, observations.map((o) => o.tool))))}`,
+      `Available tools:\n${serialize(toolCatalogue(selectRelevantToolNames(taskContext, observations.map((o) => o.tool))))}`,
       skills ? `Relevant playbooks:\n${skills}` : "",
       observations.length ? `Observations from this turn:\n${serialize(observations)}` : ""
     ].filter(Boolean).join("\n\n");
@@ -212,7 +246,7 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
       return envelope;
     }
     if (step.kind === "done") {
-      const requiredReadTool = observations.length === 0 ? requiredReadToolFor(userMessage) : null;
+      const requiredReadTool = observations.length === 0 ? requiredReadToolFor(taskContext) : null;
       if (requiredReadTool) {
         const result = await invokeTool(ctx, requiredReadTool, {});
         observations.push({ tool: requiredReadTool, result });
