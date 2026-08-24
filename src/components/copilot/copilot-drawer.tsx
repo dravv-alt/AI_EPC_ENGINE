@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Paperclip, X } from "lucide-react";
 import { IconButton, PrimaryButton } from "@/components/ui/glass";
 import type { CopilotResponseEnvelope } from "@/lib/copilot/types";
 import { CopilotMessage } from "./copilot-message";
@@ -70,6 +70,7 @@ export function CopilotDrawer({
   const [draft, setDraft] = useState("");
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ block: "end" });
@@ -114,6 +115,38 @@ export function CopilotDrawer({
     }
   }
 
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !conversationId) return;
+
+    setTranscript((current) => [...current, { id: crypto.randomUUID(), role: "user", text: `Attached: ${file.name}` }]);
+    setProgressLabel("uploading attachment…");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("message", draft);
+      form.append("pathname", pageContext.pathname);
+      const response = await fetch(`/api/copilot/conversations/${conversationId}/attachments`, { method: "POST", body: form });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body) {
+        setTranscript((current) => [...current, { id: crypto.randomUUID(), role: "assistant", envelope: errorEnvelope(body?.error ?? "That attachment didn't go through — mind trying again?", null) }]);
+        return;
+      }
+      const summary = body.uploaded
+        ? `Got it — routed "${file.name}" to ${String(body.routedTo).replace(/_/g, " ")}.`
+        : body.needsClarification
+        ? `I need a bit more detail before I can file "${file.name}" — tell me where it should go.`
+        : `"${file.name}" looks like a duplicate of something already on file.`;
+      setTranscript((current) => [...current, { id: crypto.randomUUID(), role: "assistant", envelope: errorEnvelope(summary, body.routingReason ?? null) }]);
+    } catch (error) {
+      console.warn("[copilot] attachment upload error:", error);
+      setTranscript((current) => [...current, { id: crypto.randomUUID(), role: "assistant", envelope: errorEnvelope("I'm having trouble uploading that right now — please try again in a moment.", null) }]);
+    } finally {
+      setProgressLabel(null);
+    }
+  }
+
   return (
     <>
       <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
@@ -151,6 +184,10 @@ export function CopilotDrawer({
         )}
 
         <form className={styles.composer} onSubmit={handleSubmit}>
+          <input ref={fileInputRef} type="file" onChange={handleFileSelect} hidden aria-hidden="true" />
+          <IconButton type="button" onClick={() => fileInputRef.current?.click()} aria-label="Attach a file">
+            <Paperclip size={16} />
+          </IconButton>
           <input
             className={styles.composerInput}
             value={draft}
