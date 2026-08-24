@@ -4,6 +4,106 @@ Pramana Cx is an evidence control plane for mission-critical EPC commissioning. 
 
 The product is **advisory by design**. AI may extract, retrieve, rank, draft, and explain. Deterministic services calculate readiness, schedule feasibility, and test verdicts. Only an authorized human review can accept requirements, evidence, checklists, reports, precedents, or gate decisions.
 
+## Why Pramana exists
+
+Mission-critical EPC delivery usually fragments the source of truth across drawings, specifications, spreadsheets, email, field photographs, schedules, vendor packages, and commissioning reports. The operational problem is not a lack of dashboards; it is the absence of a defensible chain between **what was required, what was built, what was tested, who approved it, and what changed afterward**.
+
+Pramana turns that chain into the product. Each useful statement remains connected to its project, immutable source revision, exact page/region, review state, affected system or asset, evidence, deterministic rule result, and audit event. This is why AI output is advisory and why accepted records—not chat text—drive readiness.
+
+## Core USPs
+
+| Capability | What it does | Why it matters |
+| --- | --- | --- |
+| Controlled-source RAG | Hashes PDF/CSV/XLSX sources, extracts exact regions, indexes project-scoped embeddings, reranks results, and returns citations | Answers and proposals remain inspectable instead of becoming uncited summaries |
+| Human-authority workflow | Separates proposed, accepted, rejected, superseded, and approved states with RBAC and audit events | AI cannot silently change a contract, certify work, or approve a gate |
+| Deterministic readiness | Recomputes proof coverage, stale/failed evidence, prerequisites, blockers, and accepted findings | A readiness score is explainable and reproducible |
+| Compliance workbench | Relevance-gates semantic candidates, compares exact cited lines, detects authority conflicts, and records engineer disposition | Prevents unrelated clauses from becoming false compliance findings |
+| Site-to-execution continuity | Carries confirmed Site Analysis decisions into systems/assets, requirements, commissioning scope, procurement and project summaries | Planning inputs produce governed downstream work instead of a dead-end form |
+| RackDB-first digital rack model | Builds versioned rack geometry from project/site inputs, supports mixed GPU clusters, rack-unit equipment, wiring, manual racks, imports and controlled exports | Capacity, topology, power, heat and physical layout share one revisioned model |
+| Evidence-to-turnover chain | Captures evidence, reviews proof, executes cited tests, resolves findings, approves gates, and generates hashed turnover packs | Handover can be verified independently from accepted records |
+| Project-scoped intelligence | Uses local Ollama/Gemma or explicitly configured providers behind schema, timeout, provenance and citation guards | Sensitive project intelligence can remain local and bounded |
+
+## End-to-end operating model
+
+```text
+Controlled documents / field evidence / site inputs
+                │
+                ▼
+Immutable object + SHA-256 + exact source regions
+                │
+                ▼
+Project-scoped chunks → embeddings → hybrid retrieval → reranking
+                │                                      │
+                │                                      └─ cited advisory summaries
+                ▼
+Human-reviewed requirements ──► systems / assets / gates
+                │                         │
+                ├─► compliance checks     ├─► digital rack model / GPU topology
+                ├─► commissioning tests   ├─► schedule / shipment planning
+                └─► evidence obligations  └─► financial and site scenarios
+                              │
+                              ▼
+                 deterministic readiness rules
+                              │
+                              ▼
+                  authorized gate decision
+                              │
+                              ▼
+                hashed exports and turnover pack
+```
+
+### Authority boundaries
+
+- PostgreSQL is authoritative for project records, review states, relationships, versions and audit history.
+- Object storage is authoritative for uploaded and generated artifacts; SHA-256 identities bind database records to bytes.
+- pgvector-backed knowledge chunks are retrieval indexes, never a replacement for the controlled source region.
+- Deterministic rules own numeric/boolean verdicts, readiness and schedule calculations.
+- AI can extract, rank, summarize and draft only. Its provider/model and citation provenance are recorded.
+- A project-authorized person owns acceptance, compliance disposition, evidence approval, gate decisions and approved model revisions.
+
+## Major product surfaces
+
+| Surface | Inputs | Outputs and downstream effect |
+| --- | --- | --- |
+| Projects / Overview | Project membership and current project | Executive health, readiness, evidence, work and alerts |
+| Site Analysis | Site, power, water, workload, rack, building, cooling, network, logistics, security, schedule and commercial decisions | Versioned analysis snapshots, constraints, planning insights and controlled downstream proposals |
+| Documents / Knowledge | PDF, CSV and XLSX revisions | Exact source regions, embeddings, requirement proposals and cited answers |
+| Requirements | Extracted or manually controlled statements | Accepted obligations used by evidence, compliance and readiness |
+| Systems & Assets | Controlled hierarchy and tags | The physical/functional authority graph used by evidence and tests |
+| Digital Rack Model | Site Analysis, user rack/GPU specifications, GLB/OBJ imports | RackDB-compatible revisions, mixed GPU clusters, ports/links, GLB/OBJ/PDF/YAML exports |
+| Evidence / Capture | Documents, images, readings and field observations | Pending evidence records linked to systems/assets and accepted requirements |
+| Readiness | Accepted requirements/evidence, gate prerequisites and findings | Explainable gate state and blockers |
+| Commissioning Tests | Standards, systems, assets and accepted requirements | Cited checklists, deterministic readings, reviewed reports and findings |
+| Compliance | Accepted requirements and approved target documents | Relevance-gated comparisons, authority conflicts, proposed findings and reviewed precedents |
+| Schedule / Shipments | Accepted tasks, site/procurement decisions and logistics records | Versioned baseline, critical path, approved shipment plans, route/ETA status |
+| Technology Draft Studio | Site/system needs, evidence and vendor fields | Controlled vendor package draft and reviewable PDF |
+| Financial Modeler | Capacity, utilization, tariff, budget and scenario inputs | USD-authoritative economics with display currency conversion, NPV/IRR/payback and key drivers |
+| Exports / Turnover | Current controlled project state | Branded PDF/CSV exports, watermarks, manifests and independently verifiable hashes |
+
+## Digital rack and GPU architecture
+
+The Digital Rack Model is a governed planning model, not a decorative 3D viewer. Generated revisions derive their basis from the current project and Site Analysis, while explicit user preferences can override rack count, envelope, power density, population and GPU cluster composition. A project may contain multiple GPU profiles (for example NVIDIA H100 and AMD MI300X), multiple clusters, and multiple racks per cluster. Equipment records retain rack-unit position, accelerator count, power, heat, cooling class and profile identity. Port and link records preserve fabric speed and topology so inter-rack wiring can be toggled and audited.
+
+Users can also add a custom persisted rack to an editable generated revision, add non-overlapping equipment at exact U positions, or upload GLB/OBJ visual models. Generated and imported revisions remain distinguishable, versioned, reviewable and exportable; an approved revision is immutable until it is explicitly superseded or returned through review.
+
+## Compliance and corpus mapping
+
+Compliance discovery is deliberately narrower than general knowledge search. It searches only approved project target types (submittals, purchase orders, shop drawings and drawings), requires meaningful engineering-term overlap in addition to vector similarity, preserves document diversity, and excludes the requirement's own document. Numeric, boolean and categorical comparisons use deterministic normalization. Narrative or ambiguous cases remain `needs engineering judgment`. Source-authority conflicts are shown explicitly and cannot be silently resolved by ranking or AI.
+
+To control and embed a local compliance corpus with the same ingestion path used by the UI:
+
+```bash
+npm run source:import -- \
+  --file "/absolute/path/to/document.pdf" \
+  --title "Controlled document title" \
+  --revision "Rev 1" \
+  --project "MDC-07" \
+  --actor "project.admin@example.com" \
+  --type "standard"
+```
+
+The command stores the immutable object, extracts source regions, creates/refreshes project-scoped knowledge chunks, embeds pending chunks with the configured embedding provider, and records an audit event. Standards become searchable evidence; accepted requirements and approved target documents still control whether a compliance comparison can be created.
+
 **Where to go from here:**
 
 - **[CAPABILITIES.md](CAPABILITIES.md)** — a one-page summary of what the application does, with a walkthrough user flow

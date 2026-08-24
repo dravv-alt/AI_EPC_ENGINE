@@ -63,6 +63,18 @@ type PopulationItem = {
   modelReference: string;
 };
 
+type RackDraft = {
+  name: string;
+  rowLabel: string;
+  totalUnits: string;
+  maxPowerKw: string;
+  widthMm: string;
+  depthMm: string;
+  heightMm: string;
+};
+
+const emptyRack: RackDraft = { name: "", rowLabel: "A", totalUnits: "48", maxPowerKw: "", widthMm: "600", depthMm: "1200", heightMm: "2200" };
+
 type GpuClusterDraft = {
   id: string;
   name: string;
@@ -742,6 +754,8 @@ export function RackModelWorkbench({
   const [equipmentOpen, setEquipmentOpen] = useState(false);
   const [equipmentDraft, setEquipmentDraft] =
     useState<EquipmentDraft>(emptyEquipment);
+  const [rackOpen, setRackOpen] = useState(false);
+  const [rackDraft, setRackDraft] = useState<RackDraft>(emptyRack);
   const [rackQuery, setRackQuery] = useState("");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     () =>
@@ -989,6 +1003,19 @@ export function RackModelWorkbench({
       setEquipmentOpen(false);
       setEquipmentDraft(emptyEquipment);
     }
+    setBusy(null);
+  }
+
+  async function addRack() {
+    if (!bundle) return;
+    setBusy("rack"); setError("");
+    const response = await fetch(`/api/projects/${projectId}/rack-models/${bundle.model.id}/racks`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: rackDraft.name, rowLabel: rackDraft.rowLabel, totalUnits: Number(rackDraft.totalUnits), maxPowerKw: optionalNumber(rackDraft.maxPowerKw), widthMm: Number(rackDraft.widthMm), depthMm: Number(rackDraft.depthMm), heightMm: Number(rackDraft.heightMm) }),
+    });
+    const result = await response.json();
+    if (!response.ok) setError(result.error ?? "Unable to add custom rack.");
+    else { setBundle(result); const created = result.racks.find((rack: RackModelBundle["racks"][number]) => rack.name === rackDraft.name); setSelectedRack(created?.id ?? null); setExpandedRows((current) => new Set([...current, rackDraft.rowLabel])); setRackDraft(emptyRack); setRackOpen(false); }
     setBusy(null);
   }
 
@@ -1755,6 +1782,18 @@ export function RackModelWorkbench({
                     : `${bundle.racks.length - hidden.size} visible`}
                 </span>
               </div>
+              {bundle.model.sourceType !== "imported" && ["generated", "rejected"].includes(bundle.model.status) && <>
+                <button type="button" className="button button-secondary" onClick={() => setRackOpen((value) => !value)}><Plus size={14} /> Add custom rack</button>
+                {rackOpen && <div className="rack-equipment-form">
+                  <h4>Create a persisted rack</h4>
+                  <input placeholder="Rack name, e.g. A-21" value={rackDraft.name} onChange={(event) => setRackDraft({ ...rackDraft, name: event.target.value })} />
+                  <div><input placeholder="Row" value={rackDraft.rowLabel} onChange={(event) => setRackDraft({ ...rackDraft, rowLabel: event.target.value })} /><input type="number" min="12" max="60" placeholder="Rack units" value={rackDraft.totalUnits} onChange={(event) => setRackDraft({ ...rackDraft, totalUnits: event.target.value })} /></div>
+                  <input type="number" min="0.1" step="0.1" placeholder="Maximum rack power (kW)" value={rackDraft.maxPowerKw} onChange={(event) => setRackDraft({ ...rackDraft, maxPowerKw: event.target.value })} />
+                  <div><input type="number" placeholder="Width mm" value={rackDraft.widthMm} onChange={(event) => setRackDraft({ ...rackDraft, widthMm: event.target.value })} /><input type="number" placeholder="Depth mm" value={rackDraft.depthMm} onChange={(event) => setRackDraft({ ...rackDraft, depthMm: event.target.value })} /></div>
+                  <input type="number" placeholder="Height mm" value={rackDraft.heightMm} onChange={(event) => setRackDraft({ ...rackDraft, heightMm: event.target.value })} />
+                  <button type="button" onClick={addRack} disabled={!!busy || !rackDraft.name.trim() || !rackDraft.rowLabel.trim()}><Plus size={14} /> Create and save rack</button>
+                </div>}
+              </>}
               {bundle.model.sourceType !== "imported" && (
                 <div className="rack-tree-tools">
                   <label className="rack-tree-search">

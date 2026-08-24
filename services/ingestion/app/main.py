@@ -12,7 +12,7 @@ from app.core import parse_csv, parse_pdf, parse_xlsx
 app = FastAPI(title="Pramana Cx document ingestion", version="0.1.0")
 UPLOAD_ROOT = Path(os.environ.get("UPLOAD_ROOT", "./data/uploads")).resolve()
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 XLSX_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -99,7 +99,7 @@ async def parse_uploaded_source(file: UploadFile) -> dict[str, object]:
         while chunk := await file.read(1024 * 1024):
             temporary.write(chunk)
             if temporary.tell() > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="Source exceeds 20 MB")
+                raise HTTPException(status_code=413, detail="Source exceeds 100 MB")
         temporary.flush()
         try:
             chunks = parse_source_file(Path(temporary.name), kind)

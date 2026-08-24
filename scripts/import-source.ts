@@ -20,8 +20,8 @@ async function main() {
   const documentType = argument("type", "standard");
 
   const fileInfo = await stat(filePath);
-  if (!fileInfo.isFile() || fileInfo.size < 5 || fileInfo.size > 20 * 1024 * 1024) {
-    throw new Error("Source PDF must be a file between 5 bytes and 20 MB.");
+  if (!fileInfo.isFile() || fileInfo.size < 5 || fileInfo.size > 100 * 1024 * 1024) {
+    throw new Error("Source PDF must be a file between 5 bytes and 100 MB.");
   }
   const bytes = await readFile(filePath);
   if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") throw new Error("Source does not have valid PDF magic bytes.");

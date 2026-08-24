@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { applyDeterministicSafetyFloor } from "../src/lib/compliance/assess";
 import { compareCompliance } from "../src/lib/compliance/compare";
+import { isComplianceCandidateRelevant } from "../src/lib/compliance/discover";
 import {
   complianceGoldenSetSchema,
   evaluateComplianceGoldenSet,
@@ -66,6 +67,24 @@ async function main() {
     "Operating pressure: 1 bar.",
     "The selector must choose the relevant exact line, not the first page number.",
   );
+  assert.equal(
+    isComplianceCandidateRelevant(
+      "CHW supply temperature at the header shall not exceed 7 °C at design load.",
+      "Electrical panels shall be rated for a minimum IP54 ingress protection class.",
+      0.88,
+    ),
+    false,
+    "A high embedding score must not pair unrelated engineering domains.",
+  );
+  assert.equal(
+    isComplianceCandidateRelevant(
+      "CHW supply temperature at the header shall not exceed 7 °C at design load.",
+      "The chilled-water supply temperature shall be maintained at 6 °C.",
+      0.78,
+    ),
+    true,
+    "A semantically and lexically aligned target must remain eligible.",
+  );
 
   const report = {
     schemaVersion: "1.0",
@@ -82,6 +101,7 @@ async function main() {
       deterministicDeviationCannotBeDowngraded: true,
       qualitativeCannotBeMachineCertified: true,
       relevantExactTargetFragmentSelected: true,
+      crossDomainCandidateRejected: true,
     },
   };
 

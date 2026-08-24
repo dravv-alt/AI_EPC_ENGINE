@@ -1,0 +1,103 @@
+.workbench {
+  --ink: #111713;
+  --muted: #526058;
+  --line: #d8dfda;
+  color: var(--ink);
+  font-family: Calibri, Arial, sans-serif;
+  display: grid;
+  gap: 24px;
+}
+
+.workbench h2,
+.workbench h3,
+.workbench h4,
+.workbench p,
+.workbench label,
+.workbench input,
+.workbench select,
+.workbench textarea,
+.workbench button { font-family: Calibri, Arial, sans-serif; }
+
+.summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(130px, 0.28fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--line);
+}
+
+.summary > div { background: #fff; padding: 22px; }
+.summary h2 { margin: 4px 0 8px; font-size: 28px; }
+.summary p { margin: 0; color: var(--muted); line-height: 1.45; }
+.metric strong { display: block; font-size: 32px; line-height: 1; }
+.metric span { display: block; margin-top: 8px; color: var(--muted); }
+.metricDanger strong { color: #b4232f; }
+.metricGood strong { color: #14734c; }
+
+.runPanel {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+  padding: 22px;
+}
+
+.runHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.runHeader h3 { margin: 3px 0 7px; font-size: 22px; }
+.runHeader p { margin: 0; color: var(--muted); max-width: 76ch; }
+.runForm { display: grid; grid-template-columns: 1fr 1.35fr 0.8fr auto; gap: 12px; align-items: end; margin-top: 18px; }
+.runForm label { color: var(--ink); font-weight: 700; font-size: 14px; }
+.runForm select { display: block; width: 100%; margin-top: 7px; min-height: 48px; border: 1px solid #bcc8c0; border-radius: 12px; background: #fbfcfb; color: var(--ink); padding: 0 12px; }
+
+.queueHeader { display: flex; justify-content: space-between; align-items: end; gap: 16px; }
+.queueHeader h2 { margin: 4px 0 0; font-size: 30px; }
+.queueHeader p { margin: 0; color: var(--muted); }
+
+.check {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 18px 55px rgba(27, 44, 34, 0.08);
+}
+
+.checkGrid { display: grid; grid-template-columns: minmax(280px, 0.38fr) minmax(0, 1fr); }
+.statusPanel { padding: 26px; color: #111713; border-right: 1px solid rgba(0,0,0,.1); }
+.danger .statusPanel { background: #ffd9dc; border-left: 10px solid #c82435; }
+.good .statusPanel { background: #d8f5e6; border-left: 10px solid #168355; }
+.pending .statusPanel { background: #ffe8c6; border-left: 10px solid #b45d09; }
+.statusPanel h3 { margin: 14px 0 10px; font-size: 24px; line-height: 1.12; }
+.statusPanel p { margin: 0; color: #29362e; line-height: 1.45; }
+.statusPill { display: inline-flex; border-radius: 999px; background: rgba(255,255,255,.72); padding: 7px 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: 12px; }
+.statusMeta { display: grid; gap: 7px; margin-top: 20px; font-size: 13px; color: #29362e; }
+
+.evidencePanel { background: #111713; color: #fffaf0; padding: 26px; }
+.evidencePanel h4 { color: #fff; margin: 0 0 14px; font-size: 19px; }
+.citationGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.citation { background: #fff; color: #111713; border-radius: 15px; padding: 18px; min-width: 0; }
+.citation b { display: block; color: #111713; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; }
+.citation p { color: #111713; margin: 9px 0; line-height: 1.42; font-size: 16px; }
+.citation small { display: block; color: #4d5a52; margin-bottom: 9px; }
+.citation a { color: #0c6a49; font-weight: 800; }
+.conflict { margin-bottom: 14px; border-radius: 14px; background: #42161a; border: 1px solid #87323a; padding: 14px; color: #ffe6e8; }
+.conflict strong { color: #fff; }
+
+.review { padding: 22px 26px 26px; border-top: 1px solid var(--line); color: var(--ink); }
+.review summary { cursor: pointer; font-weight: 800; font-size: 16px; }
+.review form { margin-top: 16px; }
+.review textarea,
+.review select,
+.review input { color: #111713; background: #fff; }
+.message { border-radius: 14px; border: 1px solid #bfd5c8; background: #eef9f2; color: #173f2b; padding: 14px 18px; }
+
+@media (max-width: 1050px) {
+  .summary { grid-template-columns: 1fr 1fr; }
+  .runForm { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 760px) {
+  .summary, .runForm, .checkGrid, .citationGrid { grid-template-columns: 1fr; }
+  .runHeader, .queueHeader { align-items: stretch; flex-direction: column; }
+  .statusPanel { border-right: 0; }
+}

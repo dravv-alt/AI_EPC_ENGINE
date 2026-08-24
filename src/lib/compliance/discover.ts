@@ -24,6 +24,41 @@ export type CandidateTarget = {
   contentHash: string;
 };
 
+const complianceStopWords = new Set([
+  "shall", "must", "should", "with", "from", "that", "this", "have",
+  "will", "into", "than", "then", "where", "when", "which", "their",
+  "design", "system", "equipment", "minimum", "maximum", "required",
+]);
+
+function meaningfulTokens(value: string) {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter((token) => token.length >= 3 && !complianceStopWords.has(token)),
+  );
+}
+
+// Embedding similarity alone can pair clauses from entirely different
+// engineering domains (for example chilled-water temperature and enclosure
+// ingress protection). A candidate must also share at least one meaningful
+// controlled term, or two terms for a low-scoring semantic result.
+export function isComplianceCandidateRelevant(
+  requirementText: string,
+  candidateText: string,
+  similarity: number,
+) {
+  const requirementTokens = meaningfulTokens(requirementText);
+  const candidateTokens = meaningfulTokens(candidateText);
+  const overlap = [...requirementTokens].filter((token) =>
+    candidateTokens.has(token),
+  );
+  return similarity >= 0.72
+    ? overlap.length >= 1
+    : similarity >= 0.52 && overlap.length >= 2;
+}
+
 // Given an accepted requirement, semantically searches the project's
 // submittals/POs/shop-drawings/drawings for candidate target regions to
 // compare it against. The metadata filter (project + exactly these four
@@ -61,6 +96,13 @@ export async function discoverCandidateTargets(input: {
     .flat()
     .filter(
       (candidate) => candidate.sourceRegionId !== requirement.sourceRegionId,
+    )
+    .filter((candidate) =>
+      isComplianceCandidateRelevant(
+        requirement.statement,
+        candidate.text,
+        candidate.similarity,
+      ),
     );
   const ranked = union.sort((a, b) => b.similarity - a.similarity);
   if (!ranked.length) return [];
