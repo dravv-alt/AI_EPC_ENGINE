@@ -107,8 +107,9 @@ services:
       INGESTION_SERVICE_URL: http://ingestion:8001
       SOLVER_SERVICE_URL: http://solver:8002
       RETRIEVAL_SERVICE_URL: http://retrieval:8003
-      MODEL_PROVIDER: ${MODEL_PROVIDER:?Set MODEL_PROVIDER to ollama, gemini, or nim}
-      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:?Set EMBEDDING_PROVIDER to ollama, gemini, or service}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:?Set MODEL_PROVIDER to ollama, gemini, nim, groq, or cerebras}
+      COPILOT_MODEL_PROVIDER: ${COPILOT_MODEL_PROVIDER:-${MODEL_PROVIDER}}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:?Set EMBEDDING_PROVIDER to ollama, gemini, service, or pinecone}
       MODEL_TIMEOUT_MS: ${MODEL_TIMEOUT_MS:-45000}
       MODEL_PROMPT_MAX_CHARS: ${MODEL_PROMPT_MAX_CHARS:-60000}
       MODEL_OUTPUT_MAX_TOKENS: ${MODEL_OUTPUT_MAX_TOKENS:-512}
@@ -121,7 +122,18 @@ services:
       GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-text-embedding-004}
       NIM_BASE_URL: ${NIM_BASE_URL:-https://integrate.api.nvidia.com/v1}
       NIM_API_KEY: ${NIM_API_KEY:-}
-      NIM_MODEL: ${NIM_MODEL:-meta/llama-3.3-70b-instruct}
+      NIM_MODEL: ${NIM_MODEL:-nvidia/llama-3.3-nemotron-super-49b-v1}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      CEREBRAS_BASE_URL: ${CEREBRAS_BASE_URL:-https://api.cerebras.ai/v1}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      CEREBRAS_MODEL: ${CEREBRAS_MODEL:-gemma-4-31b}
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-}
+      PINECONE_BASE_URL: ${PINECONE_BASE_URL:-https://api.pinecone.io}
+      PINECONE_API_VERSION: ${PINECONE_API_VERSION:-2026-04}
+      PINECONE_EMBEDDING_MODEL: ${PINECONE_EMBEDDING_MODEL:-llama-text-embed-v2}
+      PINECONE_EMBEDDING_DIMENSIONS: ${PINECONE_EMBEDDING_DIMENSIONS:-768}
     ports: ["4173:4173"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -130,7 +142,6 @@ services:
       ingestion: { condition: service_healthy }
       solver: { condition: service_healthy }
       retrieval: { condition: service_healthy }
-      ollama-models: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4173/api/health"]
       interval: 10s

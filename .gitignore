@@ -10,7 +10,19 @@ __pycache__/
 /data/
 /.code-review-graph
 .DS_Store
+/tmp/
+/output/evaluation/
 # local_dev_guide.md
 Testing_mock.md
 remaining_work.md
 ChatbotHarnessPlan.md
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+
+!.env.example

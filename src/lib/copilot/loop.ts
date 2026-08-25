@@ -145,7 +145,7 @@ async function dailyTokenBudgetExceeded(): Promise<boolean> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const [row] = await db.select({ total: sql<string>`coalesce(sum(coalesce(${copilotMessages.modelInputTokens}, 0) + coalesce(${copilotMessages.modelOutputTokens}, 0)), 0)` })
     .from(copilotMessages)
-    .where(and(eq(copilotMessages.modelProvider, env.MODEL_PROVIDER), gte(copilotMessages.createdAt, since)));
+    .where(and(eq(copilotMessages.modelProvider, env.COPILOT_MODEL_PROVIDER), gte(copilotMessages.createdAt, since)));
   return Number(row?.total ?? 0) >= env.MODEL_DAILY_TOKEN_BUDGET;
 }
 
@@ -154,7 +154,7 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
   const limited = await enforceAiRateLimit(`copilot:${ctx.projectId}:${ctx.userId}`);
   if (limited) return emptyEnvelope("You've asked a few things in quick succession — give me a moment and try again.", null);
   if (await dailyTokenBudgetExceeded()) {
-    console.warn(`[copilot] daily token budget exceeded for provider ${env.MODEL_PROVIDER} (limit ${env.MODEL_DAILY_TOKEN_BUDGET})`);
+    console.warn(`[copilot] daily token budget exceeded for provider ${env.COPILOT_MODEL_PROVIDER} (limit ${env.MODEL_DAILY_TOKEN_BUDGET})`);
     return emptyEnvelope("I've hit my model usage cap for today. It resets on a rolling window, so try again a bit later.", null);
   }
 
@@ -228,7 +228,7 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
     // options) — that is a model-quality failure, not a caller error, and
     // must degrade the same way a failed tool call does (Slice 4's guard),
     // never crash the whole HTTP turn with a raw 500.
-    const generated = await getGenerationProvider().generateStructured({ system, prompt, schema: stepSchema, schemaDescription: stepSchemaDescription, mock: { kind: "done", summary: "I'm ready to help once tools are connected.", detail: null, citationRegionIds: [] }, limits: { outputMaxTokens: 1024, contextTokens: 16384 } }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : "unknown error" }));
+    const generated = await getGenerationProvider(env.COPILOT_MODEL_PROVIDER).generateStructured({ system, prompt, schema: stepSchema, schemaDescription: stepSchemaDescription, mock: { kind: "done", summary: "I'm ready to help once tools are connected.", detail: null, citationRegionIds: [] }, limits: { outputMaxTokens: 1024, contextTokens: 16384 } }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : "unknown error" }));
     if ("failure" in generated) {
       const envelope = forceDone(observations, "generation-failed", generated.failure);
       await persistAssistant(conversationId, envelope);
@@ -246,7 +246,13 @@ export async function runCopilotTurn({ ctx, conversationId, userMessage }: { ctx
       return envelope;
     }
     if (step.kind === "done") {
-      const requiredReadTool = observations.length === 0 ? requiredReadToolFor(taskContext) : null;
+      // The mock provider is a deterministic verification/degraded-mode
+      // response and must never cause tool execution. Real providers still
+      // receive the project-fact grounding guard below.
+      const requiredReadTool =
+        generated.provider !== "mock" && observations.length === 0
+          ? requiredReadToolFor(taskContext)
+          : null;
       if (requiredReadTool) {
         const result = await invokeTool(ctx, requiredReadTool, {});
         observations.push({ tool: requiredReadTool, result });

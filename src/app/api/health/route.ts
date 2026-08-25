@@ -23,7 +23,7 @@ async function pollHealth() {
 
 export async function GET() {
   const serviceHealth = async (url: string, service: string) => { try { const response = await fetch(url, { signal: AbortSignal.timeout(2_000), cache: "no-store" }); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { status: "ok" as const, service }; } catch (error) { return { status: "unavailable" as const, service, reason: error instanceof Error ? error.message : "Service unavailable" }; } };
-  const [database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, embeddingProvider] = await Promise.all([
+  const [database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, copilotProvider, embeddingProvider] = await Promise.all([
     db.execute(sql`select 1`).then(() => ({ status: "ok" as const })).catch((error) => ({ status: "unavailable" as const, reason: error instanceof Error ? error.message : "Database unavailable" })),
     redisHealth(),
     objectStorage.health(),
@@ -32,6 +32,7 @@ export async function GET() {
     serviceHealth(`${env.RETRIEVAL_SERVICE_URL}/health`, "retrieval"),
     pollHealth(),
     generationProviderHealth(),
+    generationProviderHealth(env.COPILOT_MODEL_PROVIDER),
     embeddingProviderHealth()
   ]);
   // The retrieval service is only load-bearing when EMBEDDING_PROVIDER=service;
@@ -41,12 +42,12 @@ export async function GET() {
   const coreDependencies = [database, redis, objectStore, ingestion, solver];
   const degraded = coreDependencies.some((dependency) => dependency.status !== "ok")
     || (env.EMBEDDING_PROVIDER === "service" && retrieval.status !== "ok");
-  const providerDegraded = generationProvider.status !== "ok" || embeddingProvider.status !== "ok";
+  const providerDegraded = generationProvider.status !== "ok" || copilotProvider.status !== "ok" || embeddingProvider.status !== "ok";
   return NextResponse.json({
     status: degraded || providerDegraded ? "degraded" : "ok",
     service: "pramana-cx",
     authMode: env.AUTH_MODE,
-    dependencies: { database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, embeddingProvider },
+    dependencies: { database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, copilotProvider, embeddingProvider },
     degradedModeAllowed: env.INFRA_ALLOW_DEGRADED,
     timestamp: new Date().toISOString()
   }, { status: (degraded || providerDegraded) && !env.INFRA_ALLOW_DEGRADED ? 503 : 200 });

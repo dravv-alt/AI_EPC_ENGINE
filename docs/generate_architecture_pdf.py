@@ -208,27 +208,22 @@ def cover(canvas, doc):
     canvas.setFillColor(DEEP)
     canvas.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
     canvas.setStrokeColor(colors.HexColor("#E8B16F"))
-    canvas.setLineWidth(.7)
-    canvas.circle(PAGE_W - 42 * mm, 57 * mm, 50 * mm, fill=0, stroke=1)
-    canvas.circle(PAGE_W - 42 * mm, 57 * mm, 38 * mm, fill=0, stroke=1)
-    canvas.setFillColor(colors.HexColor("#B9D8CA"))
-    canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(20 * mm, 272 * mm, "PRAMANA CX  /  TECHNICAL ARCHITECTURE DOSSIER")
+    canvas.setLineWidth(.8)
+    canvas.rect(10 * mm, 10 * mm, PAGE_W - 20 * mm, PAGE_H - 20 * mm, fill=0, stroke=1)
     canvas.setFillColor(PAPER)
-    canvas.setFont("Times-Bold", 34)
-    canvas.drawString(20 * mm, 240 * mm, "Evidence controlled.")
+    canvas.setFont("Times-Bold", 42)
+    canvas.drawCentredString(PAGE_W / 2, 183 * mm, "Pramana Cx")
     canvas.setFillColor(colors.HexColor("#EDB574"))
-    canvas.drawString(20 * mm, 218 * mm, "Intelligence governed.")
+    canvas.setFont("Helvetica-Bold", 10)
+    canvas.drawCentredString(PAGE_W / 2, 164 * mm, "TECHNICAL ARCHITECTURE & PRODUCT DOSSIER")
     canvas.setFillColor(colors.HexColor("#D4E3DB"))
-    canvas.setFont("Helvetica", 13)
-    text = "End-to-end product, system, data, AI, operations and deployment specification for governed commissioning intelligence."
-    y = 188 * mm
-    for line in _wrap(text, 130 * mm, "Helvetica", 13):
-        canvas.drawString(20 * mm, y, line)
-        y -= 7 * mm
+    canvas.setFont("Helvetica-Bold", 10)
+    canvas.drawCentredString(PAGE_W / 2, 105 * mm, "TEAM PRAMANA")
+    canvas.setFont("Helvetica", 11)
+    canvas.drawCentredString(PAGE_W / 2, 95 * mm, "Atharva Deo  ·  Bhavik Sheth  ·  Dravvya Jain")
     canvas.setFillColor(colors.HexColor("#B9D8CA"))
     canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(20 * mm, 25 * mm, "A4 PRINT EDITION  |  21 JULY 2026  |  CONFIDENTIAL")
+    canvas.drawCentredString(PAGE_W / 2, 25 * mm, "A4 PRINT EDITION  |  25 AUGUST 2026  |  CONFIDENTIAL")
     canvas.restoreState()
 
 
@@ -251,7 +246,7 @@ def build_story():
     story = [Spacer(1, 245 * mm), NextPageTemplate("normal"), PageBreak()]
     story += [p("DOCUMENT INDEX", "kicker"), p("A4 technical dossier", "title"), p("This print-safe edition consolidates the current repository architecture, product requirements, technical requirements, data schema, application flow, design decisions, retrieval safeguards, release ledger and browser acceptance evidence.")]
     story.append(table(["Part", "Content"], [
-        ("01", "Purpose, target users and authority model"), ("02", "Application experience and live screenshots"), ("03", "System architecture and service boundaries"), ("04", "End-to-end data flow, user flow and navigation"), ("05", "Database, provenance and schema domains"), ("06", "AI, RAG, agents and safety controls"), ("07", "Technology stack, SDKs, APIs and third parties"), ("08", "Prerequisites, installation, environment and operations"), ("09", "Testing strategy, branch/application errors and mitigations"), ("10", "Deployment readiness and future CI/CD"),
+        ("01", "Purpose, target users and authority model"), ("02", "Team, proposition and connected management outcome"), ("03", "Application experience and live screenshots"), ("04", "System architecture and service boundaries"), ("05", "End-to-end data flow, user flow and navigation"), ("06", "Database, provenance and schema domains"), ("07", "AI, RAG, agents and safety controls"), ("08", "Technology stack, SDKs, APIs and third parties"), ("09", "Prerequisites, installation, environment and operations"), ("10", "Testing strategy, branch/application errors and mitigations"), ("11", "Deployment readiness and future CI/CD"),
     ], [25 * mm, CONTENT_W - 25 * mm]))
     story.append(PageBreak())
 
@@ -267,11 +262,29 @@ def build_story():
         "Requirements, systems, assets, gates, evidence, findings, readiness and turnover packs.",
         "Schedule inputs, CP-SAT baselines, immutable versions, live events and advisory risks.",
         "Cx standards, cited checklists, deterministic readings, reports and human approval.",
-        "Shipments, map routes, compliance, knowledge/RFI intelligence, graph, changes and Command Center.",
+        "Sixteen-stage Site Analysis with review, deterministic conflicts, planning insights and versioned finalization.",
+        "Readiness, commissioning plans, controlled tests, evidence, findings and turnover linked to accepted project records.",
+        "USD-authoritative Financial Modeler with INR display, NPV, IRR, payback, sensitivity and key-driver explanations.",
+        "Site-derived procurement, approved shipment materialization, maps, routes, weather and schedule events.",
+        "RackDB-style digital rack revisions, project-derived capacity, custom GPU/rack components, wiring and controlled model exports.",
+        "Compliance, controlled RAG, knowledge/RFI intelligence, graph, changes and Command Center.",
     ])
     story.append(PageBreak())
 
-    story += [p("02 / APPLICATION EXPERIENCE", "kicker"), p("Task-oriented, cited and resilient", "section"), p("The workspace groups navigation as Control, Deliver and Investigate. Deep links preserve the selected gate, task, finding or shipment across feature boundaries. Busy-state and progress behaviour is operation-specific, bounded and visible, so long-running work cannot silently replace another action."), p("Live browser-captured application surfaces", "subsection"), shot("pramana-overview.jpg", "Overview and grouped navigation - one project context and a complete task map."), shot("pramana-cx.jpg", "Governed Cx tests - cited standards, deterministic readings, human review and report approval."), PageBreak(), shot("pramana-shipments.jpg", "Shipment visibility - route/position context, ETA provenance and controlled operational status."), shot("pramana-knowledge.jpg", "Cited knowledge intelligence - project-scoped retrieval and source-grounded answers."), p("End-to-end user journey", "subsection"), table(["Step", "Surface", "Data flow", "Outcome"], [
+    story += [p("02 / TEAM, PROPOSITION AND CONNECTED OUTCOME", "kicker"), p("Three builders, one governed project story", "section"), p("<b>Atharva Deo, Bhavik Sheth and Dravvya Jain</b> are Team Pramana: a three-member product and engineering team building decision infrastructure for mission-critical data-centre delivery. Pramana Cx is not another document chatbot. It connects the work a project manager must already coordinate—site feasibility, requirements, systems, evidence, tests, compliance, logistics, economics and turnover—into one explainable control plane."), RoundedBoxDiagram("Connected management loop", [
+        ("Controlled sources", "PDF, CSV, image and RFP"), ("Site analysis", "16-step planning ledger"), ("Project model", "systems, assets and racks"), ("Evidence graph", "claims, tests and citations"), ("Decision engines", "rules, CP-SAT and finance"), ("Manager action", "owner, blocker and route"), ("Turnover", "verified package"),
+    ]), p("Core USPs", "subsection"), table(["Capability", "What has been built", "Why it is defensible"], [
+        ("Controlled RAG", "Immutable regions, full-text and vector candidates, BGE reranking and cited synthesis.", "Scope is filtered before ranking; unsupported claims are removed."),
+        ("Site Analysis", "Sixteen planning stages, evidence-aware defaults, deterministic rules, review and versioned insights.", "Assumptions, confirmations, conflicts and missing decisions stay separate."),
+        ("Readiness + Cx", "Requirements and evidence generate context, procedures, blockers, progress and gate decisions.", "Only accepted proof affects deterministic readiness."),
+        ("Local Gemma", "Bounded extraction, classification, drafting and manager-facing explanation.", "Model output stays proposed and records provider provenance."),
+        ("Economics", "Canonical USD model with INR display, NPV, IRR, payback, sensitivity and key drivers.", "Formula results persist independently of narrative or display currency."),
+        ("Supply + routes", "Site-derived plans, approval, shipments, maps, weather and schedule events.", "Live, simulated, fallback and unavailable states are explicit."),
+        ("Evidence + compliance", "Field/PDF/image intake, claim links, exact citations, relevance gates and disposition.", "AI cannot certify, self-approve or compare unrelated concepts."),
+        ("Digital racks", "Project-derived racks, custom GPUs/components, wiring, revisions and model exports.", "Objects remain tied to project scope and revision."),
+    ], [31 * mm, 75 * mm, CONTENT_W - 106 * mm]), PageBreak()]
+
+    story += [p("03 / APPLICATION EXPERIENCE", "kicker"), p("Task-oriented, cited and resilient", "section"), p("The workspace groups navigation as Control, Deliver and Investigate. Deep links preserve the selected gate, task, finding or shipment across feature boundaries. Busy-state and progress behaviour is operation-specific, bounded and visible, so long-running work cannot silently replace another action."), p("Live browser-captured application surfaces", "subsection"), shot("pramana-overview.jpg", "Overview and grouped navigation - one project context and a complete task map."), shot("pramana-cx.jpg", "Governed Cx tests - cited standards, deterministic readings, human review and report approval."), PageBreak(), shot("pramana-shipments.jpg", "Shipment visibility - route/position context, ETA provenance and controlled operational status."), shot("pramana-knowledge.jpg", "Cited knowledge intelligence - project-scoped retrieval and source-grounded answers."), p("End-to-end user journey", "subsection"), table(["Step", "Surface", "Data flow", "Outcome"], [
         ("1", "Overview / Settings", "Project membership scopes all loads and actions.", "User enters an authorized project context."),
         ("2", "Sources / Cx", "Bytes -> hash/version -> source regions -> durable extraction.", "Reviewer sees cited proposals."),
         ("3", "Systems / Requirements", "Accepted records create typed system/asset/gate relationships.", "Facility context is traversable."),
@@ -342,13 +355,15 @@ def build_story():
         ("Storage", "Filesystem locally; MinIO/S3 via AWS SDK v3", "Immutable original, report and turnover artifacts with signed reads."),
         ("Extraction / solver / retrieval", "Python/FastAPI, PyMuPDF, Google OR-Tools CP-SAT, BAAI bge models", "Controlled source extraction, optimization, embeddings and reranking."),
         ("AI providers", "Ollama gemma4:e2b and nomic-embed-text; optional Gemini and NVIDIA NIM", "Explicit schema-validated advisory provider choices."),
-        ("Maps and UX", "Leaflet, React Leaflet, Turf, searoute-js, OpenStreetMap, Lucide, Three.js", "Route visualisation, geospatial geometry and application visual system."),
+        ("Maps and 3D", "Leaflet, React Leaflet, Turf, searoute-js, OpenStreetMap, Three.js 0.185", "Route geometry, weather-aware logistics and project rack/model rendering."),
+        ("Data and exports", "PapaParse 5.6, csv-parse 7, PDFKit 0.19", "Site-input CSV ingestion and controlled PDF/CSV/vendor/model deliverables."),
         ("Identity", "bcryptjs, OTPAuth, optional Clerk Next.js SDK", "Owned credentials/TOTP or external identity adapter with app-owned RBAC."),
     ], [37 * mm, 63 * mm, CONTENT_W - 100 * mm]), p("API group contract", "subsection"), table(["Group", "Representative routes", "Expectation"], [
         ("Identity", "/api/auth/*, /api/profile", "Credentials/Clerk, sessions, TOTP and rate limits."),
-        ("Project authority", "/api/projects, /members, /activate, /alerts", "Server-side membership and role enforcement."),
+        ("Project authority", "/api/projects, /members, /activate, /alerts, /site-analysis", "Membership, planning snapshots, finalization and role enforcement."),
         ("Evidence control", "/sources, /evidence, /requirements, /gates, /turnover-packs", "Versioning, citations, review and readiness."),
-        ("Schedule and risk", "/schedule/tasks, /resources, /baseline, /events, /risks", "Reviewed input, immutable versions and solver isolation."),
+        ("Schedule and risk", "/schedule/tasks, /resources, /baseline, /events, /risks, /shipment-plans", "Reviewed input, immutable versions, approval and solver isolation."),
+        ("Economics and models", "/financial-model, /rack-model, /technology-drafts", "Versioned scenarios, rack/GPU revisions and controlled vendor packages."),
         ("Cx/compliance/knowledge", "/cx/*, /compliance/*, /knowledge/*, /graph", "Cited, scoped, proposed-only advisory flows."),
     ], [37 * mm, 64 * mm, CONTENT_W - 101 * mm]), PageBreak()]
 

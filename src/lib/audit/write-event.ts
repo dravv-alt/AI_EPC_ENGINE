@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { desc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { auditEvents, projects } from "@/lib/db/schema";
 
@@ -37,12 +37,29 @@ export async function writeAuditEventInTransaction(
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtext(${input.projectId}))`,
   );
-  const [previous] = await tx
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.projectId, input.projectId))
-    .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
-    .limit(1);
+  // PostgreSQL's now()/defaultNow() is the transaction start time. Concurrent
+  // transactions can therefore acquire this lock in one order while their
+  // created_at values sort in another order. The canonical predecessor is the
+  // sole unreferenced chain head, never the most recent timestamp.
+  const headRows = (await tx.execute(sql`
+    select parent.event_hash as "eventHash"
+    from audit_events parent
+    where parent.project_id = ${input.projectId}
+      and not exists (
+        select 1
+        from audit_events child
+        where child.project_id = parent.project_id
+          and child.previous_event_hash = parent.event_hash
+      )
+    order by parent.created_at desc, parent.id desc
+    limit 2
+  `)) as unknown as Array<{ eventHash: string }>;
+  if (headRows.length > 1) {
+    throw new Error(
+      "Cannot append to a forked audit chain; verify and repair the chain first.",
+    );
+  }
+  const previousEventHash = headRows[0]?.eventHash ?? null;
   const beforeHash = input.before === undefined ? null : hash(input.before);
   const afterHash = input.after === undefined ? null : hash(input.after);
   const eventHash = hash({
@@ -53,7 +70,7 @@ export async function writeAuditEventInTransaction(
     entityId: input.entityId,
     beforeHash,
     afterHash,
-    previousEventHash: previous?.eventHash ?? null,
+    previousEventHash,
   });
   const [event] = await tx
     .insert(auditEvents)
@@ -66,7 +83,7 @@ export async function writeAuditEventInTransaction(
       entityId: input.entityId,
       beforeHash,
       afterHash,
-      previousEventHash: previous?.eventHash ?? null,
+      previousEventHash,
       eventHash,
     })
     .returning();

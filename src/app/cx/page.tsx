@@ -3,7 +3,7 @@ import { CxWorkbench } from "@/components/cx-workbench";
 import { FeatureShell } from "@/components/feature-shell";
 import { getDashboardData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
-import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, cxStepResults, cxTestRecords, documentVersions, documents, gates, sourceRegions, systems } from "@/lib/db/schema";
+import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, cxStepResults, cxTestRecords, documentVersions, documents, gates, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +21,13 @@ export default async function CxPage() {
   if (!data) throw new Error("Project not found");
   const checklistIds = checklists.map((item) => item.id);
   const versionIds = standardRows.map((row) => row.version.id);
-  const [steps, citations, records, standardRegions] = await Promise.all([
+  const actorIds = [...new Set(checklists.flatMap((item) => [item.createdBy, item.reviewedBy]).filter((id): id is string => Boolean(id)))];
+  const [steps, citations, records, standardRegions, people] = await Promise.all([
     checklistIds.length ? db.select().from(cxChecklistSteps).where(inArray(cxChecklistSteps.checklistId, checklistIds)) : [],
     checklistIds.length ? db.select().from(cxClauseCitations).where(inArray(cxClauseCitations.checklistId, checklistIds)) : [],
     checklistIds.length ? db.select().from(cxTestRecords).where(eq(cxTestRecords.projectId, projectId)) : [],
-    versionIds.length ? db.select({ id: sourceRegions.id, documentVersionId: sourceRegions.documentVersionId }).from(sourceRegions).where(inArray(sourceRegions.documentVersionId, versionIds)) : []
+    versionIds.length ? db.select({ id: sourceRegions.id, documentVersionId: sourceRegions.documentVersionId }).from(sourceRegions).where(inArray(sourceRegions.documentVersionId, versionIds)) : [],
+    actorIds.length ? db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, actorIds)) : []
   ]);
   const results = records.length ? await db.select().from(cxStepResults).where(inArray(cxStepResults.testRecordId, records.map((record) => record.id))) : [];
   return <FeatureShell projectName={data.project} eyebrow="Delivery · commissioning QA" title="Commissioning Tests" description="Ingest controlled standards, generate citation-verified advisory checklists, execute deterministic proposed checks, and approve an editable report into immutable evidence.">
@@ -40,6 +42,7 @@ export default async function CxPage() {
       citations={citations}
       records={records}
       results={results}
+      people={people}
     />
   </FeatureShell>;
 }

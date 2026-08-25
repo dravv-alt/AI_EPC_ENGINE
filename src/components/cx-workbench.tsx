@@ -3,26 +3,30 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, CheckCircle2, Download, FileText, FlaskConical, RefreshCw, ShieldAlert, Upload } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronRight, Download, FileText, FlaskConical, RefreshCw, ShieldAlert, Upload } from "lucide-react";
 import { formatMeasurement } from "@/lib/presentation";
 
 type System = { id: string; name: string };
 type Gate = { id: string; systemId: string; name: string };
 type Asset = { id: string; systemId: string; tag: string; assetType: string };
 type Standard = { id: string; title: string; standardSet: string; documentType: string; revision: string; extractionStatus: string; extractionError: string | null; regionCount: number };
-type Checklist = { id: string; title: string; status: string; standardVersionIds: unknown; generationStatus: string; generationJobId: string | null; generationError: string | null; generationModelVersion: string; reviewNote: string | null };
+type Checklist = { id: string; systemId: string; title: string; status: string; standardVersionIds: unknown; generationStatus: string; generationJobId: string | null; generationError: string | null; generationModelVersion: string; createdBy: string; reviewedBy: string | null; reviewedAt: Date | string | null; reviewNote: string | null; createdAt: Date | string; updatedAt: Date | string };
+type Person = { id: string; name: string };
 type Step = { id: string; checklistId: string; sequenceNumber: string; instruction: string; modality: string; parameter: string | null; nominalValue: string | null; unit: string | null; tolerance: string | null; expectedBoolean: boolean | null; narrativeCriterion: string | null; required: boolean; reviewState: string };
 type Citation = { id: string; checklistId: string; stepId: string | null; clauseReference: string; sourceRegionId: string | null; verificationStatus: string; verificationReason: string | null };
 type RecordRow = { id: string; checklistId: string; overallStatus: string; reportStatus: string; reportGenerationStatus: string; reportGenerationJobId: string | null; reportGenerationError: string | null; reportModelVersion: string | null; reportContent: unknown; reportContentHash: string | null; evidenceId: string | null; reportReviewNote: string | null };
 type ResultRow = { id: string; testRecordId: string; stepId: string; readingValue: string | null; readingBoolean: boolean | null; readingText: string | null; verdict: string; findingId: string | null; enteredAt: Date | string };
 type ReportContent = { title: string; executiveSummary: string; conclusion: string; label: string; steps: Array<{ stepId: string; instruction: string; reading: string | number | boolean | null; verdict: string; citations: Array<{ sourceRegionId: string; clauseReference: string; verificationStatus: string }> }>; deviations: Array<{ stepId: string; verdict: string; findingId: string | null }> };
 
-export function CxWorkbench(props: { projectId: string; systems: System[]; gates: Gate[]; assets: Asset[]; standards: Standard[]; checklists: Checklist[]; steps: Step[]; citations: Citation[]; records: RecordRow[]; results: ResultRow[] }) {
-  const { projectId, systems, gates, assets, standards, checklists, steps, citations, records, results } = props;
+export function CxWorkbench(props: { projectId: string; systems: System[]; gates: Gate[]; assets: Asset[]; standards: Standard[]; checklists: Checklist[]; steps: Step[]; citations: Citation[]; records: RecordRow[]; results: ResultRow[]; people: Person[] }) {
+  const { projectId, systems, gates, assets, standards, checklists, steps, citations, records, results, people } = props;
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedSystemId, setSelectedSystemId] = useState("");
+  const [selectedChecklistId, setSelectedChecklistId] = useState(
+    checklists[0]?.id ?? "",
+  );
 
   async function pollJob(jobId: string, label: string) {
     for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -103,16 +107,45 @@ export function CxWorkbench(props: { projectId: string; systems: System[]; gates
   const usableStandards = standards.filter((standard) => standard.extractionStatus === "completed" && standard.regionCount > 0);
   const scopedGates = selectedSystemId ? gates.filter((gate) => gate.systemId === selectedSystemId) : [];
   const scopedAssets = selectedSystemId ? assets.filter((asset) => asset.systemId === selectedSystemId) : [];
+  const visibleChecklists = checklists.filter(
+    (checklist) => checklist.id === selectedChecklistId,
+  );
   return <div className="workflow-stack">
-    <section className="cx-setup-grid">
+    <details className="surface cx-authoring-tools">
+      <summary>Authoring tools · standards and new test plans</summary>
+      <section className="cx-setup-grid">
       <form className="surface cx-setup-card" onSubmit={uploadStandard}><div><p className="eyebrow">1 · Controlled corpus</p><h2>Ingest standards/procedures</h2><p>Checklist generation remains disabled until extraction creates exact citation regions.</p></div><label>Standard set<input name="standardSet" required minLength={2} placeholder="ASHRAE / project IST set" /></label><label>Title<input name="title" required minLength={3} placeholder="Synthetic chilled-water IST standard" /></label><label>Document type<select name="documentType"><option value="standard">Standard</option><option value="procedure">Procedure</option></select></label><label>Revision<input name="revision" required placeholder="Rev 1" /></label><label>PDF<input name="file" type="file" accept="application/pdf,.pdf" required /></label><button className="button button-primary" disabled={busy}><Upload size={16} />Control & extract</button></form>
       <form className="surface cx-setup-card" onSubmit={createChecklist}><div><p className="eyebrow">2 · Advisory generation</p><h2>Generate cited draft</h2><p>{usableStandards.length ? `${usableStandards.length} extracted standard version(s) available. Select a system first to load its gates and equipment.` : "No completed standard with citation regions is available."}</p></div><label>Title<input name="title" required minLength={3} placeholder="L4 integrated systems test" /></label><label>System<select name="systemId" required value={selectedSystemId} onChange={(event) => setSelectedSystemId(event.target.value)}><option value="">Select system</option>{systems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Gate<select name="gateId" required disabled={!selectedSystemId || !scopedGates.length}><option value="">{!selectedSystemId ? "Select a system first" : scopedGates.length ? "Select gate" : "No gates for this system"}</option>{scopedGates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Equipment<select name="assetId" required disabled={!selectedSystemId || !scopedAssets.length}><option value="">{!selectedSystemId ? "Select a system first" : scopedAssets.length ? "Select equipment" : "No equipment for this system"}</option>{scopedAssets.map((item) => <option key={item.id} value={item.id}>{item.tag} · {item.assetType}</option>)}</select></label><label>Governing standard versions<select name="standardVersionIds" multiple size={Math.min(5, Math.max(2, usableStandards.length))} required>{usableStandards.map((item) => <option key={item.id} value={item.id}>{item.standardSet} · {item.title} · {item.revision}</option>)}</select></label><button className="button button-primary" disabled={busy || !usableStandards.length || !selectedSystemId || !scopedGates.length || !scopedAssets.length}><FlaskConical size={16} />Generate draft</button></form>
-    </section>
+      </section>
+    </details>
     {message && <p className="surface inline-feedback" role="status">{busy && <span className="operation-progress" aria-hidden="true" />}{message}</p>}
+    {!!checklists.length && <section className="surface cx-test-register">
+      <header><div><p className="eyebrow">Commissioning register</p><h2>Tests, stage, and accountable next step</h2></div><span>{checklists.length} plans</span></header>
+      <div className="cx-register-table" role="table" aria-label="Commissioning test plans">
+        <div className="cx-register-head" role="row"><span>Test plan</span><span>System / gate</span><span>Progress</span><span>Stage</span><span /></div>
+        {checklists.map((checklist) => {
+          const rowSteps = steps.filter((step) => step.checklistId === checklist.id);
+          const rowRecord = records.find((record) => record.checklistId === checklist.id);
+          const recorded = rowRecord ? results.filter((result) => result.testRecordId === rowRecord.id).length : 0;
+          const system = systems.find((item) => item.id === checklist.systemId);
+          const creator = people.find((person) => person.id === checklist.createdBy)?.name ?? "Project team";
+          const isSelected = checklist.id === selectedChecklistId;
+          return <button type="button" role="row" key={checklist.id} className={isSelected ? "is-selected" : ""} onClick={() => setSelectedChecklistId(checklist.id)}>
+            <span><b>{checklist.title}</b><small>{creator} · {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(checklist.createdAt))}</small></span>
+            <span>{system?.name ?? "Controlled project system"}</span>
+            <span><b>{recorded}/{rowSteps.length}</b><i><em style={{ width: `${rowSteps.length ? (recorded / rowSteps.length) * 100 : 0}%` }} /></i></span>
+            <span><mark className={`source-status ${checklist.status === "accepted" ? "processed" : "pending"}`}>{checklist.status}</mark></span>
+            <ChevronRight size={16} />
+          </button>;
+        })}
+      </div>
+    </section>}
     <details className="surface history-panel"><summary>Controlled standards ({standards.length})</summary><div className="workflow-grid">{standards.map((standard) => <article className="standard-card" key={standard.id}><span className={`source-status ${standard.extractionStatus === "completed" && standard.regionCount ? "processed" : "pending"}`}>{standard.extractionStatus}</span><b>{standard.standardSet} · {standard.title}</b><small>{standard.documentType} · {standard.revision} · {standard.regionCount} citation region(s)</small>{standard.extractionError && <p className="validation-flag">{standard.extractionError}</p>}</article>)}</div></details>
-    {checklists.map((checklist) => {
+    {visibleChecklists.map((checklist) => {
       const checklistSteps = steps.filter((step) => step.checklistId === checklist.id); const checklistCitations = citations.filter((citation) => citation.checklistId === checklist.id); const record = records.find((item) => item.checklistId === checklist.id); const report = record?.reportContent as ReportContent | null;
-      return <article className="surface cx-checklist" key={checklist.id}><header><div><span className={`source-status ${checklist.status === "accepted" ? "processed" : "pending"}`}>{checklist.status}</span><h2>{checklist.title}</h2><p>{checklist.generationStatus === "completed" ? `Advisory draft by ${checklist.generationModelVersion}` : `Generation ${checklist.generationStatus}${checklist.generationJobId ? ` · job ${checklist.generationJobId}` : ""}`}</p></div>{checklist.generationStatus === "failed" && <div className="infeasibility-banner"><ShieldAlert size={18} /><div><b>Draft rejected</b><p>{checklist.generationError}</p></div></div>}</header>
+      const creator = people.find((person) => person.id === checklist.createdBy)?.name ?? "Project team";
+      const reviewer = checklist.reviewedBy ? people.find((person) => person.id === checklist.reviewedBy)?.name ?? "Project reviewer" : null;
+      return <article className="surface cx-checklist" key={checklist.id}><header><div><span className={`source-status ${checklist.status === "accepted" ? "processed" : "pending"}`}>{checklist.status}</span><h2>{checklist.title}</h2><p>{checklist.generationStatus === "completed" ? `Advisory draft by ${checklist.generationModelVersion}` : `Generation ${checklist.generationStatus}${checklist.generationJobId ? ` · job ${checklist.generationJobId}` : ""}`}</p><div className="cx-accountability"><span><b>Created</b>{creator} · {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(checklist.createdAt))}</span><ChevronRight size={14} /><span><b>{reviewer ? "Reviewed" : "Next owner"}</b>{reviewer ? `${reviewer} · ${checklist.reviewedAt ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(checklist.reviewedAt)) : "recorded"}` : "Commissioning reviewer"}</span></div></div>{checklist.generationStatus === "failed" && <div className="infeasibility-banner"><ShieldAlert size={18} /><div><b>Draft rejected</b><p>{checklist.generationError}</p></div></div>}</header>
         {checklist.generationStatus === "completed" && <div className="cx-step-list">{checklistSteps.map((step) => { const stepCitations = checklistCitations.filter((citation) => citation.stepId === step.id); const result = record ? results.find((item) => item.testRecordId === record.id && item.stepId === step.id) : null; return <section className="cx-controlled-step" key={step.id}><div className="cx-step-heading"><span className="eyebrow">Step {step.sequenceNumber} · {step.modality} · {step.required ? "required" : "optional"}</span>{result && <span className={`status-pill ${result.verdict === "proposed_pass" ? "ready" : result.verdict === "proposed_fail" ? "blocked" : "review"}`}>{result.verdict.replaceAll("_", " ")}</span>}</div><p>{step.instruction}</p>{step.modality === "numeric" && <small>Criterion: {formatMeasurement(step.nominalValue)} {step.unit} ± {formatMeasurement(step.tolerance)}</small>}{step.modality === "boolean" && <small>Expected: {String(step.expectedBoolean)}</small>}{step.modality === "narrative" && <small>Human-review criterion: {step.narrativeCriterion}</small>}<div className="citation-strip">{stepCitations.map((citation) => citation.sourceRegionId ? <Link href={`/sources/regions/${citation.sourceRegionId}`} key={citation.id}><BookOpen size={13} />{citation.clauseReference}<span>{citation.verificationStatus}</span></Link> : <span className="validation-flag" key={citation.id}>Possible hallucination · no controlled region</span>)}</div>
           {checklist.status === "draft" && <form className="cx-edit-step" onSubmit={(event) => editStep(checklist.id, step, event)}><label>Instruction<textarea name="instruction" defaultValue={step.instruction} required /></label>{step.modality === "numeric" && <><label>Nominal<input name="nominalValue" type="number" step="any" defaultValue={step.nominalValue ?? ""} required /></label><label>Tolerance<input name="tolerance" type="number" min="0" step="any" defaultValue={step.tolerance ?? ""} required /></label></>}{step.modality === "boolean" && <label>Expected<select name="expectedBoolean" defaultValue={String(step.expectedBoolean)}><option value="true">True / present</option><option value="false">False / absent</option></select></label>}{step.modality === "narrative" && <label>Review criterion<textarea name="narrativeCriterion" defaultValue={step.narrativeCriterion ?? ""} required /></label>}<label className="check-label"><input name="required" type="checkbox" defaultChecked={step.required} />Required</label><label>Engineering edit reason<input name="note" minLength={5} required /></label><button className="button button-secondary" disabled={busy}>Save edits</button></form>}
           {checklist.status === "accepted" && <form className="cx-reading" onSubmit={(event) => reading(checklist.id, step, event)}>{step.modality === "boolean" ? <select name="reading" defaultValue={result?.readingBoolean === null || result?.readingBoolean === undefined ? "true" : String(result.readingBoolean)}><option value="true">Present / true</option><option value="false">Absent / false</option></select> : <input name="reading" type={step.modality === "numeric" ? "number" : "text"} step="any" defaultValue={result?.readingValue ?? result?.readingText ?? ""} required />}<button className="button button-secondary" disabled={busy}>{result ? "Update recorded reading" : "Record proposed result"}</button>{result && <small>Entered {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(result.enteredAt))}{result.findingId ? ` · finding ${result.findingId}` : ""}</small>}</form>}

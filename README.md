@@ -108,14 +108,16 @@ The command stores the immutable object, extracts source regions, creates/refres
 
 - **[CAPABILITIES.md](CAPABILITIES.md)** — a one-page summary of what the application does, with a walkthrough user flow
 - **[STATUS.md](STATUS.md)** — what's verified, what's a known gap, and the latest local verification result
-- **[Technical Architecture (HTML)](docs/pramana-cx-technical-architecture.html)** — standalone end-to-end architecture, data, AI, security, operations, verification, and release specification
-- **[Technical Architecture (A4 PDF)](output/pdf/pramana-cx-technical-architecture.pdf)** — print-verified A4 dossier with fixed borders, margins, page numbering, diagrams, and application screenshots
+- **[Technical Architecture (HTML)](docs/pramana-cx-technical-architecture.html)** — standalone Team Pramana product story and end-to-end architecture covering Site Analysis, controlled RAG, local Gemma, readiness/Cx, compliance, economics, logistics/weather, evidence, and digital rack modelling
+- **[Technical Architecture (A4 PDF)](output/pdf/pramana-cx-technical-architecture.pdf)** — print-verified A4 dossier with a static cover, fixed borders, page numbering, horizontal architecture diagrams, tech-stack inventory, and repository-derived appendices
 - **[Windows/Linux setup](docs/LOCAL_SETUP_WINDOWS_LINUX.md)** — Docker, Ollama, Clerk, database, worker, ports, and troubleshooting
 - **[Errors and fixes](docs/ERRORS_AND_FIXES.md)** — the reported QA failures, root causes, implemented fixes, and verification
 - **[Backend authority audit](docs/BACKEND_AUTHORITY_AUDIT.md)** — which controls persist to PostgreSQL and where those changes propagate
 - **[PLANNER/](PLANNER)** — product intent ([PRD.md](PLANNER/PRD.md)), technical constraints ([TRD.md](PLANNER/TRD.md)), and the reconciled execution baseline ([CanonicalBuildPlan.md](PLANNER/CanonicalBuildPlan.md)); [Tracker.md](PLANNER/Tracker.md) records the state of every planning document
 
 The chronological build record lives in git history. STATUS.md is the single source of truth for what is shipped and what is still open.
+
+Serve the documentation independently from the application with `npm run docs:serve`, then open `http://localhost:4174/pramana-cx-technical-architecture.html`. Regenerate the A4 PDF with `npm run docs:pdf`. The documentation server is intentionally separate from the application runtime and can be stopped without affecting project data.
 
 ## About the application
 
@@ -525,7 +527,8 @@ Every authoritative record is tenant/project scoped. Cross-project IDs are rejec
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue
 - **Document extraction:** lightweight PyMuPDF service accepting PDF, CSV, and XLSX, with page/bounding-box (or sheet/row/cell) and content-hash provenance
 - **Scheduling:** isolated FastAPI OR-Tools CP-SAT service; infeasibility is returned, never hidden
-- **AI:** a schema-validated provider boundary for structured generation and embeddings. The application default is local Ollama (`MODEL_PROVIDER=ollama`, `OLLAMA_MODEL=gemma4:e2b`; `EMBEDDING_PROVIDER=ollama`, `OLLAMA_EMBEDDING_MODEL=nomic-embed-text:latest`). Every real provider is bounded by prompt, response-token, context, and request-time limits. `mock` exists only for deterministic test runs and must never be selected by a deployment. Every AI-authored suggestion is labeled with provider/model provenance, lands in `reviewState: "proposed"`, and never auto-accepts authoritative changes.
+- **AI routing:** a schema-validated provider boundary separates controlled drafting and interpretation (`MODEL_PROVIDER`) from the conversational copilot (`COPILOT_MODEL_PROVIDER`) and embeddings (`EMBEDDING_PROVIDER`). The hosted release profile targets Cerebras Gemma 4 31B for grounded drafting, NVIDIA NIM Nemotron for the copilot, and Pinecone `llama-text-embed-v2` at 768 dimensions for retrieval. Local Ollama remains a supported developer profile. Every provider is bounded by prompt, output, context, and request-time limits; `mock` is verification-only and rejected by production configuration.
+- **Knowledge authority boundary:** chunks from draft and approved revisions are searchable through project-scoped RAG. Every answer retains its exact source region, revision, content hash, provider/model, and linked graph context. Draft hits are visibly advisory. Compliance discovery separately requires an approved revision with completed extraction, so importing a draft can never silently make it an authoritative standard.
 - **Retrieval:** a third stateless FastAPI service (`services/retrieval`, port 8003) alongside ingestion and the solver, serving `BAAI/bge-base-en-v1.5` embeddings (768-dim, matching the existing `vector(768)` column with no migration) and `BAAI/bge-reranker-base` cross-encoder reranking; it holds no database credentials, and project scoping stays in SQL behind the existing permission checks. Every stored vector is tagged with the model that produced it, so a provider switch degrades to fewer results rather than silently corrupting cosine rankings across incompatible vector spaces
 - **Authentication:** owned credentials/TOTP or Clerk adapter; all authorization remains in project memberships and server-side permissions
 - **Design system:** IBM Plex Serif headings, Hanken Grotesk body, JetBrains Mono labels; primary `#2D463E`, secondary `#B5651D`, tertiary `#583935`, neutral `#FDFBF7`
@@ -647,7 +650,7 @@ The reconciled merge commit is `32e18a2`. It has `Refinement` and `Updated-Refin
 Do not deploy with Compose or `.env.example` defaults. Before a production rollout, create a secret-managed environment file and verify every item below:
 
 1. `AUTH_MODE` is `credentials` or `clerk` (never `development`), and `AUTH_ENCRYPTION_KEY`, Clerk keys where applicable, session-cookie configuration, and `APP_BASE_URL` are production values.
-2. `MODEL_PROVIDER` and `EMBEDDING_PROVIDER` are real providers—not `mock`—and their selected endpoints/models are reachable from both the web and worker containers. For Ollama, configure a network-reachable `OLLAMA_BASE_URL`; do not use host loopback from a container.
+2. `MODEL_PROVIDER`, `COPILOT_MODEL_PROVIDER`, and `EMBEDDING_PROVIDER` are real providers—not `mock`—and their selected endpoints/models are reachable from both the web and worker containers. A Cerebras dedicated preview model id must be confirmed through that account's `/v1/models`; do not assume a public display name is callable. Pinecone must return exactly 768 dimensions unless the pgvector schema is deliberately migrated.
 3. PostgreSQL has the `vector` extension available before `npm run db:migrate`. Migration success must be checked against the actual deployment database, not merely generated SQL.
 4. Redis, object storage, ingestion, solver, retrieval (if selected), and model-provider health checks are green. Set `INFRA_ALLOW_DEGRADED=false`.
 5. Live risk/AIS/weather integrations are configured and a controlled end-to-end poll records real provenance. Synthetic data must be disabled or visibly labelled outside demo/test environments.
@@ -662,7 +665,8 @@ The example file is for local development. Production-like integrations require 
 - Clerk publishable/secret keys only if `AUTH_MODE=clerk` is selected
 - a strong `AUTH_ENCRYPTION_KEY` when owned credentials/TOTP are used
 - an Ollama endpoint plus `gemma4:e2b` and `nomic-embed-text:latest` when `MODEL_PROVIDER=ollama` and `EMBEDDING_PROVIDER=ollama` are selected; use a network address reachable from containers
-- Gemini API key only if `MODEL_PROVIDER=gemini` is selected; an NVIDIA `NIM_API_KEY` only if `MODEL_PROVIDER=nim` is selected (hosted by default at `NIM_BASE_URL`, or point it at a self-hosted NIM endpoint)
+- Gemini, NVIDIA NIM, Groq, or Cerebras keys only when the corresponding generation or copilot provider is selected. Cerebras dedicated models may use an organization-specific model id.
+- a Pinecone API key when `EMBEDDING_PROVIDER=pinecone`; the configured model must support the database's fixed 768-dimensional contract
 - no credential is required for `EMBEDDING_PROVIDER=service`, but the retrieval container must be healthy and its model assets available
 - S3/MinIO endpoint, bucket, region, access key, and secret when `OBJECT_STORAGE_DRIVER=s3`
 - procurement, equipment-lead-time, workforce, and weather endpoint URLs when `RISK_POLL_MODE=http`

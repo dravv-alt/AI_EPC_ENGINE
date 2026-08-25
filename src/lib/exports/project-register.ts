@@ -18,6 +18,10 @@ import {
   knowledgeChunks,
   projectMembers,
   projects,
+  rackModelArtifacts,
+  rackModelEquipment,
+  rackModelRacks,
+  rackModels,
   requirements,
   riskSignals,
   scheduleAssignments,
@@ -159,6 +163,7 @@ export async function getProjectRegister(
         .from(siteAnalysisSnapshots)
         .where(eq(siteAnalysisSnapshots.projectId, projectId))
         .orderBy(desc(siteAnalysisSnapshots.version)),
+      db.select().from(rackModels).where(eq(rackModels.projectId, projectId)).orderBy(desc(rackModels.revision)),
     ]),
   ]);
   if (!project) throw new Error("Project not found.");
@@ -194,6 +199,7 @@ export async function getProjectRegister(
     drafts,
     siteAnalysis,
     siteAnalysisSnapshotsRows,
+    projectRackModels,
   ] = direct;
   const [
     versionsForDocuments,
@@ -203,6 +209,9 @@ export async function getProjectRegister(
     clauseCitations,
     stepResults,
     assignments,
+    modelRacks,
+    modelEquipment,
+    modelArtifacts,
   ] = await Promise.all([
     rowsFor(
       projectDocuments.map((item) => item.id),
@@ -239,6 +248,9 @@ export async function getProjectRegister(
       scheduleAssignments,
       scheduleAssignments.versionId,
     ),
+    rowsFor(projectRackModels.map((item) => item.id), rackModelRacks, rackModelRacks.rackModelId),
+    rowsFor(projectRackModels.map((item) => item.id), rackModelEquipment, rackModelEquipment.rackModelId),
+    rowsFor(projectRackModels.map((item) => item.id), rackModelArtifacts, rackModelArtifacts.rackModelId),
   ]);
   // Source regions are children of document versions, not documents. Keep the
   // first parallel probe inexpensive, then fetch the authoritative version set.
@@ -267,6 +279,10 @@ export async function getProjectRegister(
       ["Traceability edges", projectEdges],
       ["Site analysis", siteAnalysis ? [siteAnalysis] : []],
       ["Site analysis insight snapshots", siteAnalysisSnapshotsRows],
+      ["Digital rack models", projectRackModels],
+      ["Rack model racks", modelRacks],
+      ["Rack model equipment", modelEquipment],
+      ["Rack model artifacts", modelArtifacts],
       ["Commissioning checklists", checklists],
       ["Commissioning steps", checklistSteps],
       ["Commissioning citations", clauseCitations],

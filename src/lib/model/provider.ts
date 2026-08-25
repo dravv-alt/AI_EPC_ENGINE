@@ -28,12 +28,15 @@ export interface ModelRequest<T> {
   schemaDescription?: string;
 }
 export interface ModelResult<T> { data: T; provider: "mock" | "ollama" | "gemini" | "nim" | "groq" | "cerebras"; model: string; usage?: { inputTokens?: number; outputTokens?: number } }
+export type GenerationProviderName = ModelResult<unknown>["provider"];
+export type EmbeddingInputKind = "query" | "passage";
 
 export interface GenerationProvider {
   generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>>;
 }
 export interface EmbeddingProvider {
-  embed(text: string): Promise<number[]>;
+  embed(text: string, kind?: EmbeddingInputKind): Promise<number[]>;
+  embedMany?(texts: string[], kind?: EmbeddingInputKind): Promise<number[][]>;
 }
 // Compatibility alias: most existing call sites depend on a single provider
 // exposing both methods (e.g. the mock and Gemini clients did both jobs).
@@ -76,7 +79,7 @@ async function fetchWithinDeadline(url: string, init: RequestInit, deadline: num
 
 export type ProviderHealth = {
   status: "ok" | "unavailable";
-  provider: "mock" | "ollama" | "gemini" | "nim" | "groq" | "cerebras" | "service";
+  provider: "mock" | "ollama" | "gemini" | "nim" | "groq" | "cerebras" | "service" | "pinecone";
   model: string;
   reason?: string;
 };
@@ -196,6 +199,12 @@ async function repairRetry<T>(options: { schema: z.ZodType<T>; callModel: (promp
 // provider's own error message reports, e.g. Groq's "Requested N tokens").
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function tokenBudgetFor(provider: GenerationProviderName) {
+  return env.MODEL_PROVIDER === provider || env.COPILOT_MODEL_PROVIDER === provider
+    ? env.MODEL_TOKENS_PER_MINUTE
+    : undefined;
 }
 
 export class MockModelProvider implements ModelProvider {
@@ -341,7 +350,7 @@ export class NimModelProvider implements GenerationProvider {
         // MODEL_TOKENS_PER_MINUTE is only meaningful for whichever provider
         // is actually active; a direct-instantiation test naturally gets an
         // unused, always-fresh "nim" counter instead.
-        await waitForTokenBudget("model-provider:nim", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "nim" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
+        await waitForTokenBudget("model-provider:nim", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), tokenBudgetFor("nim"));
         const response = await fetchWithinDeadline(`${env.NIM_BASE_URL}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${env.NIM_API_KEY}` },
@@ -350,6 +359,7 @@ export class NimModelProvider implements GenerationProvider {
             temperature: 0,
             max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
             response_format: { type: "json_object" },
+            reasoning_effort: "low",
             messages: [
               { role: "system", content: systemMessage },
               { role: "user", content: userContent }
@@ -400,7 +410,7 @@ export class GroqModelProvider implements GenerationProvider {
         // instead of firing and hoping — see rate-limit.ts's waitForTokenBudget.
         // Scoped by the literal provider name ("groq"), not env.MODEL_PROVIDER
         // — see the matching comment in NimModelProvider for why.
-        await waitForTokenBudget("model-provider:groq", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "groq" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
+        await waitForTokenBudget("model-provider:groq", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), tokenBudgetFor("groq"));
         const response = await fetchWithinDeadline(`${env.GROQ_BASE_URL}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${env.GROQ_API_KEY}` },
@@ -409,7 +419,6 @@ export class GroqModelProvider implements GenerationProvider {
             temperature: 0,
             max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
             response_format: { type: "json_object" },
-            reasoning_effort: "low",
             messages: [
               { role: "system", content: systemMessage },
               { role: "user", content: userContent }
@@ -435,12 +444,10 @@ export class GroqModelProvider implements GenerationProvider {
   }
 }
 
-// Cerebras: same OpenAI-compatible chat-completions shape as Groq above —
-// offered by the user for gpt-oss-120b on a small metered credit balance
-// (a few dollars). Not yet live-tested against a real key; `reasoning_effort`
-// is carried over from Groq's gpt-oss-20b integration on the assumption
-// Cerebras' gpt-oss-120b supports the same param (same underlying model
-// family) — remove it if a real call rejects the field once tested.
+// Cerebras: OpenAI-compatible chat completions. Keep the request model-generic
+// because dedicated Gemma endpoints do not accept GPT-OSS-only reasoning
+// parameters. CEREBRAS_MODEL is the organization-specific dedicated endpoint
+// identifier when Gemma 4 31B is provisioned.
 export class CerebrasModelProvider implements GenerationProvider {
   async generateStructured<T>(request: ModelRequest<T>): Promise<ModelResult<T>> {
     if (!env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is required when MODEL_PROVIDER=cerebras.");
@@ -452,7 +459,7 @@ export class CerebrasModelProvider implements GenerationProvider {
       schema: request.schema,
       callModel: async (promptSuffix) => {
         const userContent = boundedPrompt(`${request.prompt}${promptSuffix}`, "Model prompt");
-        await waitForTokenBudget("model-provider:cerebras", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), env.MODEL_PROVIDER === "cerebras" ? env.MODEL_TOKENS_PER_MINUTE : undefined);
+        await waitForTokenBudget("model-provider:cerebras", estimateTokens(systemMessage) + estimateTokens(userContent) + (request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS), tokenBudgetFor("cerebras"));
         const response = await fetchWithinDeadline(`${env.CEREBRAS_BASE_URL}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${env.CEREBRAS_API_KEY}` },
@@ -461,7 +468,6 @@ export class CerebrasModelProvider implements GenerationProvider {
             temperature: 0,
             max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
             response_format: { type: "json_object" },
-            reasoning_effort: "low",
             messages: [
               { role: "system", content: systemMessage },
               { role: "user", content: userContent }
@@ -491,12 +497,12 @@ export class CerebrasModelProvider implements GenerationProvider {
 // used here — this method embeds a single query string at request time; the
 // worker backfill loop batches separately.
 export class ServiceEmbeddingProvider implements EmbeddingProvider {
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, kind: EmbeddingInputKind = "passage"): Promise<number[]> {
     const deadline = Date.now() + modelRequestTimeoutMs;
     const response = await fetchWithinDeadline(`${env.RETRIEVAL_SERVICE_URL}/embed`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ texts: [boundedPrompt(text, "Embedding input")], kind: "query" })
+      body: JSON.stringify({ texts: [boundedPrompt(text, "Embedding input")], kind })
     }, deadline, "Retrieval embedding");
     if (!response.ok) throw new Error(`Retrieval service embed request failed with ${response.status}.`);
     const body = await response.json() as { embeddings?: number[][] };
@@ -507,18 +513,59 @@ export class ServiceEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-export function getGenerationProvider(): GenerationProvider {
-  if (env.MODEL_PROVIDER === "ollama") return new OllamaModelProvider();
-  if (env.MODEL_PROVIDER === "gemini") return new GeminiModelProvider();
-  if (env.MODEL_PROVIDER === "nim") return new NimModelProvider();
-  if (env.MODEL_PROVIDER === "groq") return new GroqModelProvider();
-  if (env.MODEL_PROVIDER === "cerebras") return new CerebrasModelProvider();
+export class PineconeEmbeddingProvider implements EmbeddingProvider {
+  async embed(text: string, kind: EmbeddingInputKind = "passage"): Promise<number[]> {
+    const vectors = await this.embedMany([text], kind);
+    return vectors[0]!;
+  }
+
+  async embedMany(texts: string[], kind: EmbeddingInputKind = "passage"): Promise<number[][]> {
+    if (!texts.length) return [];
+    if (!env.PINECONE_API_KEY) throw new Error("PINECONE_API_KEY is required when EMBEDDING_PROVIDER=pinecone.");
+    if (env.PINECONE_EMBEDDING_DIMENSIONS !== EMBEDDING_DIMENSIONS) {
+      throw new Error(`Pinecone is configured for ${env.PINECONE_EMBEDDING_DIMENSIONS} dimensions; this database requires ${EMBEDDING_DIMENSIONS}.`);
+    }
+    const deadline = Date.now() + modelRequestTimeoutMs;
+    const response = await fetchWithinDeadline(`${env.PINECONE_BASE_URL}/embed`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "Api-Key": env.PINECONE_API_KEY,
+        "X-Pinecone-Api-Version": env.PINECONE_API_VERSION
+      },
+      body: JSON.stringify({
+        model: env.PINECONE_EMBEDDING_MODEL,
+        inputs: texts.map((text) => ({ text: boundedPrompt(text, "Embedding input") })),
+        parameters: {
+          input_type: kind,
+          truncate: "END",
+          dimension: EMBEDDING_DIMENSIONS
+        }
+      })
+    }, deadline, "Pinecone embedding");
+    if (!response.ok) throw new Error(`Pinecone embedding request failed with ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    const body = await response.json() as { data?: Array<{ values?: number[] }> };
+    const vectors = body.data?.map((item) => item.values ?? []) ?? [];
+    if (vectors.length !== texts.length || vectors.some((vector) => vector.length !== EMBEDDING_DIMENSIONS)) {
+      throw new Error(`Pinecone returned an invalid embedding batch; expected ${texts.length} vectors of ${EMBEDDING_DIMENSIONS} dimensions.`);
+    }
+    return vectors;
+  }
+}
+
+export function getGenerationProvider(provider: GenerationProviderName = env.MODEL_PROVIDER): GenerationProvider {
+  if (provider === "ollama") return new OllamaModelProvider();
+  if (provider === "gemini") return new GeminiModelProvider();
+  if (provider === "nim") return new NimModelProvider();
+  if (provider === "groq") return new GroqModelProvider();
+  if (provider === "cerebras") return new CerebrasModelProvider();
   return new MockModelProvider();
 }
 
 export function getEmbeddingProvider(): EmbeddingProvider {
   if (env.EMBEDDING_PROVIDER === "ollama") return new OllamaEmbeddingProvider();
   if (env.EMBEDDING_PROVIDER === "gemini") return new GeminiModelProvider();
+  if (env.EMBEDDING_PROVIDER === "pinecone") return new PineconeEmbeddingProvider();
   return env.EMBEDDING_PROVIDER === "service" ? new ServiceEmbeddingProvider() : new MockModelProvider();
 }
 
@@ -529,6 +576,7 @@ export function getEmbeddingProvider(): EmbeddingProvider {
 export function activeEmbeddingModelTag(): string {
   if (env.EMBEDDING_PROVIDER === "ollama") return env.OLLAMA_EMBEDDING_MODEL;
   if (env.EMBEDDING_PROVIDER === "gemini") return env.GEMINI_EMBEDDING_MODEL;
+  if (env.EMBEDDING_PROVIDER === "pinecone") return `pinecone:${env.PINECONE_EMBEDDING_MODEL}:${EMBEDDING_DIMENSIONS}`;
   return env.EMBEDDING_PROVIDER === "service" ? "bge-base-en-v1.5" : "deterministic-mock-v1";
 }
 
@@ -538,10 +586,10 @@ export function activeEmbeddingModelTag(): string {
  * spending inference tokens or allowing a model request to block health
  * checks indefinitely.
  */
-export async function generationProviderHealth(): Promise<ProviderHealth> {
-  if (env.MODEL_PROVIDER === "mock") return { status: "ok", provider: "mock", model: "deterministic-mock-v1" };
-  if (env.MODEL_PROVIDER === "ollama") return providerHealth("ollama", env.OLLAMA_MODEL, () => checkOllamaModel(env.OLLAMA_MODEL));
-  if (env.MODEL_PROVIDER === "gemini") {
+export async function generationProviderHealth(provider: GenerationProviderName = env.MODEL_PROVIDER): Promise<ProviderHealth> {
+  if (provider === "mock") return { status: "ok", provider: "mock", model: "deterministic-mock-v1" };
+  if (provider === "ollama") return providerHealth("ollama", env.OLLAMA_MODEL, () => checkOllamaModel(env.OLLAMA_MODEL));
+  if (provider === "gemini") {
     if (!env.GEMINI_API_KEY) return { status: "unavailable", provider: "gemini", model: env.GEMINI_MODEL, reason: "GEMINI_API_KEY is not configured." };
     return providerHealth("gemini", env.GEMINI_MODEL, async () => {
       const deadline = Date.now() + modelRequestTimeoutMs;
@@ -549,7 +597,7 @@ export async function generationProviderHealth(): Promise<ProviderHealth> {
       await assertHealthResponse(response, "Gemini");
     });
   }
-  if (env.MODEL_PROVIDER === "nim") {
+  if (provider === "nim") {
     if (!env.NIM_API_KEY) return { status: "unavailable", provider: "nim", model: env.NIM_MODEL, reason: "NIM_API_KEY is not configured." };
     return providerHealth("nim", env.NIM_MODEL, async () => {
       const deadline = Date.now() + modelRequestTimeoutMs;
@@ -563,7 +611,7 @@ export async function generationProviderHealth(): Promise<ProviderHealth> {
       }
     });
   }
-  if (env.MODEL_PROVIDER === "groq") {
+  if (provider === "groq") {
     if (!env.GROQ_API_KEY) return { status: "unavailable", provider: "groq", model: env.GROQ_MODEL, reason: "GROQ_API_KEY is not configured." };
     return providerHealth("groq", env.GROQ_MODEL, async () => {
       const deadline = Date.now() + modelRequestTimeoutMs;
@@ -603,6 +651,22 @@ export async function embeddingProviderHealth(): Promise<ProviderHealth> {
       await assertHealthResponse(response, "Gemini embedding");
     });
   }
+  if (env.EMBEDDING_PROVIDER === "pinecone") {
+    if (!env.PINECONE_API_KEY) return { status: "unavailable", provider: "pinecone", model: env.PINECONE_EMBEDDING_MODEL, reason: "PINECONE_API_KEY is not configured." };
+    const pineconeApiKey = env.PINECONE_API_KEY;
+    return providerHealth("pinecone", env.PINECONE_EMBEDDING_MODEL, async () => {
+      const deadline = Date.now() + modelRequestTimeoutMs;
+      const response = await fetchWithinDeadline(`${env.PINECONE_BASE_URL}/models/${encodeURIComponent(env.PINECONE_EMBEDDING_MODEL)}`, {
+        headers: { "Api-Key": pineconeApiKey, "X-Pinecone-Api-Version": env.PINECONE_API_VERSION }
+      }, deadline, "Pinecone embedding health check");
+      await assertHealthResponse(response, "Pinecone embedding");
+      const payload = await response.json() as { model?: string; supported_dimensions?: number[] };
+      if (payload.model && payload.model !== env.PINECONE_EMBEDDING_MODEL) throw new Error(`Pinecone returned model ${payload.model}.`);
+      if (payload.supported_dimensions?.length && !payload.supported_dimensions.includes(EMBEDDING_DIMENSIONS)) {
+        throw new Error(`Pinecone model ${env.PINECONE_EMBEDDING_MODEL} does not support ${EMBEDDING_DIMENSIONS} dimensions.`);
+      }
+    });
+  }
   return providerHealth("service", "bge-base-en-v1.5", async () => {
     const deadline = Date.now() + modelRequestTimeoutMs;
     const response = await fetchWithinDeadline(`${env.RETRIEVAL_SERVICE_URL}/health`, {}, deadline, "Retrieval embedding health check");
@@ -618,6 +682,7 @@ export function getModelProvider(): ModelProvider {
   const embedding = getEmbeddingProvider();
   return {
     generateStructured: (request) => generation.generateStructured(request),
-    embed: (text) => embedding.embed(text)
+    embed: (text, kind) => embedding.embed(text, kind),
+    embedMany: embedding.embedMany ? (texts, kind) => embedding.embedMany!(texts, kind) : undefined
   };
 }

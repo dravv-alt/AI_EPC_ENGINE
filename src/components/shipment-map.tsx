@@ -217,7 +217,6 @@ export default function ShipmentMap({
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setInterval> | undefined;
     if (!selected) { setRoute([]); setLiveAssessment(undefined); setRouteMessage("Register a shipment to view a route."); return; }
     if (!validCoordinates(selected)) { setRoute([]); setLiveAssessment(undefined); setRouteMessage("Route unavailable: this shipment has no saved origin and destination coordinates."); return; }
 
@@ -245,8 +244,8 @@ export default function ShipmentMap({
       }
     };
     void refreshRouteAndWeather(true);
-    timer = setInterval(() => { void refreshRouteAndWeather(false); }, 30_000);
-    return () => { cancelled = true; if (timer) clearInterval(timer); };
+    const timer = setInterval(() => { void refreshRouteAndWeather(false); }, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [selected?.id]);
 
   const assessment = selected ? threatAssessments[selected.id] ?? liveAssessment : liveAssessment;

@@ -30,7 +30,11 @@ async function waitFor(url: string, child: ChildProcess) {
   let lastFailure = "no response";
   for (let attempt = 0; attempt < 120; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Runtime stopped before ${url} became healthy.`);
-    const probe = spawnSync("curl", ["-fsS", "--max-time", "1", url], { encoding: "utf8" });
+    // The health route probes all configured dependencies and each external
+    // probe has a two-second fail-closed timeout. Give the composite endpoint
+    // enough time to finish on a cold production server instead of treating a
+    // normal first request as a failed boot.
+    const probe = spawnSync("curl", ["-fsS", "--max-time", "6", url], { encoding: "utf8" });
     if (probe.status === 0) return;
     lastFailure = probe.stderr.trim() || `curl exited ${probe.status ?? "without a status"}`;
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -109,6 +113,7 @@ async function main() {
   run("Gate schedule context", "npm", ["run", "verify:gate-context-http"], { ...developmentEnv, GATE_CONTEXT_TEST_URL: developmentBase });
   run("Overdue findings in blocker views", "npm", ["run", "verify:overdue-findings"], developmentEnv);
   run("Change blast radius", "npm", ["run", "verify:change-impact-http"], { ...developmentEnv, CHANGE_IMPACT_TEST_URL: developmentBase });
+  run("Concurrent audit-chain serialization", "npm", ["run", "verify:audit-concurrency"], developmentEnv);
   run("Canonical audit chain", "npm", ["run", "verify:audit"], developmentEnv);
   run("Copilot agentic harness hardening", "npm", ["run", "verify:copilot"], developmentEnv);
 

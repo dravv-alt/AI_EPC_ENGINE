@@ -10,7 +10,25 @@ export default function SignInPage() {
     </section>
     <section className="clerk-auth-panel">
       <div className="clerk-auth-heading"><p className="eyebrow">Secure session</p><h2>Sign in</h2><p>Use the account assigned to your project.</p></div>
-      <SignIn signUpUrl="/sign-up" signUpForceRedirectUrl="/pending-access" fallbackRedirectUrl="/" />
+      <SignIn
+        signUpUrl="/sign-up"
+        signUpForceRedirectUrl="/pending-access"
+        fallbackRedirectUrl="/"
+        appearance={{
+          elements: {
+            card: "pramana-clerk-card",
+            header: "pramana-clerk-widget-header",
+            headerTitle: "pramana-clerk-widget-title",
+            headerSubtitle: "pramana-clerk-widget-subtitle",
+            socialButtonsBlockButton: "pramana-clerk-social-button",
+            formButtonPrimary: "pramana-clerk-primary-button",
+            formFieldInput: "pramana-clerk-input",
+            footerActionLink: "pramana-clerk-link",
+            dividerLine: "pramana-clerk-divider",
+            dividerText: "pramana-clerk-divider-text"
+          }
+        }}
+      />
       <p className="clerk-auth-switch">New to Pramana? <Link href={{ pathname: "/sign-up" }}>Create an account</Link></p>
     </section>
   </main>;

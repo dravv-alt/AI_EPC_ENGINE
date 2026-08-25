@@ -1,11 +1,36 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import Redis from "ioredis";
 import { RedisMemoryServer } from "redis-memory-server";
 import { developmentProjectId } from "../src/lib/demo";
 
+async function resolveRedisUrl() {
+  const candidate = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";
+  const probe = new Redis(candidate, {
+    connectTimeout: 1_500,
+    lazyConnect: true,
+    maxRetriesPerRequest: 0,
+    retryStrategy: () => null,
+  });
+
+  try {
+    await probe.connect();
+    await probe.ping();
+    await probe.quit();
+    return { url: candidate, memoryServer: null };
+  } catch {
+    probe.disconnect();
+    const memoryServer = await RedisMemoryServer.create();
+    return {
+      url: `redis://${await memoryServer.getHost()}:${await memoryServer.getPort()}`,
+      memoryServer,
+    };
+  }
+}
+
 async function main() {
-  const redisServer = await RedisMemoryServer.create();
-  process.env.REDIS_URL = `redis://${await redisServer.getHost()}:${await redisServer.getPort()}`;
+  const { url: redisUrl, memoryServer } = await resolveRedisUrl();
+  process.env.REDIS_URL = redisUrl;
   process.env.AUTH_ENCRYPTION_KEY = "phase0-verification-key-is-at-least-32-characters";
   process.env.LOCAL_UPLOAD_DIR = `/tmp/pramana-phase0-${randomUUID()}`;
   process.env.OBJECT_STORAGE_DRIVER = "local";
@@ -49,7 +74,9 @@ async function main() {
   assert.equal(first.queuedInRedis, true); assert.equal(second.duplicate, true); assert.equal(first.job.id, second.job.id);
   await db.delete(durableJobs).where((await import("drizzle-orm")).eq(durableJobs.id, first.job.id));
 
-  await closeQueues(); await getRedis().quit(); await redisServer.stop();
+  await closeQueues();
+  await getRedis().quit();
+  if (memoryServer) await memoryServer.stop();
   console.log("Phase 0 contract verification passed: Redis limit, durable queue idempotency, TOTP encryption, event schema, model provider, and signed local storage.");
   process.exit(0);
 }

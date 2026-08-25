@@ -116,7 +116,10 @@ async function main() {
     //    proves droppedCount and empty-survivor behaviour; here we confirm
     //    the "no results in scope" HTTP shape (200, not an error) for a query
     //    that legitimately retrieves nothing.
-    const emptyResult = await post(base, `/api/projects/${project.id}/knowledge/query`, { query: `Completely unrelated ${tag} avionics turbine blade metallurgy inspection procedure`, documentType: "rfi" });
+    const emptyResult = await post(base, `/api/projects/${project.id}/knowledge/query`, {
+      query: `No-match verification ${tag}`,
+      documentId: randomUUID()
+    });
     assert.equal(emptyResult.noResults, true, "A query retrieving nothing must report noResults: true.");
     assert.equal(emptyResult.answer, null, "A query retrieving nothing must return a null answer.");
     assert.ok(Array.isArray(emptyResult.claims) && emptyResult.claims.length === 0, "A query retrieving nothing must return zero claims.");

@@ -54,6 +54,7 @@ export type AnsweredClaim = {
   content: string;
   sourceRegionId: string;
   documentVersionId: string | null;
+  documentVersionStatus: string | null;
   documentId: string | null;
   documentTitle: string | null;
   documentType: string;
@@ -268,6 +269,7 @@ export async function answerKnowledgeQuery(input: {
         content: citation.content,
         sourceRegionId: regionId,
         documentVersionId: citation.documentVersionId,
+        documentVersionStatus: citation.documentVersionStatus,
         documentId: citation.documentId,
         documentTitle: citation.documentTitle,
         documentType: citation.documentType,

@@ -9,7 +9,7 @@ import {
   siteAnalysisInputHash,
 } from "@/lib/site-analysis/interpretation";
 import { siteSections } from "@/lib/site-analysis/questions";
-import { OllamaModelProvider } from "@/lib/model/provider";
+import { getGenerationProvider } from "@/lib/model/provider";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { enforceAiRateLimit } from "@/lib/redis/rate-limit";
 
@@ -112,7 +112,7 @@ export async function POST(
         caveat:
           "Use controlled documents and qualified engineering review before design release, procurement, or commitments.",
       };
-      const generated = await new OllamaModelProvider().generateStructured({
+      const generated = await getGenerationProvider().generateStructured({
         system:
           "You are a conservative AI data-centre planning analyst. Summarize only the supplied deterministic metrics and warnings. Never invent measurements, vendor performance, approvals, weather data, certification, or feasibility conclusions. Output JSON only.",
         prompt: JSON.stringify(interpretation),

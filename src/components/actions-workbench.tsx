@@ -73,14 +73,14 @@ export function ActionsWorkbench({ projectId, findings, gates, members }: { proj
         return <details className={`pm-issue-group group-${status}`} open={status !== "closed"} key={status}>
           <summary><ChevronDown size={17} /><Icon size={17} /><b>{label}</b><span>{rows.length}</span></summary>
           <div className="pm-issue-table" role="table" aria-label={`${label} issues`}>
-            {rows.map((finding) => <Link id={`finding-${finding.id}`} href={`/actions/${finding.id}`} className="pm-issue-row" role="row" key={finding.id}>
+            {rows.map((finding) => <div id={`finding-${finding.id}`} className="pm-issue-row" role="row" key={finding.id}>
               <span className={`pm-priority-dot priority-${finding.severity}`} />
               <span className="pm-issue-key">{finding.id.slice(0, 6).toUpperCase()}</span>
-              <span className="pm-issue-title"><b>{finding.title}</b><small>{finding.description ?? "No description"}</small></span>
-              <span className="pm-issue-gate">{finding.gateId ? gateById.get(finding.gateId) ?? "Linked gate" : "Project-wide"}</span>
+              <span className="pm-issue-title"><Link href={`/actions/${finding.id}`}><b>{finding.title}</b><small>{finding.description ?? "No description"}</small></Link></span>
+              <span className="pm-issue-gate">{finding.gateId ? <Link href={`/readiness?gate=${finding.gateId}`}>{gateById.get(finding.gateId) ?? "Linked gate"}</Link> : "Project-wide"}</span>
               <span className="pm-issue-owner"><i>{(finding.ownerName ?? "U").split(/\s+/).map((part) => part[0]).slice(0, 2).join("")}</i>{finding.ownerName ?? "Unassigned"}</span>
               <span className={`pm-issue-due ${isOverdue(finding) ? "is-overdue" : ""}`}>{isOverdue(finding) && <AlertCircle size={14} />}{finding.dueAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(finding.dueAt)) : "No date"}</span>
-            </Link>)}
+            </div>)}
             {!rows.length && <p className="pm-empty-group">No issues in this status.</p>}
           </div>
         </details>;

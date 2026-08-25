@@ -4,7 +4,7 @@ import { z } from "zod";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { documentVersions, documents, evidence, siteAnalyses } from "@/lib/db/schema";
-import { OllamaModelProvider } from "@/lib/model/provider";
+import { getGenerationProvider } from "@/lib/model/provider";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { enforceAiRateLimit } from "@/lib/redis/rate-limit";
 
@@ -64,11 +64,9 @@ export async function POST(_: Request, { params }: { params: Promise<{ projectId
       recommendedActions: ["Link manufacturer data, performance curves, and the applicable controlled source revision.", "Have a qualified engineer review the planning basis before using it for procurement or design release."],
       confidence: missing.length > 4 ? "low" : missing.length ? "medium" : "high" as const,
     };
-    // Cooling interpretation explicitly uses the locally installed Gemma
-    // runtime. It remains advisory and is isolated from the app-wide provider
-    // setting so deterministic local development modes do not silently turn
-    // this button into a fake "Gemma" result.
-    const generated = await new OllamaModelProvider().generateStructured({
+    // The configured generation provider interprets deterministic metrics;
+    // the model remains advisory and cannot create authority or measurements.
+    const generated = await getGenerationProvider().generateStructured({
       system: "You are a conservative data-centre cooling planning analyst. Interpret only the supplied project inputs, controlled-document index, and evidence metadata. Never invent measurements, equipment performance, weather values, signatures, certifications, compliance, or approval. Clearly state that recommendations are advisory and require qualified engineering review. Output JSON only.",
       prompt: JSON.stringify({ deterministicMetrics: metrics, coolingInputs: Object.fromEntries(Object.entries(answers).filter(([key]) => key.includes("cool") || key.includes("water") || key.includes("fluid") || key.includes("chiller") || key.includes("pump") || key.includes("dry_") || key.includes("reserve") || key === "target_it_mw" || key === "pue_target" || key === "rack_density")), missingInputs: missing, controlledDocuments: documentsSummary, projectEvidence: evidenceSummary }),
       schema: resultSchema,

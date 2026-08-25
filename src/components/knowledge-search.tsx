@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Search, MessageSquareQuote, BookOpen, Network } from "lucide-react";
 
 type GraphContextEntry = { id: string; type: string; label: string; state: string; relationshipType: string; anchorType: "requirement" | "evidence"; anchorId: string };
-type Claim = { text: string; content?: string; sourceRegionId: string; documentVersionId: string | null; documentId?: string | null; documentTitle?: string | null; documentType?: string; contentHash: string; similarity: number; graphContext?: GraphContextEntry[] };
+type Claim = { text: string; content?: string; sourceRegionId: string; documentVersionId: string | null; documentVersionStatus?: string | null; documentId?: string | null; documentTitle?: string | null; documentType?: string; contentHash: string; similarity: number; graphContext?: GraphContextEntry[] };
 type AnswerGroup = { text: string; claims: Claim[] };
 type SearchStatus = "idle" | "loading" | "empty" | "results" | "error";
 
@@ -26,6 +26,7 @@ function CitationChips({ claims }: { claims: Claim[] }) {
         <Link href={`/sources/regions/${claim.sourceRegionId}`} key={`${claim.sourceRegionId}-${claim.contentHash}`}>
           <BookOpen size={13} />
           {claim.documentTitle ?? "Controlled source"} · Region {claim.sourceRegionId.slice(0, 8)} · Rev {claim.documentVersionId?.slice(0, 8) ?? "—"} · SHA {claim.contentHash.slice(0, 12)}…
+          {claim.documentVersionStatus === "draft" && <strong className="knowledge-authority-badge is-draft">Draft · advisory</strong>}
           <span>{Math.round(claim.similarity * 100)}%</span>
         </Link>
       ))}
@@ -56,14 +57,14 @@ function GraphContextNote({ claims }: { claims: Claim[] }) {
 // beside the answer, while every node remains a normal navigable link.
 function KnowledgeLinkGraph({ groups }: { groups: AnswerGroup[] }) {
   const claims = groups.flatMap((group) => group.claims).slice(0, 8);
-  const docs = new Map<string, { label: string; href: string }>();
+  const docs = new Map<string, { label: string; href: string; status: string | null }>();
   const regions = new Map<string, { label: string; documentId: string }>();
   const links = new Map<string, { label: string; relationship: string }>();
   const relationEdges: Array<{ regionId: string; linkId: string; relationship: string }> = [];
 
   for (const claim of claims) {
     const documentId = claim.documentId ?? claim.documentVersionId ?? "controlled-source";
-    docs.set(documentId, { label: claim.documentTitle ?? "Controlled source", href: "/sources" });
+    if (!docs.has(documentId)) docs.set(documentId, { label: claim.documentTitle ?? "Project source", href: `/sources/regions/${claim.sourceRegionId}`, status: claim.documentVersionStatus ?? null });
     regions.set(claim.sourceRegionId, { label: `Region ${claim.sourceRegionId.slice(0, 8)}`, documentId });
     for (const entry of claim.graphContext ?? []) {
       links.set(entry.id, { label: entry.label, relationship: entry.relationshipType });
@@ -92,12 +93,12 @@ function KnowledgeLinkGraph({ groups }: { groups: AnswerGroup[] }) {
         <text x="105" y="24" textAnchor="middle" className="knowledge-graph-column">SOURCES</text><text x="350" y="24" textAnchor="middle" className="knowledge-graph-column">CITED REGIONS</text><text x="605" y="24" textAnchor="middle" className="knowledge-graph-column">LINKED RECORDS</text>
         {regionNodes.map(([regionId, region]) => { const from = docPositions.get(region.documentId); const to = regionPositions.get(regionId); return from && to ? <line key={`${region.documentId}-${regionId}`} className="knowledge-graph-edge" x1={from.x + 65} y1={from.y} x2={to.x - 72} y2={to.y} /> : null; })}
         {uniqueRelationEdges.map((edge) => { const from = regionPositions.get(edge.regionId); const to = linkedPositions.get(edge.linkId); return from && to ? <g key={`${edge.regionId}-${edge.linkId}-${edge.relationship}`}><line className="knowledge-graph-edge is-context" x1={from.x + 72} y1={from.y} x2={to.x - 76} y2={to.y} /><text className="knowledge-graph-relation" x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 4} textAnchor="middle">{edge.relationship.replaceAll("_", " ")}</text></g> : null; })}
-        {docNodes.map(([id, node]) => { const p = docPositions.get(id)!; return <a href={node.href} key={id} className="knowledge-graph-node is-document"><rect x={p.x - 65} y={p.y - 16} width="130" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">source</text></a>; })}
+        {docNodes.map(([id, node]) => { const p = docPositions.get(id)!; return <a href={node.href} key={id} className={`knowledge-graph-node is-document ${node.status === "draft" ? "is-draft" : ""}`}><rect x={p.x - 65} y={p.y - 16} width="130" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.status === "draft" ? "draft source" : "controlled source"}</text></a>; })}
         {regionNodes.map(([id, node]) => { const p = regionPositions.get(id)!; return <a href={`/sources/regions/${id}`} key={id} className="knowledge-graph-node is-region"><rect x={p.x - 72} y={p.y - 16} width="144" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{node.label}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">citation</text></a>; })}
-        {linkedNodes.map(([id, node]) => { const p = linkedPositions.get(id)!; return <a href="/graph" key={id} className="knowledge-graph-node is-context"><rect x={p.x - 76} y={p.y - 16} width="152" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.relationship.replaceAll("_", " ")}</text></a>; })}
+        {linkedNodes.map(([id, node]) => { const p = linkedPositions.get(id)!; return <a href={`/graph?focus=${encodeURIComponent(id)}`} key={id} className="knowledge-graph-node is-context"><rect x={p.x - 76} y={p.y - 16} width="152" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.relationship.replaceAll("_", " ")}</text></a>; })}
       </svg>
     </div>
-    <p className="workflow-hint">Only records connected to the current cited results are shown. This view is read-only; authority changes remain in their owning workflow.</p>
+    <p className="workflow-hint">Only records connected to the current citations are shown. Draft sources remain searchable and visibly advisory; only approved revisions can govern compliance.</p>
   </section>;
 }
 
@@ -202,7 +203,7 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [answer, setAnswer] = useState<string | null>(null);
   const [groups, setGroups] = useState<AnswerGroup[]>([]);
-  const [message, setMessage] = useState("Ask about controlled project documents.");
+  const [message, setMessage] = useState("Search approved and draft project knowledge. Draft revisions are advisory and never govern compliance.");
   const [filters, setFilters] = useState<KnowledgeFilters>(EMPTY_FILTERS);
 
   async function runQuery(value: string) {
@@ -248,12 +249,12 @@ export function KnowledgeSearch({ projectId, initialQuery = "" }: { projectId: s
 
       {status === "idle" && <p className="workflow-hint">{message}</p>}
       {status === "error" && <p className="workflow-hint">{message}</p>}
-      {status === "loading" && <p className="workflow-hint" role="status"><span className="operation-progress" aria-hidden="true" />Searching controlled project sources. This can take up to 45 seconds.</p>}
+      {status === "loading" && <p className="workflow-hint" role="status"><span className="operation-progress" aria-hidden="true" />Searching project knowledge and tracing connected records. This can take up to 45 seconds.</p>}
 
       {status === "empty" && (
         <section className="surface empty-state">
           <h2>No results in scope</h2>
-          <p>No controlled project source answers this query within scope. Try broadening your query or check a different document type.</p>
+          <p>No project source answers this query within scope. Try broadening the query or removing a document, system, asset, gate, revision, or date filter.</p>
         </section>
       )}
 

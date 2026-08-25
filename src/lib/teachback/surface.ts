@@ -37,7 +37,7 @@ export async function surfaceTeachbackAdvisory(options: {
   const threshold = options.threshold ?? env.KNOWLEDGE_SIMILARITY_THRESHOLD;
   const limit = options.limit ?? 3;
   const provider = getModelProvider();
-  const embedding = await provider.embed(options.queryText);
+  const embedding = await provider.embed(options.queryText, "query");
   const vectorLiteral = `[${embedding.join(",")}]`;
   const similarity = sql<number>`1 - (${teachbackNotes.embedding} <=> ${vectorLiteral}::vector)`;
 

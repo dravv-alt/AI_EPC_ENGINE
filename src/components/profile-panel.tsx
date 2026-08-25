@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { SignOutButton } from "@clerk/nextjs";
 
 type Profile = {
   user: { id: string; email: string; displayName: string; totpEnabled: boolean; provider: string };
@@ -89,5 +90,6 @@ export function ProfilePanel() {
     <section><div className="section-heading"><div><p className="eyebrow">Project authority</p><h2>Memberships</h2></div></div><div className="workflow-grid">{profile?.memberships.map((membership) => <article className="surface workflow-card" key={membership.projectId}><span className="source-status processed">{membership.role.replaceAll("_", " ")}</span><h2>{membership.projectName}</h2><p>{membership.projectCode}</p></article>)}</div></section>
     {profile?.user.provider === "credentials" && <section className="surface member-table"><div className="section-heading"><div><p className="eyebrow">Account security</p><h2>Session history</h2></div></div>{profile.sessions.map((session) => <article className={`entity-row ${session.revokedAt ? "is-muted" : ""}`} key={session.id}><div><b>{session.current ? "This session" : session.revokedAt ? "Revoked session" : "Active session"}</b><span>{session.userAgent ?? "Unknown device"} · {session.ipAddress ?? "IP unavailable"}<br />Created {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(session.createdAt))}</span></div>{!session.revokedAt && <button className="button button-outline" onClick={() => revokeSession(session.id, session.current)}>Revoke</button>}</article>)}</section>}
     {profile?.user.provider === "credentials" && <button className="button button-outline" onClick={logout}>Sign out</button>}
+    {profile?.user.provider === "clerk" && <SignOutButton redirectUrl="/sign-in"><button className="button button-outline" type="button">Sign out</button></SignOutButton>}
   </div>;
 }

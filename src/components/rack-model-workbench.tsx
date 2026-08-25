@@ -464,7 +464,7 @@ function RackViewer({
           for (let index = 0; index < visibleAccelerators; index += 1) {
             const column = index % columns;
             const row = Math.floor(index / columns);
-            const module = new THREE.Mesh(
+            const acceleratorModule = new THREE.Mesh(
               new THREE.BoxGeometry(
                 moduleWidth * 0.72,
                 moduleHeight * 0.68,
@@ -472,12 +472,12 @@ function RackViewer({
               ),
               moduleMaterial,
             );
-            module.position.set(
+            acceleratorModule.position.set(
               width * 0.16 + column * moduleWidth + moduleWidth / 2,
               mesh.position.y + (row - (rows - 1) / 2) * moduleHeight * 1.12,
               0.034,
             );
-            group.add(module);
+            group.add(acceleratorModule);
           }
         }
       }

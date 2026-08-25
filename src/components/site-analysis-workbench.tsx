@@ -2,12 +2,11 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import Papa from "papaparse";
-import { CheckCircle2, FileUp, Save, Sparkles } from "lucide-react";
+import { CheckCircle2, Droplets, FileUp, MapPin, Save, Sparkles, Zap } from "lucide-react";
 import { PlanningInsights } from "@/components/planning-insights";
 import {
   coolingEquipmentGroups,
   coolingStatePointFields,
-  demoSiteAnswers,
   siteBaselineOptions,
   siteSections,
   type SiteAnswerMap,
@@ -37,6 +36,13 @@ type CoolingAnalysis = {
   generatedAt: string;
   advisory: boolean;
 };
+type Handoff = {
+  documentId: string;
+  systemCount: number;
+  assetCount: number;
+  checklistCount: number;
+  taskCount: number;
+};
 const normalize = (value: string) =>
   value
     .toLowerCase()
@@ -51,30 +57,27 @@ export function SiteAnalysisWorkbench({
   projectId: string;
   initial: Persisted;
 }) {
-  const [answers, setAnswers] = useState<SiteAnswerMap>({
-    ...demoSiteAnswers,
-    ...(initial?.answers ?? {}),
-  });
+  const [answers, setAnswers] = useState<SiteAnswerMap>(initial?.answers ?? {});
   const [completed, setCompleted] = useState<string[]>(
     initial?.completedSections ?? [],
   );
-  // Cooling is the highest-density engineering view and was previously hidden
-  // behind the ninth step on every first visit. Start there so the architecture,
-  // state-point and evidence controls are immediately discoverable; the numbered
-  // map remains the single way to move between every project-scoped section.
-  const [sectionId, setSectionId] = useState("cooling");
+  const [sectionId, setSectionId] = useState(
+    initial?.status === "finalized" ? "review" : "project",
+  );
   const [sourceMetadata, setSourceMetadata] = useState(
     initial?.sourceMetadata ?? {},
   );
   const [message, setMessage] = useState(
     initial
       ? "Saved planning inputs loaded."
-      : "Demo planning baseline loaded. Review and save any section to store it in this project.",
+      : "No saved Site Analysis exists yet. Enter supported values or explicitly choose a planning baseline.",
   );
   const [busy, setBusy] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
-  const [baselineId, setBaselineId] = useState<string>(
-    siteBaselineOptions[0].id,
+  const [baselineId, setBaselineId] = useState<string>("");
+  const [handoff, setHandoff] = useState<Handoff | null>(null);
+  const [showManagerSummary, setShowManagerSummary] = useState(
+    initial?.status === "finalized",
   );
   const [coolingAnalysis, setCoolingAnalysis] =
     useState<CoolingAnalysis | null>(null);
@@ -96,8 +99,23 @@ export function SiteAnalysisWorkbench({
     nextStatus: "draft" | "review" = "draft",
     additionalCompleted: string[] = [],
   ) {
+    if (nextStatus === "review") {
+      const missing = siteSections.flatMap((item) =>
+        item.questions
+          .filter((question) => question.required && !answers[question.key]?.trim())
+          .map((question) => question.label),
+      );
+      if (missing.length) {
+        setMessage(`Complete the required decisions first: ${missing.join(", ")}.`);
+        return;
+      }
+    }
     const nextCompleted = [
-      ...new Set([...completed, ...resolved, ...additionalCompleted]),
+      ...new Set([
+        ...completed.filter((id) => resolved.includes(id)),
+        ...resolved,
+        ...additionalCompleted.filter((id) => resolved.includes(id)),
+      ]),
     ];
     setBusy(true);
     setMessage("Saving project-scoped site analysis…");
@@ -126,11 +144,25 @@ export function SiteAnalysisWorkbench({
       );
       if (insightResponse.ok)
         window.dispatchEvent(new CustomEvent("site-analysis-insights-updated"));
-      setMessage(
-        nextStatus === "review"
-          ? "Planning basis and its deterministic readiness interpretation were saved for stakeholder review. It remains non-certified."
-          : "Section saved. Deterministic issues and the Gemma advisory interpretation were recalculated.",
-      );
+      if (nextStatus === "review") {
+        const finalResponse = await fetch(
+          `/api/projects/${projectId}/site-analysis/finalize`,
+          { method: "POST" },
+        );
+        const finalBody = await finalResponse.json().catch(() => ({}));
+        if (!finalResponse.ok)
+          throw new Error(finalBody.error ?? "Site Analysis could not be finalized.");
+        setHandoff(finalBody.handoff);
+        setShowManagerSummary(true);
+        setSectionId("review");
+        setMessage(
+          "Planning basis finalized. Requirements, systems, execution tasks, and advisory commissioning plans were materialized for review.",
+        );
+      } else {
+        setMessage(
+          "Section saved. Deterministic issues and the Gemma advisory interpretation were recalculated.",
+        );
+      }
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -145,6 +177,7 @@ export function SiteAnalysisWorkbench({
     setAnswers((current) => ({ ...current, [key]: value }));
   }
   function loadBaseline(nextId: string) {
+    if (!nextId) return;
     const baseline =
       siteBaselineOptions.find((item) => item.id === nextId) ??
       siteBaselineOptions[0];
@@ -153,6 +186,85 @@ export function SiteAnalysisWorkbench({
     setMessage(
       `${baseline.name} planning baseline loaded across every Site Analysis field. Review and save to write it into the project.`,
     );
+  }
+  async function loadCompleteProjectData() {
+    const baseline =
+      siteBaselineOptions.find((item) => item.id === baselineId) ??
+      siteBaselineOptions[0];
+    const baselineAnswers: SiteAnswerMap = { ...baseline.answers };
+    const baselineCompleted = siteSections
+      .filter((item) =>
+        item.questions.every((question) =>
+          Boolean(baselineAnswers[question.key]?.trim()),
+        ),
+      )
+      .map((item) => item.id);
+
+    setBusy(true);
+    setBaselineId(baseline.id);
+    setAnswers(baselineAnswers);
+    setMessage(
+      `Loading ${baseline.name} across the controlled project records…`,
+    );
+    try {
+      const response = await fetch(`/api/projects/${projectId}/site-analysis`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          answers: baselineAnswers,
+          completedSections: baselineCompleted,
+          sourceMetadata: {
+            importedAt: new Date().toISOString(),
+          },
+          status: "review",
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(body.error ?? "Could not load the project baseline.");
+
+      setCompleted(body.analysis.completedSections ?? baselineCompleted);
+      const insightResponse = await fetch(
+        `/api/projects/${projectId}/site-analysis/insights`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ includeAi: true }),
+        },
+      );
+      if (!insightResponse.ok) {
+        const insightBody = await insightResponse.json().catch(() => ({}));
+        throw new Error(
+          insightBody.error ?? "Could not generate planning insights.",
+        );
+      }
+      window.dispatchEvent(new CustomEvent("site-analysis-insights-updated"));
+
+      const finalResponse = await fetch(
+        `/api/projects/${projectId}/site-analysis/finalize`,
+        { method: "POST" },
+      );
+      const finalBody = await finalResponse.json().catch(() => ({}));
+      if (!finalResponse.ok)
+        throw new Error(
+          finalBody.error ?? "Could not materialize the project baseline.",
+        );
+
+      setHandoff(finalBody.handoff);
+      setShowManagerSummary(true);
+      setSectionId("review");
+      setMessage(
+        `${baseline.name} is loaded. Site Analysis, requirements, systems/assets, tasks, and advisory commissioning plans are now stored for review.`,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load the complete project baseline.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   function importCsv(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -246,6 +358,7 @@ export function SiteAnalysisWorkbench({
               value={baselineId}
               onChange={(event) => loadBaseline(event.target.value)}
             >
+              <option value="">Choose a baseline…</option>
               {siteBaselineOptions.map((baseline) => (
                 <option key={baseline.id} value={baseline.id}>
                   {baseline.name}
@@ -257,6 +370,14 @@ export function SiteAnalysisWorkbench({
             <FileUp size={16} /> Import CSV
             <input type="file" accept=".csv,text/csv" onChange={importCsv} />
           </label>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={loadCompleteProjectData}
+            disabled={busy}
+          >
+            <Sparkles size={16} /> Load complete project data
+          </button>
           <button
             className="button button-primary"
             type="button"
@@ -272,19 +393,28 @@ export function SiteAnalysisWorkbench({
         aria-label="Numbered site analysis sections"
       >
         {siteSections.map((item, index) => {
+          const answered = item.questions.filter((question) =>
+            Boolean(answers[question.key]?.trim()),
+          ).length;
           const isResolved = resolved.includes(item.id);
+          const isCompleted = completed.includes(item.id) && isResolved;
+          const stateClass = isCompleted
+            ? "is-completed"
+            : answered > 0
+              ? "is-incomplete"
+              : "is-pending";
           return (
             <button
               type="button"
               key={item.id}
-              className={`${item.id === section.id ? "is-active" : ""} ${isResolved ? "is-resolved" : ""}`}
+              className={`${item.id === section.id ? "is-active" : ""} ${stateClass}`}
               onClick={() => setSectionId(item.id)}
             >
               <span>{String(index + 1).padStart(2, "0")}</span>
               <div>
                 <b>
                   {item.title}{" "}
-                  {isResolved && (
+                  {isCompleted && (
                     <CheckCircle2 size={14} aria-label="Resolved" />
                   )}
                 </b>
@@ -294,6 +424,9 @@ export function SiteAnalysisWorkbench({
           );
         })}
       </section>
+      {showManagerSummary && (
+        <ManagerSiteSummary answers={answers} handoff={handoff} />
+      )}
       <PlanningInsights projectId={projectId} onOpenStep={setSectionId} />
       <p className="site-analysis-selection" aria-live="polite">
         Showing{" "}
@@ -396,47 +529,6 @@ export function SiteAnalysisWorkbench({
         <div className="site-decision-list">
           {section.questions.map((question, questionIndex) => (
             <section key={question.key} className="site-guided-question">
-              {(() => {
-                const hasRequirement = Boolean(
-                  answers[question.key]?.trim() ||
-                  answers[`${question.key}_custom`]?.trim(),
-                );
-                const hasDecision =
-                  Boolean(answers[question.key]?.trim()) &&
-                  !/unknown|not fixed|to be defined|no document/i.test(
-                    answers[question.key],
-                  );
-                const hasVerification =
-                  hasDecision &&
-                  (answers.source_confidence === "Controlled evidence" ||
-                    Boolean(answers[`${question.key}_evidence`]?.trim()));
-                return (
-                  <div
-                    className="site-decision-flow"
-                    aria-label="Requirement decision verification progress"
-                  >
-                    <span
-                      className={hasRequirement ? "is-complete" : "is-pending"}
-                    >
-                      <b>01</b> Requirement
-                    </span>
-                    <i className={hasDecision ? "is-complete" : "is-pending"} />
-                    <span
-                      className={hasDecision ? "is-complete" : "is-pending"}
-                    >
-                      <b>02</b> Engine decision
-                    </span>
-                    <i
-                      className={hasVerification ? "is-complete" : "is-pending"}
-                    />
-                    <span
-                      className={hasVerification ? "is-complete" : "is-pending"}
-                    >
-                      <b>03</b> Verified outputs
-                    </span>
-                  </div>
-                );
-              })()}
               <p className="eyebrow">
                 Question {questionIndex + 1} of {section.questions.length}
               </p>
@@ -452,13 +544,11 @@ export function SiteAnalysisWorkbench({
               )}
               {question.options ? (
                 <div>
-                  {question.options.map((option) => (
+                  {question.options.map((option, optionIndex) => (
                     <button
                       type="button"
                       key={option}
-                      className={
-                        answers[question.key] === option ? "is-selected" : ""
-                      }
+                      className={`tone-${(optionIndex % 6) + 1} ${answers[question.key] === option ? "is-selected" : answers[question.key] ? "is-softened" : ""}`}
                       onClick={() => setAnswer(question.key, option)}
                     >
                       <b>{option}</b>
@@ -522,15 +612,17 @@ export function SiteAnalysisWorkbench({
                   "Air-cooled chiller",
                   "Immersion",
                   "Two-phase direct-to-chip",
-                ].map((option) => (
+                ].map((option, index) => (
                   <button
                     type="button"
                     key={option}
-                    className={
+                    className={`tone-${(index % 6) + 1}${
                       answers.cooling_architecture === option
-                        ? "is-selected"
-                        : ""
-                    }
+                        ? " is-selected"
+                        : answers.cooling_architecture
+                          ? " is-softened"
+                          : ""
+                    }`}
                     onClick={() => setAnswer("cooling_architecture", option)}
                   >
                     <b>{option}</b>
@@ -847,7 +939,7 @@ export function SiteAnalysisWorkbench({
             type="button"
             className="button button-outline"
             onClick={() => {
-              setCompleted((items) => [...new Set([...items, section.id])]);
+              setCompleted((items) => items.filter((id) => id !== section.id));
               setMessage(
                 `${section.title} marked open for later confirmation.`,
               );
@@ -866,7 +958,7 @@ export function SiteAnalysisWorkbench({
             disabled={busy}
           >
             {section.id === "review"
-              ? "Confirm for review"
+              ? "Confirm & build execution plan"
               : "Save and continue"}
           </button>
         </footer>
@@ -919,5 +1011,79 @@ export function SiteAnalysisWorkbench({
         )}
       </section>
     </div>
+  );
+}
+
+function ManagerSiteSummary({
+  answers,
+  handoff,
+}: {
+  answers: SiteAnswerMap;
+  handoff: Handoff | null;
+}) {
+  const decisions = siteSections
+    .filter((section) => section.id !== "review")
+    .map((section) => ({
+      section,
+      values: section.questions.filter((question) => answers[question.key]?.trim()),
+    }))
+    .filter((item) => item.values.length);
+  return (
+    <section className="surface site-manager-summary" aria-label="Final Site Analysis summary">
+      <header>
+        <div>
+          <p className="eyebrow">Manager review · confirmed planning basis</p>
+          <h2>{answers.project_name || "Site Analysis summary"}</h2>
+          <p>
+            {answers.location || "Location not recorded"} · {answers.objective || "Objective not recorded"}
+          </p>
+        </div>
+        <span className="status-pill ready">Materialized for review</span>
+      </header>
+      <div className="site-manager-kpis">
+        <article className="is-power">
+          <Zap size={22} />
+          <span>Target IT load</span>
+          <strong>{answers.target_it_mw ? `${answers.target_it_mw} MW` : "Open"}</strong>
+        </article>
+        <article className="is-water">
+          <Droplets size={22} />
+          <span>Water basis</span>
+          <strong>{answers.water_source || "Open"}</strong>
+          <i aria-hidden="true" />
+        </article>
+        <article className="is-location">
+          <MapPin size={22} />
+          <span>Site</span>
+          <strong>{answers.location || "Open"}</strong>
+        </article>
+        <article>
+          <CheckCircle2 size={22} />
+          <span>Execution handoff</span>
+          <strong>{handoff ? `${handoff.taskCount} tasks · ${handoff.checklistCount} test plans` : "Saved"}</strong>
+        </article>
+      </div>
+      <div className="site-manager-decisions">
+        {decisions.map(({ section, values }) => (
+          <details key={section.id}>
+            <summary>
+              <b>{section.title}</b>
+              <span>{values.length} decision{values.length === 1 ? "" : "s"}</span>
+            </summary>
+            <dl>
+              {values.map((question) => (
+                <div key={question.key}>
+                  <dt>{question.label}</dt>
+                  <dd>{answers[question.key]}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        ))}
+      </div>
+      <p className="site-manager-caveat">
+        Planning inputs are now traceable and downstream work is created, but proposed requirements and commissioning plans still require accountable human review before they affect certified readiness.
+      </p>
+    </section>
   );
 }

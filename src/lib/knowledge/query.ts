@@ -54,6 +54,7 @@ export type SemanticCitation = {
   text: string;
   sourceRegionId: string;
   documentVersionId: string | null;
+  documentVersionStatus: string | null;
   documentId: string | null;
   documentTitle: string | null;
   documentType: string;
@@ -84,8 +85,12 @@ async function catchUpProjectEmbeddings(projectId: string) {
 
   if (!pending.length) return 0;
   const provider = getModelProvider();
-  for (const chunk of pending) {
-    const vector = await provider.embed(chunk.content);
+  const vectors = provider.embedMany
+    ? await provider.embedMany(pending.map((chunk) => chunk.content), "passage")
+    : await Promise.all(pending.map((chunk) => provider.embed(chunk.content, "passage")));
+  for (const [index, chunk] of pending.entries()) {
+    const vector = vectors[index];
+    if (!vector) continue;
     await db.update(knowledgeChunks)
       .set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() })
       .where(eq(knowledgeChunks.id, chunk.id));
@@ -126,6 +131,7 @@ async function retrieveLexicalCitations(options: {
       content: knowledgeChunks.content,
       sourceRegionId: knowledgeChunks.sourceRegionId,
       documentVersionId: sourceRegions.documentVersionId,
+      documentVersionStatus: documentVersions.status,
       documentId: documents.id,
       documentTitle: documents.title,
       documentType: knowledgeChunks.documentType,
@@ -151,6 +157,7 @@ async function retrieveLexicalCitations(options: {
         text: row.content,
         sourceRegionId: row.sourceRegionId,
         documentVersionId: row.documentVersionId ?? null,
+        documentVersionStatus: row.documentVersionStatus ?? null,
         documentId: row.documentId ?? null,
         documentTitle: row.documentTitle ?? null,
         documentType: row.documentType,
@@ -188,7 +195,7 @@ export async function retrieveSemanticCitations(options: {
   const provider = getModelProvider();
   let embedding: number[];
   try {
-    embedding = await provider.embed(options.query);
+    embedding = await provider.embed(options.query, "query");
   } catch {
     return retrieveLexicalCitations({ ...options, limit });
   }
@@ -225,6 +232,7 @@ export async function retrieveSemanticCitations(options: {
       content: knowledgeChunks.content,
       sourceRegionId: knowledgeChunks.sourceRegionId,
       documentVersionId: sourceRegions.documentVersionId,
+      documentVersionStatus: documentVersions.status,
       documentId: documents.id,
       documentTitle: documents.title,
       documentType: knowledgeChunks.documentType,
@@ -236,7 +244,14 @@ export async function retrieveSemanticCitations(options: {
     .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
     .leftJoin(documents, eq(documentVersions.documentId, documents.id))
     .where(and(...filters))
-    .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
+    // Preserve the obvious exact-text invariant before semantic ranking. Some
+    // hosted embedding models quantize near-duplicate engineering clauses to
+    // the same cosine distance; an identical controlled excerpt must still be
+    // the first result.
+    .orderBy(
+      sql`case when ${knowledgeChunks.content} = ${options.query} then 0 else 1 end`,
+      sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`
+    )
     .limit(limit * fetchMultiplier);
 
   // Do not silently degrade a freshly processed document to keyword matching
@@ -251,6 +266,7 @@ export async function retrieveSemanticCitations(options: {
         content: knowledgeChunks.content,
         sourceRegionId: knowledgeChunks.sourceRegionId,
         documentVersionId: sourceRegions.documentVersionId,
+        documentVersionStatus: documentVersions.status,
         documentId: documents.id,
         documentTitle: documents.title,
         documentType: knowledgeChunks.documentType,
@@ -262,7 +278,10 @@ export async function retrieveSemanticCitations(options: {
       .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
       .leftJoin(documents, eq(documentVersions.documentId, documents.id))
       .where(and(...filters))
-      .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
+      .orderBy(
+        sql`case when ${knowledgeChunks.content} = ${options.query} then 0 else 1 end`,
+        sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`
+      )
       .limit(limit * fetchMultiplier);
   }
 
@@ -274,6 +293,7 @@ export async function retrieveSemanticCitations(options: {
       text: row.content,
       sourceRegionId: row.sourceRegionId,
       documentVersionId: row.documentVersionId ?? null,
+      documentVersionStatus: row.documentVersionStatus ?? null,
       documentId: row.documentId ?? null,
       documentTitle: row.documentTitle ?? null,
       documentType: row.documentType,

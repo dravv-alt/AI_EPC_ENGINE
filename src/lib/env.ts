@@ -38,6 +38,7 @@ const environmentSchema = z.object({
   // Local Ollama is the normal runtime. Mock remains available only for
   // deterministic tests and explicitly opted-in development scenarios.
   MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim", "groq", "cerebras"]).default("ollama"),
+  COPILOT_MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim", "groq", "cerebras"]).default("ollama"),
   OLLAMA_BASE_URL: z.string().url().default("http://127.0.0.1:11434"),
   OLLAMA_MODEL: z.string().min(1).default("gemma4:e2b"),
   OLLAMA_EMBEDDING_MODEL: z.string().min(1).default("nomic-embed-text:latest"),
@@ -71,7 +72,7 @@ const environmentSchema = z.object({
   GEMINI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-004"),
   NIM_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NIM_API_KEY: z.string().optional(),
-  NIM_MODEL: z.string().min(1).default("meta/llama-3.3-70b-instruct"),
+  NIM_MODEL: z.string().min(1).default("nvidia/llama-3.3-nemotron-super-49b-v1"),
   // Groq: OpenAI-compatible chat-completions endpoint, same shape as NIM below.
   GROQ_BASE_URL: z.string().url().default("https://api.groq.com/openai/v1"),
   GROQ_API_KEY: z.string().optional(),
@@ -81,10 +82,15 @@ const environmentSchema = z.object({
   // a small metered credit balance — pair with MODEL_DAILY_TOKEN_BUDGET.
   CEREBRAS_BASE_URL: z.string().url().default("https://api.cerebras.ai/v1"),
   CEREBRAS_API_KEY: z.string().optional(),
-  CEREBRAS_MODEL: z.string().min(1).default("gpt-oss-120b"),
+  CEREBRAS_MODEL: z.string().min(1).default("gemma-4-31b"),
   // Embeddings intentionally remain independently selected. Choosing Gemini
   // for generation must never silently change an existing vector space.
-  EMBEDDING_PROVIDER: z.enum(["mock", "ollama", "gemini", "service"]).default("ollama"),
+  EMBEDDING_PROVIDER: z.enum(["mock", "ollama", "gemini", "service", "pinecone"]).default("ollama"),
+  PINECONE_API_KEY: z.string().optional(),
+  PINECONE_BASE_URL: z.string().url().default("https://api.pinecone.io"),
+  PINECONE_API_VERSION: z.string().min(1).default("2026-04"),
+  PINECONE_EMBEDDING_MODEL: z.string().min(1).default("llama-text-embed-v2"),
+  PINECONE_EMBEDDING_DIMENSIONS: z.coerce.number().int().min(1).max(4096).default(768),
   RETRIEVAL_SERVICE_URL: z.string().url().default("http://localhost:8003"),
   KNOWLEDGE_RERANK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
   SHIPMENT_STATUS_BUFFER_HOURS: z.coerce.number().min(0).max(720).default(72),
@@ -155,6 +161,7 @@ export const env = environmentSchema.parse({
   INFRA_ALLOW_DEGRADED: process.env.INFRA_ALLOW_DEGRADED,
   REQUIRE_PRODUCTION_CONFIG: process.env.REQUIRE_PRODUCTION_CONFIG,
   MODEL_PROVIDER: process.env.MODEL_PROVIDER,
+  COPILOT_MODEL_PROVIDER: process.env.COPILOT_MODEL_PROVIDER ?? process.env.MODEL_PROVIDER,
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL,
   OLLAMA_MODEL: process.env.OLLAMA_MODEL,
   OLLAMA_EMBEDDING_MODEL: process.env.OLLAMA_EMBEDDING_MODEL,
@@ -178,6 +185,11 @@ export const env = environmentSchema.parse({
   CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
   CEREBRAS_MODEL: process.env.CEREBRAS_MODEL,
   EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
+  PINECONE_API_KEY: process.env.PINECONE_API_KEY,
+  PINECONE_BASE_URL: process.env.PINECONE_BASE_URL,
+  PINECONE_API_VERSION: process.env.PINECONE_API_VERSION,
+  PINECONE_EMBEDDING_MODEL: process.env.PINECONE_EMBEDDING_MODEL,
+  PINECONE_EMBEDDING_DIMENSIONS: process.env.PINECONE_EMBEDDING_DIMENSIONS,
   RETRIEVAL_SERVICE_URL: process.env.RETRIEVAL_SERVICE_URL,
   KNOWLEDGE_RERANK_THRESHOLD: process.env.KNOWLEDGE_RERANK_THRESHOLD,
   SHIPMENT_STATUS_BUFFER_HOURS: process.env.SHIPMENT_STATUS_BUFFER_HOURS,
@@ -231,14 +243,20 @@ if (env.REQUIRE_PRODUCTION_CONFIG) {
   }
   if (!env.APP_BASE_URL.startsWith("https://")) throw new Error("APP_BASE_URL must use https when REQUIRE_PRODUCTION_CONFIG=true.");
   if ([env.S3_ACCESS_KEY, env.S3_SECRET_KEY].includes("minioadmin")) throw new Error("Default MinIO credentials are not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
-  if (env.MODEL_PROVIDER === "mock" || env.EMBEDDING_PROVIDER === "mock") {
+  if (env.MODEL_PROVIDER === "mock" || env.COPILOT_MODEL_PROVIDER === "mock" || env.EMBEDDING_PROVIDER === "mock") {
     throw new Error("Mock generation and embedding providers are not permitted when REQUIRE_PRODUCTION_CONFIG=true.");
   }
   if (env.MODEL_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when MODEL_PROVIDER=gemini.");
   if (env.MODEL_PROVIDER === "nim" && !env.NIM_API_KEY) throw new Error("NIM_API_KEY is required when MODEL_PROVIDER=nim.");
   if (env.MODEL_PROVIDER === "groq" && !env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is required when MODEL_PROVIDER=groq.");
   if (env.MODEL_PROVIDER === "cerebras" && !env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is required when MODEL_PROVIDER=cerebras.");
+  if (env.COPILOT_MODEL_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when COPILOT_MODEL_PROVIDER=gemini.");
+  if (env.COPILOT_MODEL_PROVIDER === "nim" && !env.NIM_API_KEY) throw new Error("NIM_API_KEY is required when COPILOT_MODEL_PROVIDER=nim.");
+  if (env.COPILOT_MODEL_PROVIDER === "groq" && !env.GROQ_API_KEY) throw new Error("GROQ_API_KEY is required when COPILOT_MODEL_PROVIDER=groq.");
+  if (env.COPILOT_MODEL_PROVIDER === "cerebras" && !env.CEREBRAS_API_KEY) throw new Error("CEREBRAS_API_KEY is required when COPILOT_MODEL_PROVIDER=cerebras.");
   if (env.EMBEDDING_PROVIDER === "gemini" && !env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini.");
+  if (env.EMBEDDING_PROVIDER === "pinecone" && !env.PINECONE_API_KEY) throw new Error("PINECONE_API_KEY is required when EMBEDDING_PROVIDER=pinecone.");
+  if (env.EMBEDDING_PROVIDER === "pinecone" && env.PINECONE_EMBEDDING_DIMENSIONS !== 768) throw new Error("PINECONE_EMBEDDING_DIMENSIONS must be 768 for the current pgvector schema.");
   if (env.AUTH_MODE === "clerk" && !(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && env.CLERK_SECRET_KEY)) {
     throw new Error("Clerk keys are required when AUTH_MODE=clerk and REQUIRE_PRODUCTION_CONFIG=true.");
   }

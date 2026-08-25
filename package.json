@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build": "next build",
     "dev": "next dev",
     "dev:clerk": "AUTH_MODE=clerk next dev",
-    "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "docs:serve": "python3 -m http.server 4174 --directory docs",
+    "docs:pdf": "python3 docs/generate_architecture_pdf.py",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
@@ -19,6 +21,8 @@
     "system:run": "tsx scripts/run-system.ts",
     "system:start": "npm run db:migrate && npm run build && npm run system:run",
     "verify:audit": "tsx scripts/verify-audit-chain.ts",
+    "verify:audit-concurrency": "tsx scripts/verify-audit-concurrency.ts",
+    "repair:audit-development": "tsx scripts/repair-development-audit-chain.ts --confirm-development-repair",
     "verify:phase0": "tsx scripts/verify-phase0.ts",
     "verify:credentials-http": "tsx scripts/verify-credentials-http.ts",
     "verify:schedule-http": "tsx scripts/verify-schedule-http.ts",
@@ -72,7 +76,11 @@
     "verify:rfi-resolution": "tsx scripts/verify-rfi-resolution.ts",
     "verify:knowledge-filters": "tsx scripts/verify-knowledge-filters.ts",
     "verify:copilot": "tsx scripts/verify-copilot-http.ts",
-    "verify:all": "tsx scripts/verify-all.ts"
+    "verify:all": "tsx scripts/verify-all.ts",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1089.0",
@@ -81,6 +89,7 @@
     "@fontsource/hanken-grotesk": "^5.1.1",
     "@fontsource/ibm-plex-serif": "^5.1.1",
     "@fontsource/jetbrains-mono": "^5.1.1",
+    "@opennextjs/cloudflare": "^1.20.2",
     "@turf/bezier-spline": "^7.3.5",
     "@turf/great-circle": "^7.3.5",
     "@turf/helpers": "^7.3.5",
@@ -114,11 +123,16 @@
     "@types/react-dom": "^19.0.2",
     "@types/three": "^0.185.1",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.2",
     "redis-memory-server": "^0.17.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "^4.125.0"
   },
   "overrides": {
-    "postcss": "8.5.20"
+    "brace-expansion@<2.1.4": "2.1.4",
+    "nanoid": "3.3.18",
+    "postcss": "8.5.26"
   }
 }

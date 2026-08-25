@@ -15,7 +15,7 @@ import type { CopilotContext } from "../src/lib/copilot/types";
 import { primaryWorkspaceLinks, workspaceGroups } from "../src/components/workspace-navigation";
 import { developmentProjectId } from "../src/lib/demo";
 import { db } from "../src/lib/db/client";
-import { auditEvents, evidence, evidenceClaimLinks, evidenceClaims, findings, projectMembers, projects, systems, users } from "../src/lib/db/schema";
+import { auditEvents, durableJobs, evidence, evidenceClaimLinks, evidenceClaims, findings, projectMembers, projects, systems, users } from "../src/lib/db/schema";
 import { AccessError, requireProjectPermission } from "../src/lib/projects/access";
 import { can } from "../src/lib/auth/roles";
 import { verifyAuditChain } from "../src/lib/audit/verify-chain";
@@ -210,6 +210,11 @@ async function setupLiveTestProject() {
 }
 
 async function teardownLiveTestProject(projectId: string) {
+  // Claim creation enqueues asynchronous enrichment work. Remove that
+  // project-scoped job before deleting the project fixture; otherwise the
+  // verification can pass every product assertion and still fail cleanup on
+  // durable_jobs_project_id_projects_id_fk.
+  await db.delete(durableJobs).where(eq(durableJobs.projectId, projectId));
   const claimRows = await db.select({ id: evidenceClaims.id }).from(evidenceClaims).where(eq(evidenceClaims.projectId, projectId));
   for (const claim of claimRows) await db.delete(evidenceClaimLinks).where(eq(evidenceClaimLinks.claimId, claim.id));
   await db.delete(evidenceClaims).where(eq(evidenceClaims.projectId, projectId));
@@ -387,7 +392,14 @@ function verifyMockDeterminism(projectId: string, userId: string, role: string) 
   const helperPath = path.join(__dirname, "verify-copilot-mock-turn.ts");
   const result = spawnSync("npx", ["--no-install", "tsx", helperPath], {
     cwd: path.join(__dirname, ".."),
-    env: { ...process.env, MODEL_PROVIDER: "mock", COPILOT_MOCK_TEST_PROJECT_ID: projectId, COPILOT_MOCK_TEST_USER_ID: userId, COPILOT_MOCK_TEST_ROLE: role },
+    env: {
+      ...process.env,
+      MODEL_PROVIDER: "mock",
+      COPILOT_MODEL_PROVIDER: "mock",
+      COPILOT_MOCK_TEST_PROJECT_ID: projectId,
+      COPILOT_MOCK_TEST_USER_ID: userId,
+      COPILOT_MOCK_TEST_ROLE: role,
+    },
     encoding: "utf8",
     shell: process.platform === "win32"
   });

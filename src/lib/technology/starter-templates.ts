@@ -1,5 +1,16 @@
 export type StarterTemplate = { id: string; category: string; label: string; solutionName: string; summary: string; evidenceChecklist: string[]; claim: { type: string; text: string; evidenceRequired: string }; parameter: { key: string; label: string; unit: string; sourceHint: string }; commercialChecklist: string[] };
-const baseCommercial = ["Pricing basis by capacity unit", "Lead time by model family", "Warranty and service response", "Commissioning responsibility split", "Reference delivery or installed-base evidence"];
+const baseCommercial = [
+  "Unit and extended pricing with taxes, freight, packing and exclusions identified",
+  "Quotation validity, currency, payment milestones and escalation basis",
+  "Manufacturing and delivery lead time by exact model family",
+  "Incoterms, delivery location, logistics constraints and delivery schedule",
+  "Standard and extended warranty terms with commencement trigger",
+  "Service coverage, escalation path and response / restoration targets",
+  "Installation, testing, commissioning and acceptance responsibility matrix",
+  "Recommended spares, consumables, special tools and training",
+  "Deviations, substitutions, approved equivalents and commercial assumptions",
+  "Comparable installed-base references and regional support capability",
+];
 export const starterTemplates: StarterTemplate[] = [
   { id: "cooling-liquid-heat-rejection-starter", category: "Cooling", label: "Cooling technology", solutionName: "[Vendor] cooling solution", summary: "Replace with the exact cooling architecture, system boundary, supported rack density, operating temperatures, heat-rejection path, water basis, and model inputs.", evidenceChecklist: ["System technical specification", "Product datasheet", "Installation drawing", "Performance curves", "Cooling SLD or P&ID"], claim: { type: "PUE impact", text: "Replace with evidence-backed PUE impact and applicable conditions.", evidenceRequired: "Performance curve or reference test report" }, parameter: { key: "pue_delta", label: "PUE impact", unit: "delta", sourceHint: "Curve, test report, or vendor-confirmed calculation" }, commercialChecklist: baseCommercial },
   { id: "power-generation-microgrid-starter", category: "Power", label: "Power / microgrid", solutionName: "[Vendor] power solution", summary: "Replace with electrical boundary, operating mode, fuel/grid dependency, ride-through behavior, emissions scope, controls interface, and model inputs.", evidenceChecklist: ["Electrical technical specification", "Power SLD", "Electrical study", "Operating-mode narrative", "Interconnect requirements"], claim: { type: "Resilience impact", text: "Replace with evidence-backed resilience and grid-load impact.", evidenceRequired: "Electrical study or reference test report" }, parameter: { key: "grid_load_delta_mw", label: "Grid load impact", unit: "MW", sourceHint: "Load-flow study or verified calculation" }, commercialChecklist: baseCommercial },

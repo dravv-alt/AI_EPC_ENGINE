@@ -7,7 +7,7 @@ import { siteAnalyses } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 
 const answerRecord = z.record(z.string().max(80), z.string().max(2000));
-const schema = z.object({ answers: answerRecord, completedSections: z.array(z.string().max(60)).max(16), sourceMetadata: z.object({ csvFileName: z.string().max(300).optional(), importedRows: z.number().int().nonnegative().optional(), importedAt: z.string().datetime().optional() }).default({}), status: z.enum(["draft", "review"]).default("draft") });
+const schema = z.object({ answers: answerRecord, completedSections: z.array(z.string().max(60)).max(16), sourceMetadata: z.object({ csvFileName: z.string().max(300).optional(), importedRows: z.number().int().nonnegative().optional(), importedAt: z.string().datetime().optional() }).default({}), status: z.enum(["draft", "review", "finalized"]).default("draft") });
 
 export async function GET(_: Request, { params }: { params: Promise<{ projectId: string }> }) { const { projectId } = await params; try { await requireProjectPermission(projectId, "audit:view"); return NextResponse.json({ analysis: await db.query.siteAnalyses.findFirst({ where: eq(siteAnalyses.projectId, projectId) }) ?? null }); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load site analysis." }, { status: error instanceof AccessError ? error.status : 500 }); } }
 
