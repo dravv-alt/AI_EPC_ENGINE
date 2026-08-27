@@ -27,23 +27,39 @@ production-oriented, fail-closed setup.
 From the repo root:
 
 ```bash
-npm ci
+REDISMS_DISABLE_POSTINSTALL=1 npm ci
 cp .env.example .env.local
 ```
 
 PowerShell equivalent:
 
 ```powershell
-npm ci
+$env:REDISMS_DISABLE_POSTINSTALL='1'; npm ci
 Copy-Item .env.example .env.local
 ```
+
+The `redis-memory-server` dev dependency tries to build Redis from source in its
+postinstall step, which fails on machines whose GNU Make is older than the
+version its build scripts require:
+
+```
+deps/readies/mk/main:6: *** GNU Make version is too old. Aborting..
+```
+
+`REDISMS_DISABLE_POSTINSTALL=1` skips that build. Nothing is lost — Redis comes
+from Docker Compose, and only the isolated Redis test harness uses the package.
 
 The checked-in local file already uses the development auth mode by default:
 
 ```env
 AUTH_MODE=development
 APP_BASE_URL=http://localhost:3000
+DATABASE_URL=postgresql://pramana:pramana@localhost:5433/pramana
 ```
+
+Note the database port. `docker-compose.dev.yml` publishes Postgres on **5433**
+so it cannot collide with a Postgres already running on the host; 5432 will not
+connect.
 
 ## 3. Start Docker infrastructure
 
@@ -145,11 +161,46 @@ NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/pending-access
 
 If the Clerk app is not available to your account, the local development setup above remains the reliable fallback and should be used instead.
 
-## 8. Quick summary of the commands to run next time
+## 8. Rebuilding from a clean machine
+
+Everything below is disposable and is rebuilt by the commands in this guide.
+Nothing here is a source of truth, so it is safe to delete when disk space is
+needed:
+
+| What | Where | Rebuilt by |
+| --- | --- | --- |
+| Node dependencies | `node_modules/` | `REDISMS_DISABLE_POSTINSTALL=1 npm ci` |
+| Next build output | `.next/` | `npm run dev` or `npm run build` |
+| npm download cache | `~/.npm` | refills automatically on the next install |
+| Service images | `pramana-cx-dev-ingestion`, `-solver`, `-retrieval` | `docker compose -f docker-compose.dev.yml build` |
+| Base images | `pgvector/pgvector:pg16`, `redis:7-alpine`, `quay.io/minio/minio` | pulled by `docker compose ... up` |
+| Database volume | `pramana-cx-dev_postgres_dev_data` | `npm run db:migrate && npm run db:seed` |
+| Object volume | `pramana-cx-dev_minio_dev_data` | recreated empty; re-upload sources as needed |
+| Docker build cache | — | rebuilt on the next `docker compose build` |
+
+What you actually need to keep: this git repository and your `.env.local`. The
+seeded demo project, its documents, evidence and audit chain all come back from
+`npm run db:seed` — they are generated, not authored.
+
+Expect the first rebuild to take a while: the retrieval image alone is about
+4.4 GB because it bakes in the `BAAI/bge-base-en-v1.5` and `BAAI/bge-reranker-base`
+model weights at build time.
+
+To remove it all:
 
 ```bash
-npm ci
-Copy-Item .env.example .env.local
+docker compose -f docker-compose.dev.yml down -v
+docker image rm pramana-cx-dev-ingestion pramana-cx-dev-solver pramana-cx-dev-retrieval
+docker builder prune -af
+rm -rf node_modules .next
+npm cache clean --force
+```
+
+## 9. Quick summary of the commands to run next time
+
+```bash
+REDISMS_DISABLE_POSTINSTALL=1 npm ci
+cp .env.example .env.local
 
 docker compose -f docker-compose.dev.yml up -d --build postgres redis minio ingestion solver retrieval
 ollama serve
