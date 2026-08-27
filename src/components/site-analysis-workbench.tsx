@@ -95,6 +95,23 @@ export function SiteAnalysisWorkbench({
     [answers],
   );
 
+  // Finalize is a separate request from the status save, so a failure there
+  // would otherwise leave the row persisted as "review" with nothing
+  // materialized and no way to retry from the UI. Put the stored status back
+  // to draft so the record matches what actually happened.
+  async function revertStatusToDraft(nextCompleted: string[], nextAnswers: SiteAnswerMap = answers) {
+    await fetch(`/api/projects/${projectId}/site-analysis`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        answers: nextAnswers,
+        completedSections: nextCompleted,
+        sourceMetadata,
+        status: "draft",
+      }),
+    }).catch(() => undefined);
+  }
+
   async function save(
     nextStatus: "draft" | "review" = "draft",
     additionalCompleted: string[] = [],
@@ -150,8 +167,10 @@ export function SiteAnalysisWorkbench({
           { method: "POST" },
         );
         const finalBody = await finalResponse.json().catch(() => ({}));
-        if (!finalResponse.ok)
-          throw new Error(finalBody.error ?? "Site Analysis could not be finalized.");
+        if (!finalResponse.ok) {
+          await revertStatusToDraft(nextCompleted);
+          throw new Error(finalBody.error ?? "Site Analysis could not be finalized. The analysis was left as a draft; retry once the reported problem is resolved.");
+        }
         setHandoff(finalBody.handoff);
         setShowManagerSummary(true);
         setSectionId("review");
@@ -245,10 +264,14 @@ export function SiteAnalysisWorkbench({
         { method: "POST" },
       );
       const finalBody = await finalResponse.json().catch(() => ({}));
-      if (!finalResponse.ok)
+      if (!finalResponse.ok) {
+        // `answers` state is still the pre-baseline value in this closure, so
+        // pass the answers that were actually persisted a moment ago.
+        await revertStatusToDraft(baselineCompleted, baselineAnswers);
         throw new Error(
-          finalBody.error ?? "Could not materialize the project baseline.",
+          finalBody.error ?? "Could not materialize the project baseline. The analysis was left as a draft; retry once the reported problem is resolved.",
         );
+      }
 
       setHandoff(finalBody.handoff);
       setShowManagerSummary(true);

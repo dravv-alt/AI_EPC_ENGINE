@@ -32,7 +32,10 @@ export async function GET() {
     serviceHealth(`${env.RETRIEVAL_SERVICE_URL}/health`, "retrieval"),
     pollHealth(),
     generationProviderHealth(),
-    generationProviderHealth(env.COPILOT_MODEL_PROVIDER),
+    // The copilot usually shares MODEL_PROVIDER; probing the same provider
+    // twice per health poll doubles hosted-provider request counts for no
+    // extra signal, so reuse the first result when they match.
+    env.COPILOT_MODEL_PROVIDER === env.MODEL_PROVIDER ? Promise.resolve(null) : generationProviderHealth(env.COPILOT_MODEL_PROVIDER),
     embeddingProviderHealth()
   ]);
   // The retrieval service is only load-bearing when EMBEDDING_PROVIDER=service;
@@ -42,12 +45,13 @@ export async function GET() {
   const coreDependencies = [database, redis, objectStore, ingestion, solver];
   const degraded = coreDependencies.some((dependency) => dependency.status !== "ok")
     || (env.EMBEDDING_PROVIDER === "service" && retrieval.status !== "ok");
-  const providerDegraded = generationProvider.status !== "ok" || copilotProvider.status !== "ok" || embeddingProvider.status !== "ok";
+  const copilotProviderHealth = copilotProvider ?? generationProvider;
+  const providerDegraded = generationProvider.status !== "ok" || copilotProviderHealth.status !== "ok" || embeddingProvider.status !== "ok";
   return NextResponse.json({
     status: degraded || providerDegraded ? "degraded" : "ok",
     service: "pramana-cx",
     authMode: env.AUTH_MODE,
-    dependencies: { database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, copilotProvider, embeddingProvider },
+    dependencies: { database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, copilotProvider: copilotProviderHealth, embeddingProvider },
     degradedModeAllowed: env.INFRA_ALLOW_DEGRADED,
     timestamp: new Date().toISOString()
   }, { status: (degraded || providerDegraded) && !env.INFRA_ALLOW_DEGRADED ? 503 : 200 });

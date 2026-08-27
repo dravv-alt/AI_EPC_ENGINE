@@ -45,7 +45,7 @@ export type CaptureTeachbackInput = {
 
 export async function captureTeachbackNote(tx: DbTx, input: CaptureTeachbackInput) {
   const provider = getModelProvider();
-  const embedding = await provider.embed(input.embedText);
+  const embedding = await provider.embed(input.embedText, "passage");
   const [note] = await tx
     .insert(teachbackNotes)
     .values({

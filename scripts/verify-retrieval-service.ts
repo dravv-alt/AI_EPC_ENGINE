@@ -109,7 +109,7 @@ async function main() {
   const provider = getEmbeddingProvider();
   const vector = await provider.embed(guardText);
   const currentTag = activeEmbeddingModelTag();
-  const staleTag = currentTag === "bge-base-en-v1.5" ? "deterministic-mock-v1" : "bge-base-en-v1.5";
+  const staleTag = currentTag === "bge-base-en-v1.5:passage" ? "deterministic-mock-v1" : "bge-base-en-v1.5:passage";
 
   const [inserted] = await db.insert(knowledgeChunks).values({
     tenantId: project.tenantId,

@@ -5,6 +5,7 @@ import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
 import { edges, evidence, requirements } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
 import { captureTeachbackNote } from "@/lib/teachback/capture";
 import { surfaceTeachbackAdvisory } from "@/lib/teachback/surface";
 
@@ -55,7 +56,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ evi
         });
       }
     });
+    // validityState and the PROVES edges written above are direct inputs to
+    // gate readiness. gates.status is only ever derived by this call, so
+    // without it /systems, /projects and the turnover gate picker keep showing
+    // a stale status while the live /readiness view already disagrees.
+    const readiness = await persistProjectGateReadiness(record.projectId);
     await writeAuditEvent({ projectId: record.projectId, actorId: actor.userId, action: `evidence.${next}`, entityType: "evidence", entityId: record.id, before: { validityState: record.validityState }, after: { validityState: next, requirementIds: parsed.data.requirementIds, note: parsed.data.note } });
-    return NextResponse.json({ evidence: { ...record, validityState: next }, linkedRequirementIds: parsed.data.requirementIds });
+    return NextResponse.json({ evidence: { ...record, validityState: next }, linkedRequirementIds: parsed.data.requirementIds, readiness });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to review evidence." }, { status: error instanceof AccessError ? error.status : 500 }); }
 }

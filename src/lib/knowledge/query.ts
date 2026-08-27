@@ -2,7 +2,7 @@ import { and, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
-import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
+import { activeEmbeddingModelTag, embedPassages, getModelProvider } from "@/lib/model/provider";
 import { rerankCitations } from "@/lib/knowledge/rerank";
 
 // ADR-021 scope dimensions: a requirement or evidence row anchored to the
@@ -85,9 +85,7 @@ async function catchUpProjectEmbeddings(projectId: string) {
 
   if (!pending.length) return 0;
   const provider = getModelProvider();
-  const vectors = provider.embedMany
-    ? await provider.embedMany(pending.map((chunk) => chunk.content), "passage")
-    : await Promise.all(pending.map((chunk) => provider.embed(chunk.content, "passage")));
+  const vectors = await embedPassages(provider, pending.map((chunk) => chunk.content));
   for (const [index, chunk] of pending.entries()) {
     const vector = vectors[index];
     if (!vector) continue;
@@ -244,14 +242,12 @@ export async function retrieveSemanticCitations(options: {
     .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
     .leftJoin(documents, eq(documentVersions.documentId, documents.id))
     .where(and(...filters))
-    // Preserve the obvious exact-text invariant before semantic ranking. Some
-    // hosted embedding models quantize near-duplicate engineering clauses to
-    // the same cosine distance; an identical controlled excerpt must still be
-    // the first result.
-    .orderBy(
-      sql`case when ${knowledgeChunks.content} = ${options.query} then 0 else 1 end`,
-      sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`
-    )
+    // Order by vector distance alone. A non-indexable leading sort key (for
+    // example an exact-text CASE) prevents the ivfflat index
+    // knowledge_chunks_embedding_idx from serving this ORDER BY and forces a
+    // full scan of the project's chunks. The exact-text invariant is applied
+    // to the fetched candidates below instead.
+    .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
     .limit(limit * fetchMultiplier);
 
   // Do not silently degrade a freshly processed document to keyword matching
@@ -278,10 +274,7 @@ export async function retrieveSemanticCitations(options: {
       .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
       .leftJoin(documents, eq(documentVersions.documentId, documents.id))
       .where(and(...filters))
-      .orderBy(
-        sql`case when ${knowledgeChunks.content} = ${options.query} then 0 else 1 end`,
-        sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`
-      )
+      .orderBy(sql`${knowledgeChunks.embedding} <=> ${vectorLiteral}::vector`)
       .limit(limit * fetchMultiplier);
   }
 
@@ -310,5 +303,13 @@ export async function retrieveSemanticCitations(options: {
   // threshold-qualified result, use the exact metadata-scoped lexical ranker.
   if (!candidates.length && env.EMBEDDING_PROVIDER !== "service")
     return retrieveLexicalCitations({ ...options, limit });
-  return rerankCitations(options.query, candidates, limit);
+  // Preserve the exact-text invariant that the SQL ORDER BY deliberately no
+  // longer encodes: some hosted embedding models quantize near-duplicate
+  // engineering clauses to the same cosine distance, so an identical
+  // controlled excerpt must still rank first among the fetched candidates.
+  const exactQuery = options.query.trim();
+  const ordered = exactQuery
+    ? [...candidates].sort((a, b) => Number(b.content.trim() === exactQuery) - Number(a.content.trim() === exactQuery))
+    : candidates;
+  return rerankCitations(options.query, ordered, limit);
 }

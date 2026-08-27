@@ -107,9 +107,13 @@ export function CxWorkbench(props: { projectId: string; systems: System[]; gates
   const usableStandards = standards.filter((standard) => standard.extractionStatus === "completed" && standard.regionCount > 0);
   const scopedGates = selectedSystemId ? gates.filter((gate) => gate.systemId === selectedSystemId) : [];
   const scopedAssets = selectedSystemId ? assets.filter((asset) => asset.systemId === selectedSystemId) : [];
-  const visibleChecklists = checklists.filter(
-    (checklist) => checklist.id === selectedChecklistId,
-  );
+  // The prop is re-fetched by the server component after every authoring
+  // action, so the id captured at mount can point at a checklist that no
+  // longer exists — or at "" for a project that had none. Fall back to the
+  // first row instead of rendering an empty detail pane.
+  const activeChecklist =
+    checklists.find((checklist) => checklist.id === selectedChecklistId) ?? checklists[0];
+  const visibleChecklists = activeChecklist ? [activeChecklist] : [];
   return <div className="workflow-stack">
     <details className="surface cx-authoring-tools">
       <summary>Authoring tools · standards and new test plans</summary>
@@ -129,7 +133,7 @@ export function CxWorkbench(props: { projectId: string; systems: System[]; gates
           const recorded = rowRecord ? results.filter((result) => result.testRecordId === rowRecord.id).length : 0;
           const system = systems.find((item) => item.id === checklist.systemId);
           const creator = people.find((person) => person.id === checklist.createdBy)?.name ?? "Project team";
-          const isSelected = checklist.id === selectedChecklistId;
+          const isSelected = checklist.id === activeChecklist?.id;
           return <button type="button" role="row" key={checklist.id} className={isSelected ? "is-selected" : ""} onClick={() => setSelectedChecklistId(checklist.id)}>
             <span><b>{checklist.title}</b><small>{creator} · {new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(checklist.createdAt))}</small></span>
             <span>{system?.name ?? "Controlled project system"}</span>

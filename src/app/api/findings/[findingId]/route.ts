@@ -1,9 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { clearAlerts } from "@/lib/alerts/write-alert";
 import { writeAuditEvent } from "@/lib/audit/write-event";
 import { db } from "@/lib/db/client";
-import { findings, projectMembers } from "@/lib/db/schema";
+import { cxStepResults, findings, projectMembers } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { persistProjectGateReadiness } from "@/lib/readiness/project-readiness";
 
@@ -44,6 +45,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fi
       updatedAt: new Date()
     }).where(and(eq(findings.id, findingId), eq(findings.version, parsed.data.expectedVersion))).returning();
     if (!updated) return NextResponse.json({ error: "This finding changed after you opened it. Reload before saving." }, { status: 409 });
+    // A proposed test failure raises a TEST_FAILED alert keyed by its step and
+    // test record (lib/events/process.ts). Human disposition of the finding is
+    // the only thing that resolves it, so without this the Alert Center keeps
+    // showing "Commissioning test step requires action" indefinitely after the
+    // engineer has already closed it.
+    if (closing) {
+      const stepResult = await db.query.cxStepResults.findFirst({ where: eq(cxStepResults.findingId, findingId) });
+      if (stepResult) await clearAlerts(existing.projectId, `test:${stepResult.testRecordId}:${stepResult.stepId}`);
+    }
     await writeAuditEvent({ projectId: existing.projectId, actorId: actor.userId, action: `finding.${closing ? "closed" : reopening ? "reopened" : "updated"}`, entityType: "finding", entityId: findingId, before: existing, after: updated });
     const readiness = await persistProjectGateReadiness(existing.projectId);
     return NextResponse.json({ finding: updated, readiness });

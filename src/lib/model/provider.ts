@@ -359,7 +359,6 @@ export class NimModelProvider implements GenerationProvider {
             temperature: 0,
             max_tokens: request.limits?.outputMaxTokens ?? env.MODEL_OUTPUT_MAX_TOKENS,
             response_format: { type: "json_object" },
-            reasoning_effort: "low",
             messages: [
               { role: "system", content: systemMessage },
               { role: "user", content: userContent }
@@ -577,7 +576,11 @@ export function activeEmbeddingModelTag(): string {
   if (env.EMBEDDING_PROVIDER === "ollama") return env.OLLAMA_EMBEDDING_MODEL;
   if (env.EMBEDDING_PROVIDER === "gemini") return env.GEMINI_EMBEDDING_MODEL;
   if (env.EMBEDDING_PROVIDER === "pinecone") return `pinecone:${env.PINECONE_EMBEDDING_MODEL}:${EMBEDDING_DIMENSIONS}`;
-  return env.EMBEDDING_PROVIDER === "service" ? "bge-base-en-v1.5" : "deterministic-mock-v1";
+  // The tag encodes the input-kind convention, not just the model: the
+  // retrieval service embeds passages and queries into asymmetric spaces, and
+  // chunks written before that split used the query prompt. Bumping the tag is
+  // what makes catchUpProjectEmbeddings / reindex-embeddings re-embed them.
+  return env.EMBEDDING_PROVIDER === "service" ? "bge-base-en-v1.5:passage" : "deterministic-mock-v1";
 }
 
 /**
@@ -677,6 +680,27 @@ export async function embeddingProviderHealth(): Promise<ProviderHealth> {
 // Compatibility shim for existing call sites that expect one object exposing
 // both generateStructured and embed. Each method still resolves against its
 // own independent provider switch.
+/**
+ * Single passage-embedding path shared by the durable worker and the
+ * interactive catch-up in knowledge/query.ts. Both must use the same input
+ * kind, or chunks stamped with the same embeddingModel tag end up in two
+ * different vector spaces and nothing re-embeds them. Batches through
+ * embedMany when the provider supports it, otherwise embeds with bounded
+ * concurrency so a local model server is not hit with the whole page at once.
+ */
+export const PASSAGE_EMBED_CONCURRENCY = 4;
+
+export async function embedPassages(provider: ModelProvider, texts: string[]): Promise<number[][]> {
+  if (!texts.length) return [];
+  if (provider.embedMany) return provider.embedMany(texts, "passage");
+  const vectors: number[][] = [];
+  for (let index = 0; index < texts.length; index += PASSAGE_EMBED_CONCURRENCY) {
+    const window = texts.slice(index, index + PASSAGE_EMBED_CONCURRENCY);
+    vectors.push(...await Promise.all(window.map((text) => provider.embed(text, "passage"))));
+  }
+  return vectors;
+}
+
 export function getModelProvider(): ModelProvider {
   const generation = getGenerationProvider();
   const embedding = getEmbeddingProvider();
