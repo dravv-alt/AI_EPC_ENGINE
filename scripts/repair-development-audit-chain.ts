@@ -37,14 +37,23 @@ async function main() {
   const projectId = process.argv.find((argument) =>
     argument.startsWith("--project="),
   )?.slice("--project=".length) ?? developmentProjectId;
-  if (projectId !== developmentProjectId) {
-    throw new Error("This guarded utility may repair only the development project.");
+  // A chain fork blocks every audit write, and audit writes accompany every
+  // mutation, so a forked project is frozen until it is repaired. Non-seed
+  // projects therefore need a route back — behind a second explicit flag, and
+  // still never in production.
+  if (
+    projectId !== developmentProjectId &&
+    !process.argv.includes("--allow-non-development-project")
+  ) {
+    throw new Error(
+      `Refusing to repair ${projectId}: pass --allow-non-development-project to repair a project other than the development seed.`,
+    );
   }
 
   const project = await db.query.projects.findFirst({
     where: eq(projects.id, projectId),
   });
-  if (!project) throw new Error("Development project not found.");
+  if (!project) throw new Error(`Project ${projectId} not found.`);
 
   const before = await verifyAuditChain(projectId);
   if (before.valid) {
