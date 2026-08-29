@@ -172,6 +172,14 @@ export function densifyRoute(controlPoints: RawRoutePoint[]): DecomposedWaypoint
 }
 
 /**
+ * Alias for densifyRoute for geodesic decomposition callers.
+ */
+export const decomposeRouteGeodesic = (
+  controlPoints: RawRoutePoint[],
+  _stepNm?: number
+): DecomposedWaypoint[] => densifyRoute(controlPoints);
+
+/**
  * Interpolates the estimated real-time vessel coordinates [lat, lng] along a multi-segment route polyline
  * given the voyage elapsed progress fraction (0.0 to 1.0).
  */
