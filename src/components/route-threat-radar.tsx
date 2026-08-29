@@ -518,7 +518,7 @@ export function RouteThreatRadar({
                     [{causalExplanation ? `+${causalExplanation.uncertaintyInterval.p10OptimisticHours.toFixed(1)}h – +${causalExplanation.uncertaintyInterval.p90ConservativeHours.toFixed(1)}h` : "Analyzing spread..."}]
                   </small>
                 </div>
-              </div>    </div>
+              </div>
 
               {/* Waypoint Corridor Threat Sampler */}
               <div className="corridor-sampler-section">
