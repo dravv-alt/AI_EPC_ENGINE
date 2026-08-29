@@ -236,31 +236,35 @@ export function interpolatePositionAlongPolyline(
 }
 
 /**
- * Computes timeline elapsed progress (0.0 - 1.0) given departure and arrival timestamps.
+ * Computes timeline elapsed progress (0.0 to 1.0) strictly in relation to:
+ * - Current real-time clock (`now`)
+ * - Departure timestamp (`departureDate`)
+ * - Target planned delivery / weather-adjusted arrival (`plannedDeliveryDate`)
  */
 export function computeTimelineProgress(
   departureDate: Date | string | null,
-  arrivalDate: Date | string | null,
+  plannedDeliveryDate: Date | string | null,
   now: number = Date.now()
 ): number {
-  if (!arrivalDate) return 0.50; // Default mid-passage estimate
+  if (!plannedDeliveryDate) return 0.50;
 
-  const arrivalMs = new Date(arrivalDate).getTime();
-  if (isNaN(arrivalMs)) return 0.50;
+  const targetArrivalMs = new Date(plannedDeliveryDate).getTime();
+  if (isNaN(targetArrivalMs)) return 0.50;
 
   let departureMs = departureDate ? new Date(departureDate).getTime() : NaN;
-  if (isNaN(departureMs) || departureMs >= arrivalMs) {
-    // If departure unrecorded, assume typical 7-day passage relative to ETA
-    departureMs = arrivalMs - 7 * 24 * 3600_000;
+  if (isNaN(departureMs) || departureMs >= targetArrivalMs) {
+    // If departure date is unrecorded, calibrate standard transit duration ending at target planned delivery
+    departureMs = targetArrivalMs - 7 * 24 * 3600_000;
   }
 
-  const totalDuration = arrivalMs - departureMs;
-  if (totalDuration <= 0) return 1.0;
+  const totalVoyageDurationMs = targetArrivalMs - departureMs;
+  if (totalVoyageDurationMs <= 0) return 1.0;
 
-  const elapsed = now - departureMs;
-  const rawProgress = elapsed / totalDuration;
+  // Exact real-time elapsed duration relative to current time
+  const elapsedMs = now - departureMs;
+  const progressRatio = elapsedMs / totalVoyageDurationMs;
 
-  // Fully continuous progression from 0.0 (departure) to 1.0 (arrival)
-  return Math.max(0.0, Math.min(1.0, rawProgress));
+  // Fully continuous progression from 0.0 (origin departure) to 1.0 (delivered at destination)
+  return Math.max(0.0, Math.min(1.0, progressRatio));
 }
 
