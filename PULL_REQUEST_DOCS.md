@@ -1,80 +1,108 @@
-# Pull Request Documentation: Layer 3 Maritime Logistics & Predictive Corridor Intelligence
+# Pull Request Documentation: Layer 3 Maritime Logistics, 6-Phase Multimodal Freight Lifecycle & Predictive Corridor Intelligence
 
 **Branch**: `SHIPMENT-FIX(1)`  
 **Target Branch**: `main` (or `DRAVVYA-FINAL-FIX-BRANCH`)  
-**Scope**: End-to-end implementation of Kwon (2008) Naval Hydrodynamics, Dual-Pass NWP Weather Assimilation, XGBoost Quantile Regressors $[p10, p50, p90]$, Multi-Vendor AIS Live Streaming Ingestion, Two-Tier Causal Explainability, and Theme-Harmonized UI.
+**Scope**: Complete 6-Phase Multimodal Supply Chain Lifecycle, Kwon (2008) Naval Hydrodynamics, Dynamic Corridor Lead-Time Engine, Dual-Pass NWP Weather Assimilation, XGBoost Quantile Regressors $[p10, p50, p90]$, Multi-Vendor AIS Live Streaming Ingestion, Two-Tier Causal Explainability, and Theme-Harmonized Universal Lucide Iconography.
 
 ---
 
 ## 1. Executive Summary
 
-This PR establishes a production-grade **Predictive Logistics & Route Threat Radar Engine** for EPC capital projects. The system replaces naive linear speed approximations with peer-reviewed naval architecture equations (Kwon 2008), dual-pass numerical weather prediction (ECMWF/GFS/ERA5), and machine-learned operational quantile regressors $[p10, p50, p90]$.
+This PR delivers a production-grade **AI Engineering, Procurement, and Construction (EPC) Logistics Simulation Engine**. The system moves beyond isolated ocean-weather models to simulate the **entire door-to-site capital freight lifecycle** across all 6 real-world operational phases (from factory crating in Hyderabad to final de-stuffing at a Florida data center site).
 
-The UI is fully harmonized with the Pramana design system tokens (`html[data-palette]`), eliminating floating dark slide-over drawers in favor of a native, segmented tab layout inside the Threat Deep Dive Deck with interactive controls and 100% theme awareness across all 8 light/dark presets.
+Key capabilities added:
+1. **6-Phase End-to-End Multimodal Supply Chain Pipeline**: Decomposes total pipeline lead time ($\Delta T_{\text{total}} = \sum_{i=1}^6 \Delta t_i$) across Procurement/VGM, Inland Rail/ICEGATE, Origin Port CY Cut-off, Blue-Water Ocean Transit, Destination US CBP Clearance, and Last-Mile Drayage.
+2. **Dynamic Corridor Lead-Time Estimator**: Parameterizes distances, railway network factors ($1.35\times$), port dwell benchmarks (World Bank CPPI 2023), and customs regulatory regimes (India ICEGATE, US CBP ACE, EU ATLAS).
+3. **Automated Target Planned Arrival & Live ROS Float Buffer**: Target planned arrival is automatically derived from the 6-phase matrix, allowing EPC managers to focus purely on the immutable **Required On-Site (ROS)** deadline.
+4. **Naval Physics & ML Uncertainty Fusion**: Kwon (2008) naval hydrodynamics combined with a physics-informed GBDT operational quantile residual $[p10, p50, p90]$ and SHAP feature attributions.
+5. **Universal Lucide SVG Iconography**: Unified, theme-harmonized vector icons across all journey date strips, modals, and telemetry decks.
 
 ---
 
-## 2. Summary of Touched Files & Architecture Map
+## 2. Architecture Map & Touched Modules
 
-| Component / Layer | Key Files Touched / Added | Purpose & Specific Improvement |
+| Component / Layer | Key Files | Purpose & Capabilities |
 | :--- | :--- | :--- |
-| **Phase 0–1: Naval Physics** | `src/lib/maritime/kwon-speed-loss.ts`<br>`src/lib/maritime/vessel-profiles.ts`<br>`src/lib/maritime/relative-angle.ts`<br>`src/lib/maritime/beaufort.ts` | Implements Kwon (2008) empirical speed loss formula parameterized for 8 vessel classes (ULCV, Capesize, VLCC, LNG, Heavy-Lift, Heavy Deck Carrier). Calculates true encounter angle $\theta_{\text{rel}}$ ($0^\circ-180^\circ$) and Beaufort numbers ($BN = 0-12$) from wind/wave vectors. |
-| **Phase 2–3: Route & Weather Ingestion** | `src/lib/maritime/route-decomposition.ts`<br>`src/lib/maritime/weather-ingestion.ts`<br>`src/lib/maritime/chokepoints.ts`<br>`src/lib/maritime/delay-integrator.ts` | Slerp geodesic route decomposition into uniform $\le 50\text{nm}$ legs. Dual-pass forward ETA propagation against ECMWF/GFS atmospheric and marine wave models. Spatial detection for 6 global chokepoints (Suez, Malacca, Panama, Bab-el-Mandeb, Hormuz, Dover). |
-| **Phase 4: Caching, Audit & Alerting** | `src/lib/maritime/weather-cache.ts`<br>`src/lib/maritime/jobs/audit-log.ts`<br>`src/lib/maritime/jobs/delta-alerting.ts`<br>`src/lib/maritime/jobs/reevaluate-shipment.ts` | $0.25^\circ \times 0.25^\circ$ spatial grid caching with 3-hour temporal epoch bucketing. SHA-256 immutable calculation audit log recorder. Noise-filtering delta engine suppressing minor weather wobbles ($< 2.0\text{h}$) while triggering instant alerts on critical deviations. |
-| **Phase 5: Ground-Truth Dataset Pipeline** | `src/lib/maritime/synthetic/scenario-generator.ts`<br>`src/lib/maritime/synthetic/noise-model.ts`<br>`src/lib/maritime/synthetic/historical-weather-client.ts`<br>`src/lib/maritime/synthetic/dataset-store.ts`<br>`dataset_maritime.json` | 1,584 stratified trade-corridor scenarios combining 11 global trade corridors, 8 vessel classes, laden/ballast conditions, and historical ERA5 reanalysis weather. Injects heavy-tailed Cauchy operational port delays alongside Gaussian transit variance. |
-| **Phase 6: ML Quantile Model & Backtest** | `src/ml/train_quantile_xgboost.py`<br>`src/lib/maritime/ml/quantile-regression.ts`<br>`src/lib/maritime/ml/feature-extraction.ts`<br>`src/lib/maritime/ml/shap-explainer.ts`<br>`src/lib/maritime/ml/backtest.ts` | Python XGBoost quantile regressors ($\alpha \in \{0.1, 0.5, 0.9\}$) predicting residual deviation on top of physics baseline. Leak-free group-split backtesting across unseen voyages with TreeSHAP and localized feature attribution. |
-| **Phase 7–8: Live AIS Streaming & Telemetry** | `src/lib/maritime/adapters/ais-ingestion-adapter.ts`<br>`src/lib/maritime/causal-explainability.ts`<br>`src/lib/maritime/jobs/drift-monitor.ts`<br>`src/lib/maritime/delay-taxonomy.ts` | Live multi-vendor AIS normalizer (MarineTraffic JSON & Spire Maritime WSS). Cross-Track Error ($XTE$) calculation, destination port geofencing ($\le 3\text{nm}$, $SOG \le 1.5\text{ kn}$), automated voyage realization logging, and two-tier causal delay decomposition. |
-| **Phase 9: UI Integration & Theme System** | `src/components/route-threat-radar.tsx`<br>`src/components/shipment-workbench.tsx`<br>`src/app/globals.css` | Segmented tab layout (`.threat-deck-tabs`) toggling Corridor Telemetry and Causal Why Breakdown. 100% theme awareness with CSS variables (`--surface`, `--line`, `--ink`, `--primary`), normalized manifest threat badges (`ON TRACK`, `DELAY RISK`, `CRITICAL THREAT`), and zero-clamped progress fills. |
+| **Multimodal Freight Architecture** | `src/lib/maritime/fcl-corridor-simulator.ts`<br>`src/lib/maritime/dynamic-freight-estimator.ts` | 6-Phase supply chain pipeline, conditional delay modifiers (Monsoon $+3\text{d}$, Hurricane $+4\text{d}$, Diwali $+5\text{d}$, CY Rollover $+7\text{d}$, CBP Exam $+5\text{d}$), and geographic corridor estimator. |
+| **Naval Physics & Hydrodynamics** | `src/lib/maritime/kwon-speed-loss.ts`<br>`src/lib/maritime/vessel-profiles.ts`<br>`src/lib/maritime/relative-angle.ts`<br>`src/lib/maritime/beaufort.ts` | Implements Kwon (2008) empirical speed loss formula parameterized for 8 vessel classes. Calculates true encounter angles $\theta_{\text{rel}}$ ($0^\circ-180^\circ$) and Beaufort numbers ($BN = 0-12$). |
+| **Route & Weather Ingestion** | `src/lib/maritime/route-decomposition.ts`<br>`src/lib/maritime/weather-ingestion.ts`<br>`src/lib/maritime/chokepoints.ts`<br>`src/lib/maritime/delay-integrator.ts`<br>`src/lib/weather/route-threats.ts` | Geodesic route decomposition ($\le 50\text{nm}$ legs), dual-pass forward NWP assimilation (ECMWF/GFS/ERA5), spatial chokepoint queuing, and continuous aerodynamic wind/convective rain delay formulation. |
+| **Caching, Audit & Drift Monitoring** | `src/lib/maritime/weather-cache.ts`<br>`src/lib/maritime/jobs/audit-log.ts`<br>`src/lib/maritime/jobs/delta-alerting.ts`<br>`src/lib/maritime/jobs/drift-monitor.ts` | $0.25^\circ \times 0.25^\circ$ spatial grid caching with 3h temporal epoch bucketing. SHA-256 calculation audit logs and production prediction drift tracking ($MAE_{\text{physics}}$ vs $MAE_{\text{ML}}$). |
+| **ML Quantile Models & Causal Explainability** | `src/lib/maritime/ml/quantile-regression.ts`<br>`src/lib/maritime/ml/shap-explainer.ts`<br>`src/lib/maritime/causal-explainability.ts`<br>`src/lib/maritime/delay-taxonomy.ts` | Two-tier causal delay waterfall: (1) 6-Phase End-to-End Multimodal Accumulation, (2) Deep-Ocean Hydrodynamic & ML Operational Feature Attribution with $[p10, p50, p90]$ quantile bands. |
+| **UI Integration & Universal Icons** | `src/components/route-threat-radar.tsx`<br>`src/components/shipment-workbench.tsx`<br>`src/app/globals.css` | Native segmented deck tabs, live schedule editor with auto-computed planned ETA, live EPC float buffer calculation, and universal `lucide-react` SVG iconography. |
 
 ---
 
-## 3. Specific Improvements & Bug Resolutions
+## 3. Detailed Mathematical & Operational Formulations
 
-### A. Strict Anti-Slop & Theme System Harmonization
-- **Theme Palette Integration**: Bound all threat radar cards and causal breakdown components directly to `html[data-palette]` tokens. The entire UI dynamically updates across all 8 themes (*Soft Pop*, *Pramana Light*, *Modern Minimal*, *Midnight Bloom*, *Mocha Mousse*, *Mono*, *Nature*, *Northern Lights*).
-- **Embedded Segmented Layout**: Removed the invasive floating slide-over drawer modal (`causal-explainability-drawer.tsx`). Added a dual-tab segmented control (`Radio` Telemetry vs. `Sparkles` Causal Breakdown) natively inside the Threat Deep Dive deck.
-- **Manifest Badge Normalization**: Fixed raw unstyled `"AMBER"` text tags. All shipments are now categorized into color-coded EPC status tiers with subtle backgrounds and borders (`ON TRACK`, `DELAY RISK`, `CRITICAL THREAT`, `DELIVERED`).
+### A. 6-Phase End-to-End Supply Chain Lead Time
+$$\Delta T_{\text{total}} = \underbrace{\Delta t_{\text{Phase 1}}}_{\text{Procurement/VGM}} + \underbrace{\Delta t_{\text{Phase 2}}}_{\text{Inland Rail/ICEGATE}} + \underbrace{\Delta t_{\text{Phase 3}}}_{\text{Origin CY Cut-off}} + \underbrace{\Delta t_{\text{Phase 4}}}_{\text{Kwon Physics + ML Residual}} + \underbrace{\Delta t_{\text{Phase 5}}}_{\text{Destination US CBP}} + \underbrace{\Delta t_{\text{Phase 6}}}_{\text{Last-Mile Drayage}}$$
 
-### B. Progress Bar & Metric Clamping
-- **Zero Percent Progress Bar Stubs**: Fixed `Math.max(4, ...)` floor which drew 4% wide stubs on $0.0\%$ items. Clamped to strict `0%` whenever $pct \le 0$.
-- **ML Residual Calibration**: Corrected the client-side uncertainty adapter to compute empirical operational corrections ($+4\%$ throttle/port variance) on top of Kwon physics, ensuring non-zero attribution bars match reported model residuals.
-
-### C. Type Safety & Delay Taxonomy
-- **Robust Category Access**: Defensive null-coalescing on `factor.percentageOfTotal` and `leg.primaryCause.category` preventing runtime crashes on corrupted or incomplete AIS/NWP payloads. Unclassified legs fail gracefully into an explicit `"Unclassified Telemetry Variance"` bucket rather than fabricating a cause.
+1. **Phase 1: Procurement, Export Packaging & Booking** ($72\text{h} / 3\text{d}$ baseline): ASTM D3951 heavy crating, SOLAS VGM weighbridge certification, forwarder container booking lock.
+2. **Phase 2: Inland Rail Haulage & ICEGATE Customs** ($168\text{h} / 7\text{d}$ baseline): $709\text{ km}$ rail corridor (Sanathnagar ICD $\rightarrow$ JNPT), CONCOR flatbed marshaling, ICEGATE Let Export Order (LEO) clearance.
+3. **Phase 3: Origin Port Operations & Strict CY Cut-off** ($96\text{h} / 4\text{d}$ baseline): World Bank CPPI terminal dwell, strict 48h carrier CY cutoff deadline, gantry crane stowage.
+4. **Phase 4: Blue-Water Ocean Voyage (~9,317 nm)** ($576\text{h} / 24\text{d}$ baseline): Kwon (2008) wave diffraction pitch + windage drag + Suez convoy navigation + GBDT operational residual.
+5. **Phase 5: Destination Port & US CBP Clearance** ($96\text{h} / 4\text{d}$ baseline): Quayside discharge, ISF-10 automated matching, Form 7501 ACE entry, VACIS non-intrusive gamma scan.
+6. **Phase 6: Last-Mile Florida Drayage & De-Stuffing** ($72\text{h} / 3\text{d}$ baseline): Highway heavy-haul drayage, site rigging/uncrating, empty container depot return within 3–5d free detention.
 
 ---
 
-## 4. Automated Verification & Test Matrix
+## 4. Known Weaknesses & Production Edge-Cases of the Newly Added Module
 
-All 7 test suites pass sequentially (100% Green, zero skips, zero errors):
+While the 6-phase multimodal engine is a major leap in capital freight simulation, the following **known limitations and edge cases** should be noted for future iterative refinement:
+
+1. **Railway Topology Winding Approximation**:
+   - *Current Design*: Inland rail distances use great-circle geodesic distances scaled by an empirical $1.35\times$ railway track tortuosity coefficient.
+   - *Limitation*: Does not perform exact OpenRailwayMap graph pathfinding for dynamic junction routing or rail siding bottlenecks.
+2. **Static Port Cut-Off Rules (48h Standard)**:
+   - *Current Design*: Employs the industry-standard 48-hour Container Yard (CY) Cut-off before vessel berthing.
+   - *Limitation*: Certain transshipment megahubs (e.g. Singapore PSA, Shanghai Yangshan) enforce dynamic 24h to 36h cutoffs depending on ocean carrier alliance agreements (2M, Ocean Alliance, THE Alliance).
+3. **Single Regulatory Track per Jurisdiction**:
+   - *Current Design*: Models standard commercial import entries (e.g. US CBP Form 7501 ACE Entry, India ICEGATE Shipping Bill, EU ATLAS T1).
+   - *Limitation*: Does not model specialized In-Bond transits (e.g. US CBP Form 7512 IT/T&E), Foreign Trade Zones (FTZ), or bonded free-trade warehousing exemptions where customs is deferred to the site.
+4. **Deterministic Physical Inspection Triggering**:
+   - *Current Design*: Intensive customs examinations (e.g., CBP Intensive Physical Exam hold $+5\text{d}$) are triggered deterministically via scenario flags.
+   - *Limitation*: In live production, customs examinations follow a stochastic Bernoulli random process conditioned on shipper historical compliance scoring and HS code risk weighting.
+5. **Open-Meteo Spatial Mesh Resolution ($0.25^\circ \times 0.25^\circ$)**:
+   - *Current Design*: Grid caching and weather sampling operate on a $0.25^\circ$ (~28 km) grid.
+   - *Limitation*: Micro-scale convective marine squalls ($< 5\text{ km}$) can be slightly smoothed out compared to high-resolution coastal radar doppler.
+
+---
+
+## 5. Automated Verification & Test Matrix
+
+All 4 test suites pass sequentially (100% Green, zero errors):
 
 ```bash
-node --import tsx src/lib/maritime/__tests__/physics.test.mjs
-node --import tsx src/lib/maritime/__tests__/route-weather.test.mjs
-node --import tsx src/lib/maritime/__tests__/orchestration.test.mjs
-node --import tsx src/lib/maritime/__tests__/synthetic.test.mjs
-node --import tsx src/lib/maritime/__tests__/ml_calibration.test.mjs
-node --import tsx src/lib/maritime/__tests__/ais_adapter.test.mjs
+node --import tsx src/lib/maritime/__tests__/dynamic_freight_estimator.test.mjs
+node --import tsx src/lib/maritime/__tests__/fcl_corridor_simulator.test.mjs
 node --import tsx src/lib/maritime/__tests__/production_telemetry.test.mjs
+node --import tsx src/lib/maritime/__tests__/ml_calibration.test.mjs
 ```
 
-### Verified Test Results Summary:
+### Verified Test Results:
 
-| Suite Name | Scope Tested | Result |
+| Test Suite | Scope Covered | Status |
 | :--- | :--- | :--- |
-| `physics.test.mjs` | Kwon (2008) naval physics, Beaufort force, relative angles, 8 vessel profiles | ✅ **Passed** (100% Green) |
-| `route-weather.test.mjs` | Slerp geodesic decomposition, 2-pass NWP weather assimilation, chokepoints | ✅ **Passed** (100% Green) |
-| `orchestration.test.mjs` | $0.25^\circ$ spatial grid caching, SHA-256 audit logging, delta alerting | ✅ **Passed** (100% Green) |
-| `synthetic.test.mjs` | 1,584 trade-corridor scenarios, heavy-tailed Cauchy noise, ERA5 archive client | ✅ **Passed** (100% Green) |
-| `ml_calibration.test.mjs` | Directional feature attribution, leak-free group split, $[p10, p90]$ 90% coverage | ✅ **Passed** (100% Green) |
-| `ais_adapter.test.mjs` | MarineTraffic & Spire AIS normalization, route snapping, geofence auto-realization | ✅ **Passed** (100% Green) |
-| `production_telemetry.test.mjs`| Two-tier causal breakdown, drift monitoring, corrupted payload error boundary | ✅ **Passed** (100% Green) |
+| `dynamic_freight_estimator.test.mjs` | Corridor differentiation, 44d Hyderabad $\rightarrow$ Florida FCL, regional customs (EU/USA), heavy transformer rigging | ✅ **Passed** (100% Green) |
+| `fcl_corridor_simulator.test.mjs` | 45-day algorithmic target, Indian Monsoon $+3\text{d}$, Hurricane $+4\text{d}$, CY Rollover $+7\text{d}$, CBP Exam $+5\text{d}$, LCL $+10\text{d}$ | ✅ **Passed** (100% Green) |
+| `production_telemetry.test.mjs` | Two-tier causal delay decomposition, drift tracking ($MAE_{\text{physics}}$ vs $MAE_{\text{ML}}$), incomplete payload fallback | ✅ **Passed** (100% Green) |
+| `ml_calibration.test.mjs` | Directional feature attribution, leak-free group split, $[p10, p90]$ quantile coverage | ✅ **Passed** (100% Green) |
 
 ---
 
-## 5. Local Git Commits on `SHIPMENT-FIX(1)`
+## 6. Git Commits on `SHIPMENT-FIX(1)`
 
 ```text
+e341f24 style(icons): replace action button and workbench manual entry emojis with universal Lucide SVG icons
+8c1576d style(icons): standardize UI on universal Lucide SVG icon system across journey date strip, schedule editor and causal breakdown
+614782e fix(radar): hoist dynamicEstimate hook before leadTimeHours to eliminate ReferenceError
+feed3df feat(ui): replace manual planned ETA input with engine auto-calculated Target Planned Arrival and live ROS float preview
+d0abe8d feat(estimator): build dynamic multimodal corridor lead-time estimator with geographic, port dwell & customs regime differentiation
+a4ff238 fix(weather): replace static 12h thunderstorm constant with continuous aerodynamic & convective delay formulation
+beda1b2 feat(causal): integrate 6-phase end-to-end multimodal delay waterfall and accumulation engine into threat radar
+863914f feat(maritime): add dynamic multi-phase freight lifecycle matrix to threat radar and flagship corridor preset to workbench
+6ddb413 feat(maritime): add interactive schedule date editor and departure/ETA/ROS persistence to threat radar
+cf1e6e7 feat(maritime): implement FCL data center equipment freight architecture matrix & simulation engine
 e6bf647 fix(ui): fix ML residual adjustment calculation and clamp 0% progress bars to 0% width
 60951cb fix(ui): normalize shipment manifest badges to ON TRACK, DELAY RISK, and CRITICAL THREAT
 afc6cbe fix(ui): clean up top right heading button and rely on segmented deck tabs
@@ -92,25 +120,3 @@ d9a7a7f feat(ui): seamlessly harmonize causal explainability with global theme s
 cfa69c7 feat(maritime): implement geodesic slerp decomposition & dual-pass NWP weather assimilation (Phases 2-3)
 958d96c feat(maritime): implement domain foundations & Kwon (2008) naval physics engine (Phases 0-1)
 ```
-
----
-
-## 6. How to Review & Merge
-
-1. Switch to the branch and inspect git status:
-   ```bash
-   git checkout SHIPMENT-FIX(1)
-   git status
-   ```
-2. Run the test suite:
-   ```bash
-   node --import tsx src/lib/maritime/__tests__/production_telemetry.test.mjs
-   ```
-3. Start the application:
-   ```bash
-   npm run dev
-   ```
-4. Visit `http://localhost:3000/shipments` to test:
-   - Live corridor threat sampling and gauge meters.
-   - Segmented tab switching between Telemetry and Causal "Why" Breakdown.
-   - Theme switching across all 8 presets in the **Choose a theme** modal.
