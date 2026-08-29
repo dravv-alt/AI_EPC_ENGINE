@@ -271,3 +271,193 @@ export function simulateFclPipeline(
     floatMarginDays,
   };
 }
+
+export interface Comprehensive6PhaseDelayDecomposition {
+  totalPredictedDelayHours: number;
+  totalPredictedDelayDays: number;
+  oceanWeatherDelayHours: number;
+  phaseDelays: {
+    phaseNumber: number;
+    phaseName: string;
+    phaseCode: string;
+    actor: string;
+    baselineDurationHours: number;
+    delayHours: number;
+    delayDays: number;
+    delayPercentOfTotal: number;
+    primaryDrivers: string[];
+  }[];
+  oceanHydrodynamicDelayHours: number;
+  inlandLogisticsDelayHours: number;
+  customsRegulatoryDelayHours: number;
+  portTerminalDelayHours: number;
+}
+
+/**
+ * Synthesizes the complete 6-phase end-to-end delay across procurement,
+ * inland rail, origin CY port cut-off, blue-water ocean voyage (Kwon physics + ML),
+ * destination US CBP clearance, and last-mile site drayage.
+ */
+export function decomposeComprehensive6PhaseDelay(params: {
+  oceanWeatherDelayHours: number;
+  isMonsoon?: boolean;
+  isHurricane?: boolean;
+  isDiwali?: boolean;
+  missedCyCutOff?: boolean;
+  cbpPhysicalExam?: boolean;
+  isLcl?: boolean;
+  portCongestion?: boolean;
+}): Comprehensive6PhaseDelayDecomposition {
+  const oceanWeatherDelay = Math.max(0, params.oceanWeatherDelayHours || 0);
+
+  // Phase 1: Procurement, VGM & Booking (Baseline: 72h / 3d)
+  let p1Delay = 0;
+  const p1Drivers: string[] = [];
+  if (params.isDiwali) {
+    p1Delay += 48; // +2d
+    p1Drivers.push("Diwali Factory Driver Shortage (+48.0h)");
+  }
+  if (params.isLcl) {
+    p1Delay += 96; // +4d
+    p1Drivers.push("LCL Consolidation Warehouse Dwell (+96.0h)");
+  }
+
+  // Phase 2: Inland Rail Haulage & ICEGATE Customs (Baseline: 168h / 7d)
+  let p2Delay = 0;
+  const p2Drivers: string[] = [];
+  if (params.isMonsoon) {
+    p2Delay += 72; // +3d
+    p2Drivers.push("Monsoon Waterlogging on Rail Corridor (+72.0h)");
+  }
+  if (params.isDiwali) {
+    p2Delay += 72; // +3d
+    p2Drivers.push("Diwali Inland Drayage Fleet Shortage (+72.0h)");
+  }
+
+  // Phase 3: Origin Port Operations & CY Cut-off (Baseline: 96h / 4d)
+  let p3Delay = 0;
+  const p3Drivers: string[] = [];
+  if (params.missedCyCutOff) {
+    p3Delay += 168; // +7d
+    p3Drivers.push("Missed 48h CY Cut-off: Weekly Vessel Rollover (+168.0h)");
+  }
+  if (params.portCongestion) {
+    p3Delay += 24; // +1d
+    p3Drivers.push("Origin Berth Congestion & Crane Queuing (+24.0h)");
+  }
+
+  // Phase 4: Blue-Water Ocean Voyage (Baseline: 576h / 24d)
+  let p4Delay = oceanWeatherDelay;
+  const p4Drivers: string[] = [];
+  if (oceanWeatherDelay > 0) {
+    p4Drivers.push(`Kwon (2008) Hydrodynamic & Weather Speed Loss (+${oceanWeatherDelay.toFixed(1)}h)`);
+  }
+  if (params.isHurricane) {
+    p4Delay += 72; // +3d
+    p4Drivers.push("Atlantic Hurricane Route Deviation (+72.0h)");
+  }
+
+  // Phase 5: Destination Port & US CBP Clearance (Baseline: 96h / 4d)
+  let p5Delay = 0;
+  const p5Drivers: string[] = [];
+  if (params.cbpPhysicalExam) {
+    p5Delay += 120; // +5d
+    p5Drivers.push("CBP Intensive Physical Inspection Hold & Demurrage (+120.0h)");
+  }
+  if (params.isHurricane) {
+    p5Delay += 24; // +1d
+    p5Drivers.push("Florida Port Closure & Berth Delay (+24.0h)");
+  }
+  if (params.isLcl) {
+    p5Delay += 144; // +6d
+    p5Drivers.push("Destination CFS De-consolidation & Bonded Release (+144.0h)");
+  }
+
+  // Phase 6: Last-Mile Florida Drayage & De-Stuffing (Baseline: 72h / 3d)
+  let p6Delay = 0;
+  const p6Drivers: string[] = [];
+
+  const totalDelayHours = Number((p1Delay + p2Delay + p3Delay + p4Delay + p5Delay + p6Delay).toFixed(1));
+  const totalDelayDays = Number((totalDelayHours / 24).toFixed(1));
+
+  const phaseList = [
+    {
+      phaseNumber: 1,
+      phaseName: "Phase 1: Procurement, VGM & Booking",
+      phaseCode: "procurement",
+      actor: "EPC Logistics / Forwarder",
+      baselineDurationHours: 72,
+      delayHours: Number(p1Delay.toFixed(1)),
+      delayDays: Number((p1Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p1Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p1Drivers.length ? p1Drivers : ["Standard export packing & VGM clearance on schedule"],
+    },
+    {
+      phaseNumber: 2,
+      phaseName: "Phase 2: Inland Rail Haulage & ICEGATE Customs",
+      phaseCode: "inland_export",
+      actor: "Customs Broker (CHA) / Rail Carrier",
+      baselineDurationHours: 168,
+      delayHours: Number(p2Delay.toFixed(1)),
+      delayDays: Number((p2Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p2Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p2Drivers.length ? p2Drivers : ["711km rail corridor operating on schedule"],
+    },
+    {
+      phaseNumber: 3,
+      phaseName: "Phase 3: Origin Port Operations & CY Cut-off",
+      phaseCode: "origin_port",
+      actor: "JNPT Port Terminal Operator",
+      baselineDurationHours: 96,
+      delayHours: Number(p3Delay.toFixed(1)),
+      delayDays: Number((p3Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p3Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p3Drivers.length ? p3Drivers : ["48h strict CY Cut-off met without rollover"],
+    },
+    {
+      phaseNumber: 4,
+      phaseName: "Phase 4: Blue-Water Ocean Voyage (~9,317 nm)",
+      phaseCode: "ocean_voyage",
+      actor: "Ocean Shipping Line (Maersk / CMA CGM)",
+      baselineDurationHours: 576,
+      delayHours: Number(p4Delay.toFixed(1)),
+      delayDays: Number((p4Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p4Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p4Drivers.length ? p4Drivers : ["Ocean passage operating at baseline 16–19 kts"],
+    },
+    {
+      phaseNumber: 5,
+      phaseName: "Phase 5: Destination Port & US CBP Clearance",
+      phaseCode: "dest_customs",
+      actor: "US Customs Broker / US CBP",
+      baselineDurationHours: 96,
+      delayHours: Number(p5Delay.toFixed(1)),
+      delayDays: Number((p5Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p5Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p5Drivers.length ? p5Drivers : ["ISF-10 matched, VACIS non-intrusive scan cleared"],
+    },
+    {
+      phaseNumber: 6,
+      phaseName: "Phase 6: Last-Mile Florida Drayage & De-Stuffing",
+      phaseCode: "last_mile",
+      actor: "US Intermodal Drayage Carrier",
+      baselineDurationHours: 72,
+      delayHours: Number(p6Delay.toFixed(1)),
+      delayDays: Number((p6Delay / 24).toFixed(1)),
+      delayPercentOfTotal: totalDelayHours > 0 ? Number(((p6Delay / totalDelayHours) * 100).toFixed(1)) : 0,
+      primaryDrivers: p6Drivers.length ? p6Drivers : ["Highway drayage to site on schedule"],
+    },
+  ];
+
+  return {
+    totalPredictedDelayHours: totalDelayHours,
+    totalPredictedDelayDays: totalDelayDays,
+    oceanWeatherDelayHours: oceanWeatherDelay,
+    phaseDelays: phaseList,
+    oceanHydrodynamicDelayHours: Number(p4Delay.toFixed(1)),
+    inlandLogisticsDelayHours: Number((p1Delay + p2Delay + p6Delay).toFixed(1)),
+    customsRegulatoryDelayHours: Number((p2Delay + p5Delay).toFixed(1)),
+    portTerminalDelayHours: Number((p3Delay + p5Delay).toFixed(1)),
+  };
+}
+

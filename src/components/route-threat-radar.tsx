@@ -34,6 +34,7 @@ import {
   computeTimelineProgress,
   decomposeRouteGeodesic,
 } from "@/lib/maritime/route-decomposition";
+import { decomposeComprehensive6PhaseDelay } from "@/lib/maritime/fcl-corridor-simulator";
 
 export type ThreatRadarShipment = MapShipment & {
   equipmentId: string | null;
@@ -486,6 +487,14 @@ export function RouteThreatRadar({
       }
     );
   }, [selected, vesselTelemetry, assessment]);
+
+  // Comprehensive 6-Phase Multimodal End-to-End Delay Decomposition
+  const sixPhaseDecomposition = useMemo(() => {
+    return decomposeComprehensive6PhaseDelay({
+      oceanWeatherDelayHours: vesselTelemetry.delayHours,
+      portCongestion: selected?.portCongestion,
+    });
+  }, [vesselTelemetry.delayHours, selected?.portCongestion]);
 
   return (
     <div className="threat-radar-container">
@@ -1197,6 +1206,60 @@ export function RouteThreatRadar({
                       <h4>Primary Delay Attribution</h4>
                       <p>{causalExplanation.primaryDriverSummary}</p>
                     </div>
+                  {/* 6-Phase Comprehensive Multimodal Delay Waterfall */}
+                  <div
+                    style={{
+                      background: "var(--surface-muted)",
+                      border: "1px solid var(--line)",
+                      borderRadius: "8px",
+                      padding: "12px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <b style={{ fontSize: "12px", color: "var(--ink)" }}>🏛️ 6-Phase End-to-End Supply Chain Delay Accumulation</b>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: sixPhaseDecomposition.totalPredictedDelayHours > 0 ? "#c84b3d" : "#5b7a6e" }}>
+                        Total Pipeline Delay: +{sixPhaseDecomposition.totalPredictedDelayHours.toFixed(1)}h (+{sixPhaseDecomposition.totalPredictedDelayDays}d)
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "8px" }}>
+                      {sixPhaseDecomposition.phaseDelays.map((phase) => (
+                        <div
+                          key={phase.phaseNumber}
+                          style={{
+                            padding: "8px 10px",
+                            background: "var(--surface)",
+                            border: `1px solid ${phase.delayHours > 0 ? "color-mix(in srgb, var(--primary) 35%, transparent)" : "var(--line)"}`,
+                            borderRadius: "6px",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "4px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <b style={{ color: "var(--ink)" }}>{phase.phaseName}</b>
+                            <span style={{ fontWeight: 700, color: phase.delayHours > 0 ? "var(--primary)" : "var(--muted)" }}>
+                              {phase.delayHours > 0 ? `+${phase.delayHours.toFixed(1)}h` : "0.0h"}
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "var(--muted)", fontSize: "10px" }}>
+                            <span>Actor: {phase.actor}</span>
+                            <span>Baseline: {phase.baselineDurationHours}h</span>
+                          </div>
+                          <div style={{ fontSize: "10px", color: phase.delayHours > 0 ? "#c98431" : "var(--muted)" }}>
+                            • {phase.primaryDrivers[0]}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "4px", fontSize: "11px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    🌊 Deep-Ocean Hydrodynamic &amp; Operational ML Factor Attribution
                   </div>
 
                   {/* 2-Column Causal Factor Decomposition Cards */}
