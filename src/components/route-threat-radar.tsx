@@ -25,6 +25,12 @@ import {
   Cpu,
   Eye,
   FileSpreadsheet,
+  Calendar,
+  Target,
+  Flag,
+  Edit3,
+  CheckCircle2,
+  Radar,
 } from "lucide-react";
 import { buildComprehensiveExplanation, ComprehensiveCausalExplanation } from "@/lib/maritime/causal-explainability";
 import { VESSEL_PROFILES } from "@/lib/maritime/vessel-profiles";
@@ -626,22 +632,22 @@ export function RouteThreatRadar({
                       border: "1px solid var(--line)",
                     }}
                   >
-                    <span>
-                      🛫 <b>Journey Start (Dep):</b>{" "}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <Calendar size={13} style={{ color: "var(--primary)" }} /> <b>Journey Start (Dep):</b>{" "}
                       {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
                         new Date((selected as any).createdAt || Date.now() - 5 * 86400000)
                       )}
                     </span>
                     <span>·</span>
-                    <span>
-                      🎯 <b>Target Planned Arrival:</b>{" "}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <Target size={13} style={{ color: "var(--primary)" }} /> <b>Target Planned Arrival:</b>{" "}
                       {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
                         new Date(selected.plannedEta)
                       )}
                     </span>
                     <span>·</span>
-                    <span>
-                      🛰️ <b>Weather-Adjusted Arrival:</b>{" "}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <Radar size={13} style={{ color: vesselTelemetry.delayHours > 0 ? "#c98431" : "var(--primary)" }} /> <b>Weather-Adjusted Arrival:</b>{" "}
                       <b style={{ color: vesselTelemetry.delayHours > 0 ? "#c98431" : "var(--primary)" }}>
                         {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
                           new Date(selected.weatherAdjustedEta ?? selected.plannedEta)
@@ -650,8 +656,8 @@ export function RouteThreatRadar({
                       </b>
                     </span>
                     <span>·</span>
-                    <span>
-                      🏁 <b>Site ROS Deadline:</b>{" "}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <Flag size={13} style={{ color: "#a91f32" }} /> <b>Site ROS Deadline:</b>{" "}
                       <b>{new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(selected.requiredOnSite))}</b>
                     </span>
                     <button
@@ -660,7 +666,7 @@ export function RouteThreatRadar({
                       style={{
                         marginLeft: "auto",
                         fontSize: "10px",
-                        padding: "2px 8px",
+                        padding: "3px 8px",
                         height: "auto",
                         display: "inline-flex",
                         alignItems: "center",
@@ -672,7 +678,7 @@ export function RouteThreatRadar({
                       }}
                       onClick={openScheduleEditor}
                     >
-                      ✏️ Edit Dates &amp; Times
+                      <Edit3 size={11} /> Edit Dates &amp; Times
                     </button>
                   </div>
 
@@ -692,11 +698,14 @@ export function RouteThreatRadar({
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div>
-                          <b style={{ fontSize: "13px", color: "var(--ink)" }}>🗓️ Edit Journey Schedule &amp; Arrival Dates</b>
-                          <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--muted)" }}>
-                            Modifying journey dates automatically recalculates live voyage progress, Kwon hydrodynamic speed loss, and EPC milestone float margins.
-                          </p>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <Calendar size={15} color="var(--primary)" />
+                          <div>
+                            <b style={{ fontSize: "13px", color: "var(--ink)" }}>Edit Journey Schedule &amp; Arrival Dates</b>
+                            <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--muted)" }}>
+                              Modifying journey dates automatically recalculates live voyage progress, Kwon hydrodynamic speed loss, and EPC milestone float margins.
+                            </p>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -711,7 +720,9 @@ export function RouteThreatRadar({
                       <form onSubmit={handleSaveSchedule} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px", fontSize: "11px" }}>
                           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🛫 Journey Start (Departure)</span>
+                            <span style={{ fontWeight: 600, color: "var(--ink)", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <Calendar size={12} /> Journey Start (Departure)
+                            </span>
                             <input
                               type="datetime-local"
                               value={editDepartureDate}
@@ -722,7 +733,9 @@ export function RouteThreatRadar({
                           </label>
 
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🎯 Target Planned Arrival (Auto-Calculated)</span>
+                            <span style={{ fontWeight: 600, color: "var(--ink)", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <Target size={12} /> Target Planned Arrival (Auto-Calculated)
+                            </span>
                             <div
                               style={{
                                 padding: "6px 10px",
@@ -740,14 +753,16 @@ export function RouteThreatRadar({
                                   ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(computedPlannedEta))
                                   : "—"}
                               </strong>
-                              <small style={{ fontSize: "10px", color: "var(--muted)" }}>
-                                ⚡ Departure + {(leadTimeHours / 24).toFixed(1)}d (6-Phase Multimodal Matrix)
+                              <small style={{ fontSize: "10px", color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                                <Zap size={10} /> Departure + {(leadTimeHours / 24).toFixed(1)}d (6-Phase Multimodal Matrix)
                               </small>
                             </div>
                           </div>
 
                           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🏁 Required On-Site (ROS) Deadline</span>
+                            <span style={{ fontWeight: 600, color: "var(--ink)", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                              <Flag size={12} /> Required On-Site (ROS) Deadline
+                            </span>
                             <input
                               type="datetime-local"
                               value={editRequiredOnSite}
@@ -786,8 +801,8 @@ export function RouteThreatRadar({
                                 gap: "6px",
                               }}
                             >
-                              <span>
-                                📊 <b>Projected Schedule Float:</b> {isBreach ? `-${Math.abs(floatDays)}d (Critical Path Breach)` : `+${floatDays}d Float Buffer before ROS`}
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                <Gauge size={12} /> <b>Projected Schedule Float:</b> {isBreach ? `-${Math.abs(floatDays)}d (Critical Path Breach)` : `+${floatDays}d Float Buffer before ROS`}
                               </span>
                               <span style={{ fontWeight: 700, color: isBreach ? "#a91f32" : isTight ? "#c98431" : "#5b7a6e" }}>
                                 {isBreach ? "SCHEDULE BREACH" : isTight ? "TIGHT FLOAT" : "BUFFER HEALTHY"}
@@ -815,10 +830,10 @@ export function RouteThreatRadar({
                           <button
                             type="submit"
                             className="button button-primary"
-                            style={{ fontSize: "11px", padding: "5px 14px", height: "auto" }}
+                            style={{ fontSize: "11px", padding: "5px 14px", height: "auto", display: "inline-flex", alignItems: "center", gap: "4px" }}
                             disabled={isSavingSchedule}
                           >
-                            {isSavingSchedule ? "Saving Changes…" : "💾 Save Schedule Dates"}
+                            <CheckCircle2 size={13} /> {isSavingSchedule ? "Saving Changes…" : "Save Schedule Dates"}
                           </button>
                         </div>
                       </form>
@@ -989,8 +1004,9 @@ export function RouteThreatRadar({
                             <div className="threat-sample-content">
                               <div className="sample-row">
                                 <div>
-                                  <b style={{ color: "var(--primary)", marginRight: "6px" }}>
-                                    📍 {threat.region || `Waypoint #${threat.waypointIndex ?? idx + 1}`}
+                                  <b style={{ color: "var(--primary)", marginRight: "6px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                    <MapPin size={12} />
+                                    {threat.region || `Waypoint #${threat.waypointIndex ?? idx + 1}`}
                                   </b>
                                   <small style={{ color: "var(--muted)" }}>
                                     ({threat.lat.toFixed(2)}°, {threat.lng.toFixed(2)}°)
@@ -1206,7 +1222,10 @@ export function RouteThreatRadar({
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <b style={{ fontSize: "12px", color: "var(--ink)" }}>🏛️ 6-Phase End-to-End Supply Chain Delay Accumulation</b>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        <Layers size={14} style={{ color: "var(--primary)" }} />
+                        <b style={{ fontSize: "12px", color: "var(--ink)" }}>6-Phase End-to-End Supply Chain Delay Accumulation</b>
+                      </div>
                       <span style={{ fontSize: "11px", fontWeight: 700, color: sixPhaseDecomposition.totalPredictedDelayHours > 0 ? "#c84b3d" : "#5b7a6e" }}>
                         Total Pipeline Delay: +{sixPhaseDecomposition.totalPredictedDelayHours.toFixed(1)}h (+{sixPhaseDecomposition.totalPredictedDelayDays}d)
                       </span>
@@ -1245,8 +1264,9 @@ export function RouteThreatRadar({
                     </div>
                   </div>
 
-                  <div style={{ marginTop: "4px", fontSize: "11px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                    🌊 Deep-Ocean Hydrodynamic &amp; Operational ML Factor Attribution
+                  <div style={{ marginTop: "4px", fontSize: "11px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                    <Waves size={13} style={{ color: "var(--primary)" }} />
+                    <span>Deep-Ocean Hydrodynamic &amp; Operational ML Factor Attribution</span>
                   </div>
 
                   {/* 2-Column Causal Factor Decomposition Cards */}
