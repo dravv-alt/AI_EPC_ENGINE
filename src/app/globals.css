@@ -11383,6 +11383,10 @@ html[data-palette] {
   --accent-primary-strong: var(--theme-accent-strong);
   --accent-primary-soft: var(--theme-accent-soft);
   --primary: var(--theme-accent);
+  --surface: var(--theme-surface);
+  --surface-muted: var(--theme-field);
+  --panel: var(--theme-surface);
+  --field: var(--theme-field);
 }
 html[data-palette] body {
   color: var(--theme-ink) !important;
@@ -16147,6 +16151,242 @@ html[data-theme="dark"] .requirement-document-states i {
   color: var(--muted);
   display: block;
   margin-top: 2px;
+}
+
+/* ==========================================================================
+   Native Inline Causal "Why" Breakdown Section
+   ========================================================================== */
+.causal-inline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 4px;
+}
+
+.causal-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.causal-inline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.causal-inline-title h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.causal-inline-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, #2d463e 10%, var(--surface));
+  color: var(--primary, #2d463e);
+  border: 1px solid rgba(45, 70, 62, 0.25);
+}
+
+.causal-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.causal-inline-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.causal-inline-card.is-p50 {
+  border-color: rgba(45, 70, 62, 0.35);
+  background: color-mix(in srgb, #2d463e 5%, var(--surface));
+}
+
+.causal-inline-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.causal-inline-card strong {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--ink);
+}
+
+.causal-inline-card small {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.causal-inline-callout {
+  background: color-mix(in srgb, #2d463e 6%, var(--surface));
+  border: 1px solid rgba(45, 70, 62, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.causal-inline-callout-icon {
+  color: var(--primary, #2d463e);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.causal-inline-callout-text h4 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 0 0 2px;
+}
+
+.causal-inline-callout-text p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.causal-inline-factors {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.causal-inline-factor-item {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.causal-inline-factor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.causal-inline-factor-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.causal-inline-factor-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--primary, #2d463e);
+}
+
+.causal-inline-factor-label b {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.causal-inline-factor-val {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.causal-inline-factor-val strong {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--ink);
+}
+
+.causal-inline-factor-val small {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.causal-inline-progress-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.causal-inline-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.causal-inline-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 8px 12px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.causal-inline-audit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.causal-inline-audit-btn:hover {
+  border-color: var(--primary, #2d463e);
+  color: var(--primary, #2d463e);
 }
 
 @media (max-width: 1024px) {

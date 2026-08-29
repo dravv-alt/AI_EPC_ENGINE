@@ -22,9 +22,11 @@ import {
   Waves,
   Wind,
   Zap,
+  Cpu,
+  Eye,
+  FileSpreadsheet,
 } from "lucide-react";
 import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
-import { CausalExplainabilityDrawer } from "@/components/causal-explainability-drawer";
 import { buildComprehensiveExplanation, ComprehensiveCausalExplanation } from "@/lib/maritime/causal-explainability";
 import { VESSEL_PROFILES } from "@/lib/maritime/vessel-profiles";
 import { DELAY_TAXONOMY } from "@/lib/maritime/delay-taxonomy";
@@ -428,23 +430,13 @@ export function RouteThreatRadar({
                   <button
                     type="button"
                     className="button button-secondary"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      background: "rgba(56, 189, 248, 0.12)",
-                      border: "1px solid rgba(56, 189, 248, 0.4)",
-                      color: "#38bdf8",
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                      cursor: "pointer",
+                    onClick={() => {
+                      const el = document.getElementById("causal-why-breakdown");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
                     }}
-                    onClick={() => setIsExplainDrawerOpen(true)}
                   >
                     <Sparkles size={14} />
-                    Causal "Why" Breakdown
+                    Causal &quot;Why&quot; Breakdown ↓
                   </button>
 
                   <button
@@ -488,8 +480,8 @@ export function RouteThreatRadar({
                     <div
                       className="threat-meter-fill"
                       style={{
-                        width: `${Math.min(100, (Number(vesselTelemetry.waveHeight) / 6) * 100)}%`,
-                        background: Number(vesselTelemetry.waveHeight) > 4 ? "#a91f32" : Number(vesselTelemetry.waveHeight) > 2.5 ? "#c98431" : "#10b981",
+                        width: `${Math.min(100, (Number(vesselTelemetry.waveHeight) / 8) * 100)}%`,
+                        background: Number(vesselTelemetry.waveHeight) > 4 ? "#a91f32" : Number(vesselTelemetry.waveHeight) > 2 ? "#c98431" : "#10b981",
                       }}
                     />
                   </div>
@@ -507,23 +499,26 @@ export function RouteThreatRadar({
                 <div
                   className="corridor-card"
                   style={{ cursor: "pointer" }}
-                  onClick={() => setIsExplainDrawerOpen(true)}
+                  onClick={() => {
+                    const el = document.getElementById("causal-why-breakdown");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }}
                 >
                   <div className="card-top">
                     <Clock size={16} />
                     <span>Predicted Delay</span>
-                    <span style={{ fontSize: "10px", color: "#38bdf8", marginLeft: "auto", display: "flex", alignItems: "center", gap: "2px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--primary, #2d463e)", marginLeft: "auto", display: "flex", alignItems: "center", gap: "2px" }}>
                       <Sparkles size={11} /> p10-p90
                     </span>
                   </div>
                   <strong className={vesselTelemetry.delayHours > 0 ? "text-warn" : ""}>
                     +{vesselTelemetry.delayHours.toFixed(1)} hrs
                   </strong>
-                  <small style={{ color: "#38bdf8", fontWeight: 500 }}>
+                  <small style={{ color: "var(--primary, #2d463e)", fontWeight: 500 }}>
                     [{causalExplanation ? `+${causalExplanation.uncertaintyInterval.p10OptimisticHours.toFixed(1)}h – +${causalExplanation.uncertaintyInterval.p90ConservativeHours.toFixed(1)}h` : "Analyzing spread..."}]
                   </small>
                 </div>
-              </div>
+              </div>    </div>
 
               {/* Waypoint Corridor Threat Sampler */}
               <div className="corridor-sampler-section">
@@ -647,6 +642,159 @@ export function RouteThreatRadar({
                   </div>
                 </div>
               </div>
+
+              {/* Native Inline Causal "Why" Delay Breakdown Section */}
+              {causalExplanation && (
+                <div id="causal-why-breakdown" className="causal-inline-section">
+                  <div className="causal-inline-header">
+                    <div className="causal-inline-title">
+                      <Sparkles size={16} color="var(--primary, #2d463e)" />
+                      <h3>Causal &quot;Why&quot; Delay Breakdown &amp; Naval Hydrodynamics</h3>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className="causal-inline-badge">Layer 3 Intelligence</span>
+                      <button
+                        type="button"
+                        className="causal-inline-audit-btn"
+                        onClick={() => {
+                          const blob = new Blob([JSON.stringify(causalExplanation, null, 2)], {
+                            type: "application/json",
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `causal_audit_${causalExplanation.shipmentId}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                      >
+                        <FileSpreadsheet size={12} />
+                        Audit Log (JSON)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Quantile Interval Mini Cards */}
+                  <div className="causal-inline-grid">
+                    <div className="causal-inline-card">
+                      <div className="causal-inline-card-header">
+                        <span>p10 Best Case</span>
+                        <span style={{ color: "#5b7a6e", fontSize: "10px", fontWeight: 700 }}>90% Lower Bound</span>
+                      </div>
+                      <strong style={{ color: "#5b7a6e" }}>
+                        +{causalExplanation.uncertaintyInterval.p10OptimisticHours.toFixed(1)}h
+                      </strong>
+                      <small>Favorable sea &amp; wind</small>
+                    </div>
+
+                    <div className="causal-inline-card is-p50">
+                      <div className="causal-inline-card-header">
+                        <span style={{ color: "var(--primary, #2d463e)" }}>p50 Calibrated Delay</span>
+                        <span style={{ color: "var(--primary, #2d463e)", fontSize: "10px", fontWeight: 700 }}>Expected</span>
+                      </div>
+                      <strong>
+                        +{causalExplanation.totalPredictedDelayHours.toFixed(1)}h
+                      </strong>
+                      <small>Kwon (2008) + GBDT Residual</small>
+                    </div>
+
+                    <div className="causal-inline-card">
+                      <div className="causal-inline-card-header">
+                        <span>p90 Upper Risk</span>
+                        <span style={{ color: "#c84b3d", fontSize: "10px", fontWeight: 700 }}>Severe Weather</span>
+                      </div>
+                      <strong style={{ color: "#c84b3d" }}>
+                        +{causalExplanation.uncertaintyInterval.p90ConservativeHours.toFixed(1)}h
+                      </strong>
+                      <small>Heavy swell / gale boundary</small>
+                    </div>
+                  </div>
+
+                  {/* Primary Attribution Callout */}
+                  <div className="causal-inline-callout">
+                    <AlertTriangle size={16} className="causal-inline-callout-icon" />
+                    <div className="causal-inline-callout-text">
+                      <h4>Primary Delay Attribution</h4>
+                      <p>{causalExplanation.primaryDriverSummary}</p>
+                    </div>
+                  </div>
+
+                  {/* 2-Column Causal Factor Decomposition Cards */}
+                  <div className="causal-inline-factors">
+                    {causalExplanation.factors.map((factor) => {
+                      const pct = Number(factor.percentageOfTotal ?? (factor as any).percentage ?? 0);
+                      const hrs = Number(factor.delayHours ?? 0);
+                      const isHydro =
+                        factor.category === "hydrodynamic_wind" ||
+                        factor.category === "hydrodynamic_wave" ||
+                        (factor.category as string) === "weather_hydrodynamic";
+                      const isChoke = factor.category === "chokepoint_queuing";
+                      const isMl =
+                        factor.category === "ml_operational" ||
+                        (factor.category as string) === "ml_operational_adjustment";
+
+                      return (
+                        <div key={factor.id} className="causal-inline-factor-item">
+                          <div className="causal-inline-factor-row">
+                            <div className="causal-inline-factor-label">
+                              <div className="causal-inline-factor-icon">
+                                {factor.iconName === "wind" ? (
+                                  <Wind size={13} />
+                                ) : factor.iconName === "waves" ? (
+                                  <Waves size={13} />
+                                ) : factor.iconName === "anchor" ? (
+                                  <Anchor size={13} />
+                                ) : factor.iconName === "cpu" ? (
+                                  <Cpu size={13} />
+                                ) : (
+                                  <Eye size={13} />
+                                )}
+                              </div>
+                              <b title={factor.description}>{factor.label}</b>
+                            </div>
+                            <div className="causal-inline-factor-val">
+                              <strong>
+                                {hrs > 0 ? "+" : ""}
+                                {hrs.toFixed(1)}h
+                              </strong>
+                              <small>({pct.toFixed(1)}%)</small>
+                            </div>
+                          </div>
+                          <div className="causal-inline-progress-track">
+                            <div
+                              className="causal-inline-progress-fill"
+                              style={{
+                                width: `${Math.max(4, Math.min(100, pct))}%`,
+                                background: isHydro
+                                  ? "#2d463e"
+                                  : isChoke
+                                    ? "#c98431"
+                                    : isMl
+                                      ? "#5b7a6e"
+                                      : "#888888",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Two-Tier Baseline Telemetry Footer */}
+                  <div className="causal-inline-footer">
+                    <span>
+                      Deterministic Physics Baseline: <b>+{causalExplanation.physicsBaselineHours.toFixed(1)}h</b> · ML Operational Correction:{" "}
+                      <b>
+                        {causalExplanation.mlOperationalAdjustmentHours >= 0 ? "+" : ""}
+                        {causalExplanation.mlOperationalAdjustmentHours.toFixed(1)}h
+                      </b>
+                    </span>
+                    <span>
+                      Confidence Score: <b>{Math.round(causalExplanation.confidenceScore * 100)}%</b>
+                    </span>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="empty-selection">
@@ -657,16 +805,6 @@ export function RouteThreatRadar({
           )}
         </section>
       </div>
-
-      {/* Causal "Why" Explainability Modal Drawer */}
-      <CausalExplainabilityDrawer
-        isOpen={isExplainDrawerOpen}
-        onClose={() => setIsExplainDrawerOpen(false)}
-        explanation={causalExplanation}
-        shipmentName={selected?.name}
-        origin={selected?.originName ?? "Origin Port"}
-        destination={selected?.destinationName ?? "Destination Port"}
-      />
     </div>
   );
 }
