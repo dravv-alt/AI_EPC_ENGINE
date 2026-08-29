@@ -80,7 +80,6 @@ export function RouteThreatRadar({
   // Schedule Dates Interactive Editor State
   const [isEditingSchedule, setIsEditingSchedule] = useState(false);
   const [editDepartureDate, setEditDepartureDate] = useState("");
-  const [editPlannedEta, setEditPlannedEta] = useState("");
   const [editRequiredOnSite, setEditRequiredOnSite] = useState("");
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const [scheduleSaveStatus, setScheduleSaveStatus] = useState<string | null>(null);
@@ -90,10 +89,21 @@ export function RouteThreatRadar({
     [shipments, selectedId]
   );
 
+  const leadTimeHours = useMemo(() => {
+    if (!selected) return 45 * 24;
+    return dynamicEstimate?.totalLeadTimeHours || (45 * 24);
+  }, [selected, dynamicEstimate]);
+
+  const computedPlannedEta = useMemo(() => {
+    if (!editDepartureDate) return "";
+    const depMs = new Date(editDepartureDate).getTime();
+    if (isNaN(depMs)) return "";
+    return new Date(depMs + leadTimeHours * 3600_000).toISOString();
+  }, [editDepartureDate, leadTimeHours]);
+
   const openScheduleEditor = () => {
     if (!selected) return;
     const dep = new Date((selected as any).createdAt || Date.now() - 5 * 86400000);
-    const eta = new Date(selected.plannedEta);
     const ros = new Date(selected.requiredOnSite);
 
     const toLocalIso = (d: Date) => {
@@ -103,7 +113,6 @@ export function RouteThreatRadar({
     };
 
     setEditDepartureDate(toLocalIso(dep));
-    setEditPlannedEta(toLocalIso(eta));
     setEditRequiredOnSite(toLocalIso(ros));
     setScheduleSaveStatus(null);
     setIsEditingSchedule(true);
@@ -116,12 +125,13 @@ export function RouteThreatRadar({
     setScheduleSaveStatus("Saving schedule updates...");
 
     try {
+      const plannedEtaIso = computedPlannedEta || new Date(new Date(editDepartureDate).getTime() + leadTimeHours * 3600_000).toISOString();
       const res = await fetch(`/api/shipments/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           departureDate: new Date(editDepartureDate).toISOString(),
-          plannedEta: new Date(editPlannedEta).toISOString(),
+          plannedEta: plannedEtaIso,
           requiredOnSite: new Date(editRequiredOnSite).toISOString(),
         }),
       });
@@ -699,7 +709,7 @@ export function RouteThreatRadar({
                       </div>
 
                       <form onSubmit={handleSaveSchedule} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "11px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px", fontSize: "11px" }}>
                           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span style={{ fontWeight: 600, color: "var(--ink)" }}>🛫 Journey Start (Departure)</span>
                             <input
@@ -711,16 +721,30 @@ export function RouteThreatRadar({
                             />
                           </label>
 
-                          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🎯 Target Planned Arrival</span>
-                            <input
-                              type="datetime-local"
-                              value={editPlannedEta}
-                              onChange={(e) => setEditPlannedEta(e.target.value)}
-                              required
-                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--line)", background: "var(--field)", color: "var(--ink)" }}
-                            />
-                          </label>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🎯 Target Planned Arrival (Auto-Calculated)</span>
+                            <div
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: "6px",
+                                border: "1px solid color-mix(in srgb, var(--primary) 30%, transparent)",
+                                background: "color-mix(in srgb, var(--primary) 6%, var(--surface))",
+                                color: "var(--primary)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "2px",
+                              }}
+                            >
+                              <strong style={{ fontSize: "12px" }}>
+                                {computedPlannedEta
+                                  ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(computedPlannedEta))
+                                  : "—"}
+                              </strong>
+                              <small style={{ fontSize: "10px", color: "var(--muted)" }}>
+                                ⚡ Departure + {(leadTimeHours / 24).toFixed(1)}d (6-Phase Multimodal Matrix)
+                              </small>
+                            </div>
+                          </div>
 
                           <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <span style={{ fontWeight: 600, color: "var(--ink)" }}>🏁 Required On-Site (ROS) Deadline</span>
@@ -733,6 +757,44 @@ export function RouteThreatRadar({
                             />
                           </label>
                         </div>
+
+                        {/* Real-Time Schedule Float Buffer Preview */}
+                        {(() => {
+                          if (!computedPlannedEta || !editRequiredOnSite) return null;
+                          const etaMs = new Date(computedPlannedEta).getTime();
+                          const rosMs = new Date(editRequiredOnSite).getTime();
+                          const floatDays = Number(((rosMs - etaMs) / (24 * 3600_000)).toFixed(1));
+                          const isBreach = floatDays < 0;
+                          const isTight = floatDays >= 0 && floatDays <= 2.0;
+
+                          return (
+                            <div
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: "6px",
+                                background: isBreach
+                                  ? "color-mix(in srgb, #a91f32 12%, var(--surface))"
+                                  : isTight
+                                    ? "color-mix(in srgb, #c98431 12%, var(--surface))"
+                                    : "color-mix(in srgb, #5b7a6e 12%, var(--surface))",
+                                border: `1px solid ${isBreach ? "rgba(169,31,50,0.3)" : isTight ? "rgba(201,132,49,0.3)" : "rgba(91,122,110,0.3)"}`,
+                                fontSize: "11px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                flexWrap: "wrap",
+                                gap: "6px",
+                              }}
+                            >
+                              <span>
+                                📊 <b>Projected Schedule Float:</b> {isBreach ? `-${Math.abs(floatDays)}d (Critical Path Breach)` : `+${floatDays}d Float Buffer before ROS`}
+                              </span>
+                              <span style={{ fontWeight: 700, color: isBreach ? "#a91f32" : isTight ? "#c98431" : "#5b7a6e" }}>
+                                {isBreach ? "SCHEDULE BREACH" : isTight ? "TIGHT FLOAT" : "BUFFER HEALTHY"}
+                              </span>
+                            </div>
+                          );
+                        })()}
 
                         {scheduleSaveStatus && (
                           <div style={{ fontSize: "11px", fontWeight: 600, color: scheduleSaveStatus.startsWith("Error") ? "#ef4444" : "var(--primary)" }}>
