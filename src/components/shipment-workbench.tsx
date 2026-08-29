@@ -277,6 +277,7 @@ export function ShipmentWorkbench({
           onSelectShipment={setSelectedId}
           assessments={assessments}
           onAssessRoute={assessRoute}
+          onRefreshShipments={refresh}
           assets={assets}
           loading={saving}
         />

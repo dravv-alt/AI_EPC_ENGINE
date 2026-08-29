@@ -56,6 +56,7 @@ type Props = {
   onSelectShipment: (id: string) => void;
   assessments: Record<string, RouteThreatAssessment>;
   onAssessRoute: (shipment: ThreatRadarShipment) => void;
+  onRefreshShipments?: () => void | Promise<void>;
   assets?: Asset[];
   loading?: boolean;
 };
@@ -66,6 +67,7 @@ export function RouteThreatRadar({
   onSelectShipment,
   assessments,
   onAssessRoute,
+  onRefreshShipments,
   assets = [],
   loading = false,
 }: Props) {
@@ -73,10 +75,74 @@ export function RouteThreatRadar({
   const [threatFilter, setThreatFilter] = useState<"all" | "delayed" | "critical">("all");
   const [deckTab, setDeckTab] = useState<"telemetry" | "causal">("telemetry");
 
+  // Schedule Dates Interactive Editor State
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [editDepartureDate, setEditDepartureDate] = useState("");
+  const [editPlannedEta, setEditPlannedEta] = useState("");
+  const [editRequiredOnSite, setEditRequiredOnSite] = useState("");
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
+  const [scheduleSaveStatus, setScheduleSaveStatus] = useState<string | null>(null);
+
   const selected = useMemo(
     () => shipments.find((s) => s.id === selectedId) ?? shipments[0],
     [shipments, selectedId]
   );
+
+  const openScheduleEditor = () => {
+    if (!selected) return;
+    const dep = new Date((selected as any).createdAt || Date.now() - 5 * 86400000);
+    const eta = new Date(selected.plannedEta);
+    const ros = new Date(selected.requiredOnSite);
+
+    const toLocalIso = (d: Date) => {
+      const copy = new Date(d);
+      copy.setMinutes(copy.getMinutes() - copy.getTimezoneOffset());
+      return copy.toISOString().slice(0, 16);
+    };
+
+    setEditDepartureDate(toLocalIso(dep));
+    setEditPlannedEta(toLocalIso(eta));
+    setEditRequiredOnSite(toLocalIso(ros));
+    setScheduleSaveStatus(null);
+    setIsEditingSchedule(true);
+  };
+
+  const handleSaveSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    setIsSavingSchedule(true);
+    setScheduleSaveStatus("Saving schedule updates...");
+
+    try {
+      const res = await fetch(`/api/shipments/${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          departureDate: new Date(editDepartureDate).toISOString(),
+          plannedEta: new Date(editPlannedEta).toISOString(),
+          requiredOnSite: new Date(editRequiredOnSite).toISOString(),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update schedule dates");
+      }
+
+      setScheduleSaveStatus("Schedule updated successfully!");
+      if (onRefreshShipments) {
+        await onRefreshShipments();
+      }
+      setTimeout(() => {
+        setIsEditingSchedule(false);
+        setScheduleSaveStatus(null);
+      }, 1000);
+    } catch (err: any) {
+      setScheduleSaveStatus(`Error: ${err.message}`);
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
 
   // Helper to extract live calculated delay from assessment or DB factor
   const getShipmentDelay = (s: ThreatRadarShipment) => {
@@ -646,7 +712,124 @@ export function RouteThreatRadar({
                       🏁 <b>Site ROS Deadline:</b>{" "}
                       <b>{new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(selected.requiredOnSite))}</b>
                     </span>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      style={{
+                        marginLeft: "auto",
+                        fontSize: "10px",
+                        padding: "2px 8px",
+                        height: "auto",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        background: "color-mix(in srgb, var(--primary) 12%, var(--surface))",
+                        borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)",
+                        color: "var(--primary)",
+                        fontWeight: 600,
+                      }}
+                      onClick={openScheduleEditor}
+                    >
+                      ✏️ Edit Dates &amp; Times
+                    </button>
                   </div>
+
+                  {/* Interactive Schedule Dates Editor Modal */}
+                  {isEditingSchedule && (
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        padding: "14px 16px",
+                        background: "var(--surface)",
+                        border: "1px solid var(--primary)",
+                        borderRadius: "8px",
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <b style={{ fontSize: "13px", color: "var(--ink)" }}>🗓️ Edit Journey Schedule &amp; Arrival Dates</b>
+                          <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--muted)" }}>
+                            Modifying journey dates automatically recalculates live voyage progress, Kwon hydrodynamic speed loss, and EPC milestone float margins.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          style={{ fontSize: "10px", padding: "2px 6px", height: "auto" }}
+                          onClick={() => setIsEditingSchedule(false)}
+                        >
+                          ✕ Close
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveSchedule} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", fontSize: "11px" }}>
+                          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🛫 Journey Start (Departure)</span>
+                            <input
+                              type="datetime-local"
+                              value={editDepartureDate}
+                              onChange={(e) => setEditDepartureDate(e.target.value)}
+                              required
+                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--line)", background: "var(--field)", color: "var(--ink)" }}
+                            />
+                          </label>
+
+                          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🎯 Target Planned Arrival</span>
+                            <input
+                              type="datetime-local"
+                              value={editPlannedEta}
+                              onChange={(e) => setEditPlannedEta(e.target.value)}
+                              required
+                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--line)", background: "var(--field)", color: "var(--ink)" }}
+                            />
+                          </label>
+
+                          <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <span style={{ fontWeight: 600, color: "var(--ink)" }}>🏁 Required On-Site (ROS) Deadline</span>
+                            <input
+                              type="datetime-local"
+                              value={editRequiredOnSite}
+                              onChange={(e) => setEditRequiredOnSite(e.target.value)}
+                              required
+                              style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--line)", background: "var(--field)", color: "var(--ink)" }}
+                            />
+                          </label>
+                        </div>
+
+                        {scheduleSaveStatus && (
+                          <div style={{ fontSize: "11px", fontWeight: 600, color: scheduleSaveStatus.startsWith("Error") ? "#ef4444" : "var(--primary)" }}>
+                            {scheduleSaveStatus}
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+                          <button
+                            type="button"
+                            className="button button-secondary"
+                            style={{ fontSize: "11px", padding: "5px 12px", height: "auto" }}
+                            onClick={() => setIsEditingSchedule(false)}
+                            disabled={isSavingSchedule}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="button button-primary"
+                            style={{ fontSize: "11px", padding: "5px 14px", height: "auto" }}
+                            disabled={isSavingSchedule}
+                          >
+                            {isSavingSchedule ? "Saving Changes…" : "💾 Save Schedule Dates"}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
                   {/* Active Regional Disruption Banner */}
                   {assessment?.threats && assessment.threats.length > 0 && (
                     <div
