@@ -15821,24 +15821,30 @@ html[data-theme="dark"] .requirement-document-states i {
 .threat-status-tag {
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 3px 7px;
   border-radius: 4px;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.threat-status-tag.on_time {
-  background: rgba(91, 122, 110, 0.15);
+.threat-status-tag.on_time,
+.threat-status-tag.delivered {
+  background: color-mix(in srgb, #5b7a6e 15%, var(--surface));
   color: #5b7a6e;
+  border: 1px solid rgba(91, 122, 110, 0.3);
 }
 
 .threat-status-tag.delayed {
-  background: rgba(201, 132, 49, 0.15);
+  background: color-mix(in srgb, #c98431 15%, var(--surface));
   color: #c98431;
+  border: 1px solid rgba(201, 132, 49, 0.3);
 }
 
 .threat-status-tag.critical {
-  background: rgba(169, 31, 50, 0.15);
+  background: color-mix(in srgb, #a91f32 15%, var(--surface));
   color: #a91f32;
+  border: 1px solid rgba(169, 31, 50, 0.3);
 }
 
 .threat-item-right small {

@@ -338,6 +338,24 @@ export function RouteThreatRadar({
               const delay = getShipmentDelay(s);
               const isCrit = s.status === "critical" || delay >= 12;
               const isDel = s.status === "delayed" || delay > 0;
+              const isDelivered = s.status === "delivered";
+
+              const statusClass = isCrit
+                ? "critical"
+                : isDel
+                  ? "delayed"
+                  : isDelivered
+                    ? "delivered"
+                    : "on_time";
+
+              const statusLabel = isCrit
+                ? "CRITICAL THREAT"
+                : isDel
+                  ? "DELAY RISK"
+                  : isDelivered
+                    ? "DELIVERED"
+                    : "ON TRACK";
+
               const ass = assessments[s.id];
               const threatRegion = ass?.threats?.[0]?.region;
 
@@ -360,11 +378,13 @@ export function RouteThreatRadar({
                     </div>
                   </div>
                   <div className="threat-item-right">
-                    <span className={`threat-status-tag ${isCrit ? "critical" : isDel ? "delayed" : s.status}`}>
-                      {isCrit ? "critical threat" : isDel ? "delay risk" : s.status.replace("_", " ")}
+                    <span className={`threat-status-tag ${statusClass}`}>
+                      {statusLabel}
                     </span>
                     <small>
-                      {delay > 0 ? `+${delay.toFixed(1)}h ${threatRegion ? `· ${threatRegion.split("(")[0].trim()}` : ""}` : "On track"}
+                      {delay > 0
+                        ? `+${delay.toFixed(1)}h ${threatRegion ? `· ${threatRegion.split("(")[0].trim()}` : ""}`
+                        : "On track"}
                     </small>
                   </div>
                 </button>
