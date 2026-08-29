@@ -26,10 +26,14 @@ import {
   Eye,
   FileSpreadsheet,
 } from "lucide-react";
-import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
 import { buildComprehensiveExplanation, ComprehensiveCausalExplanation } from "@/lib/maritime/causal-explainability";
 import { VESSEL_PROFILES } from "@/lib/maritime/vessel-profiles";
 import { DELAY_TAXONOMY } from "@/lib/maritime/delay-taxonomy";
+import {
+  interpolatePositionAlongPolyline,
+  computeTimelineProgress,
+  decomposeRouteGeodesic,
+} from "@/lib/maritime/route-decomposition";
 
 export type ThreatRadarShipment = MapShipment & {
   equipmentId: string | null;
@@ -120,6 +124,12 @@ export function RouteThreatRadar({
     }
   }, [selected?.id]);
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Calculate telemetry directly using live server assessment when available
   const vesselTelemetry = useMemo(() => {
     if (!selected) return null;
@@ -161,6 +171,45 @@ export function RouteThreatRadar({
       riskScore = Math.min(18, Math.max(4, Math.round(Number(windSpeed) * 0.3)));
     }
 
+    // Timeline progress & dynamic coordinates calculation
+    const progressFraction = computeTimelineProgress(
+      (selected as any)?.createdAt ?? null,
+      selected?.weatherAdjustedEta ?? selected?.plannedEta ?? null,
+      now
+    );
+
+    let estimatedLocation = {
+      lat: Number(selected.originLat || 0),
+      lng: Number(selected.originLng || 0),
+      progressPercent: Math.round(progressFraction * 100),
+      isLiveAis: false,
+    };
+
+    if (selected.currentLat && selected.currentLng) {
+      estimatedLocation = {
+        lat: Number(selected.currentLat),
+        lng: Number(selected.currentLng),
+        progressPercent: Math.round(progressFraction * 100),
+        isLiveAis: selected.positionSource === "live" || selected.positionSource === "aisstream",
+      };
+    } else if (selected.originLat && selected.originLng && selected.destinationLat && selected.destinationLng) {
+      const rawWaypoints = [
+        { lat: Number(selected.originLat), lng: Number(selected.originLng) },
+        { lat: Number(selected.destinationLat), lng: Number(selected.destinationLng) },
+      ];
+      const densified = decomposeRouteGeodesic(rawWaypoints, 50);
+      const polyline = densified.map((w) => [w.lat, w.lng] as [number, number]);
+      const interpolated = interpolatePositionAlongPolyline(polyline, progressFraction);
+      if (interpolated) {
+        estimatedLocation = {
+          lat: interpolated.lat,
+          lng: interpolated.lng,
+          progressPercent: interpolated.progressPercent,
+          isLiveAis: false,
+        };
+      }
+    }
+
     return {
       speed,
       heading,
@@ -171,6 +220,7 @@ export function RouteThreatRadar({
       delayHours,
       riskScore,
       threatLevel,
+      estimatedLocation,
       provenance: assessment?.source ?? "Open-Meteo / Marine Forecast Service",
       observedAt: assessment?.observedAt,
     };
@@ -421,6 +471,10 @@ export function RouteThreatRadar({
                         <span>· Linked Asset:</span> <b>{linkedAsset.tag} ({linkedAsset.assetType})</b>
                       </>
                     )}
+                    <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--primary)", fontWeight: 600, fontSize: "11px" }}>
+                      <Navigation size={12} />
+                      {vesselTelemetry.estimatedLocation.isLiveAis ? "Live AIS" : "Est. Position"}: {vesselTelemetry.estimatedLocation.lat.toFixed(2)}°, {vesselTelemetry.estimatedLocation.lng.toFixed(2)}° ({vesselTelemetry.estimatedLocation.progressPercent}% along corridor)
+                    </span>
                   </p>
                   {/* Active Regional Disruption Banner */}
                   {assessment?.threats && assessment.threats.length > 0 && (
@@ -488,6 +542,17 @@ export function RouteThreatRadar({
                 <>
                   {/* Realtime Corridor Gauge Grid */}
                   <div className="corridor-telemetry-grid">
+                    <div className="corridor-card">
+                      <div className="card-top">
+                        <Navigation size={16} />
+                        <span>Voyage Progress</span>
+                      </div>
+                      <strong>{vesselTelemetry.estimatedLocation.progressPercent}%</strong>
+                      <small>
+                        {vesselTelemetry.estimatedLocation.lat.toFixed(2)}°, {vesselTelemetry.estimatedLocation.lng.toFixed(2)}°
+                      </small>
+                    </div>
+
                     <div className="corridor-card">
                       <div className="card-top">
                         <Wind size={16} />

@@ -11,8 +11,8 @@ import {
   Tooltip,
   useMap,
 } from "react-leaflet";
-import { latLngBounds, type LatLngExpression } from "leaflet";
-import { AlertTriangle, CloudRain, Compass, Eye, Layers, LocateFixed, Radio, RefreshCw, Wind } from "lucide-react";
+import { AlertTriangle, CloudRain, Compass, Eye, Layers, LocateFixed, Radio, RefreshCw, Wind, Navigation } from "lucide-react";
+import { interpolatePositionAlongPolyline, computeTimelineProgress } from "@/lib/maritime/route-decomposition";
 
 export type MapShipment = {
   id: string;
@@ -332,20 +332,53 @@ function MapPanel({
   weatherLayerType?: "radar" | "satellite";
   centerTrigger?: number;
 }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const allRouteCoords = useMemo(() => route.flatMap((seg) => seg.coords), [route]);
+
+  const estimatedPos = useMemo(() => {
+    if (selected?.currentLat && selected.currentLng) {
+      return {
+        lat: Number(selected.currentLat),
+        lng: Number(selected.currentLng),
+        isLiveAis: selected.positionSource === "live" || selected.positionSource === "aisstream",
+        progressPercent: null,
+      };
+    }
+    if (!allRouteCoords.length) return null;
+
+    const progressFraction = computeTimelineProgress(
+      (selected as any)?.createdAt ?? null,
+      selected?.weatherAdjustedEta ?? selected?.plannedEta ?? null,
+      now
+    );
+
+    const interpolated = interpolatePositionAlongPolyline(allRouteCoords, progressFraction);
+    if (!interpolated) return null;
+
+    return {
+      lat: interpolated.lat,
+      lng: interpolated.lng,
+      isLiveAis: false,
+      progressPercent: interpolated.progressPercent,
+    };
+  }, [selected, allRouteCoords, now]);
+
+  const current = estimatedPos ? ([estimatedPos.lat, estimatedPos.lng] as [number, number]) : null;
+
   const center = useMemo<LatLngExpression>(
     () =>
-      selected?.currentLat && selected.currentLng
-        ? [Number(selected.currentLat), Number(selected.currentLng)]
+      current
+        ? current
         : validCoordinates(selected)
           ? [Number(selected!.originLat), Number(selected!.originLng)]
           : [20.5937, 78.9629],
-    [selected]
+    [current, selected]
   );
-
-  const current =
-    selected?.currentLat && selected.currentLng
-      ? ([Number(selected.currentLat), Number(selected.currentLng)] as [number, number])
-      : null;
 
   const origin = validCoordinates(selected)
     ? ([Number(selected!.originLat), Number(selected!.originLng)] as LatLngExpression)
@@ -554,25 +587,42 @@ function MapPanel({
         )}
 
         {current && (
-          <CircleMarker
-            center={current}
-            radius={10}
-            pathOptions={{
-              color: "#fff",
-              weight: 3,
-              fillColor: statusColor(selected?.status ?? "green"),
-              fillOpacity: 1,
-              className: "shipment-position-marker",
-            }}
-          >
-            <Popup>
-              <b>{selected?.name}</b>
-              <br />
-              {selected?.positionSource === "live" || selected?.positionSource === "aisstream"
-                ? "Live AIS position"
-                : "Simulated position"}
-            </Popup>
-          </CircleMarker>
+          <>
+            <CircleMarker
+              center={current}
+              radius={18}
+              pathOptions={{
+                color: statusColor(selected?.status ?? "green"),
+                weight: 1,
+                fillColor: statusColor(selected?.status ?? "green"),
+                fillOpacity: 0.25,
+                className: "threat-radar-pulse",
+              }}
+            />
+            <CircleMarker
+              center={current}
+              radius={9}
+              pathOptions={{
+                color: "#ffffff",
+                weight: 3,
+                fillColor: statusColor(selected?.status ?? "green"),
+                fillOpacity: 1,
+                className: "shipment-position-marker",
+              }}
+            >
+              <Popup>
+                <b>{selected?.name}</b>
+                <br />
+                {estimatedPos?.isLiveAis
+                  ? "🛰️ Live Satellite AIS Position"
+                  : `🚢 Dynamic Timeline Position (${estimatedPos?.progressPercent ?? 45}% along corridor)`}
+                <br />
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  Coordinates: {current[0].toFixed(3)}°, {current[1].toFixed(3)}°
+                </span>
+              </Popup>
+            </CircleMarker>
+          </>
         )}
 
         {/* Waypoint Weather Sample Spheres with Dynamic Zoom Scaling */}

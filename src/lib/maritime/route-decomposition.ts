@@ -170,3 +170,97 @@ export function densifyRoute(controlPoints: RawRoutePoint[]): DecomposedWaypoint
 
   return waypoints;
 }
+
+/**
+ * Interpolates the estimated real-time vessel coordinates [lat, lng] along a multi-segment route polyline
+ * given the voyage elapsed progress fraction (0.0 to 1.0).
+ */
+export function interpolatePositionAlongPolyline(
+  polyline: [number, number][],
+  progressFraction: number
+): { lat: number; lng: number; progressPercent: number; segmentIndex: number } | null {
+  if (!polyline || polyline.length === 0) return null;
+  if (polyline.length === 1) {
+    return { lat: polyline[0][0], lng: polyline[0][1], progressPercent: 100, segmentIndex: 0 };
+  }
+
+  const clampedProgress = Math.max(0.0, Math.min(1.0, progressFraction));
+  if (clampedProgress <= 0.001) {
+    return { lat: polyline[0][0], lng: polyline[0][1], progressPercent: 0, segmentIndex: 0 };
+  }
+  if (clampedProgress >= 0.999) {
+    const last = polyline[polyline.length - 1];
+    return { lat: last[0], lng: last[1], progressPercent: 100, segmentIndex: polyline.length - 1 };
+  }
+
+  // Calculate cumulative distances along all segments
+  const distances: number[] = [0];
+  let totalDistance = 0;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = haversineNm(polyline[i][0], polyline[i][1], polyline[i + 1][0], polyline[i + 1][1]);
+    totalDistance += d;
+    distances.push(totalDistance);
+  }
+
+  if (totalDistance === 0) {
+    return { lat: polyline[0][0], lng: polyline[0][1], progressPercent: 0, segmentIndex: 0 };
+  }
+
+  const targetDistance = clampedProgress * totalDistance;
+
+  // Find the exact segment
+  for (let i = 0; i < distances.length - 1; i++) {
+    const startDist = distances[i];
+    const endDist = distances[i + 1];
+    if (targetDistance >= startDist && targetDistance <= endDist) {
+      const segmentDist = endDist - startDist;
+      const fraction = segmentDist > 0 ? (targetDistance - startDist) / segmentDist : 0;
+      const interpolated = slerpGreatCircle(
+        polyline[i][0],
+        polyline[i][1],
+        polyline[i + 1][0],
+        polyline[i + 1][1],
+        fraction
+      );
+      return {
+        lat: Number(interpolated.lat.toFixed(4)),
+        lng: Number(interpolated.lng.toFixed(4)),
+        progressPercent: Math.round(clampedProgress * 100),
+        segmentIndex: i,
+      };
+    }
+  }
+
+  const last = polyline[polyline.length - 1];
+  return { lat: last[0], lng: last[1], progressPercent: 100, segmentIndex: polyline.length - 1 };
+}
+
+/**
+ * Computes timeline elapsed progress (0.0 - 1.0) given departure and arrival timestamps.
+ */
+export function computeTimelineProgress(
+  departureDate: Date | string | null,
+  arrivalDate: Date | string | null,
+  now: number = Date.now()
+): number {
+  if (!arrivalDate) return 0.50; // Default mid-passage estimate
+
+  const arrivalMs = new Date(arrivalDate).getTime();
+  if (isNaN(arrivalMs)) return 0.50;
+
+  let departureMs = departureDate ? new Date(departureDate).getTime() : NaN;
+  if (isNaN(departureMs) || departureMs >= arrivalMs) {
+    // If departure unrecorded, assume typical 7-day passage relative to ETA
+    departureMs = arrivalMs - 7 * 24 * 3600_000;
+  }
+
+  const totalDuration = arrivalMs - departureMs;
+  if (totalDuration <= 0) return 1.0;
+
+  const elapsed = now - departureMs;
+  const rawProgress = elapsed / totalDuration;
+
+  // Fully continuous progression from 0.0 (departure) to 1.0 (arrival)
+  return Math.max(0.0, Math.min(1.0, rawProgress));
+}
+

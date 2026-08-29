@@ -15961,7 +15961,7 @@ html[data-theme="dark"] .requirement-document-states i {
 
 .corridor-telemetry-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
 }
 
