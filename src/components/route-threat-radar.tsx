@@ -425,6 +425,9 @@ export function RouteThreatRadar({
                       <span>
                         {s.originName ?? "Origin"} → {s.destinationName ?? "Site"}
                       </span>
+                      <span style={{ fontSize: "10px", color: "var(--muted)", display: "block", marginTop: "2px" }}>
+                        🗓️ Dep: {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(new Date((s as any).createdAt || Date.now() - 5 * 86400000))} → Target: {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(new Date(s.plannedEta))}
+                      </span>
                     </div>
                   </div>
                   <div className="threat-item-right">
@@ -476,6 +479,51 @@ export function RouteThreatRadar({
                       {vesselTelemetry.estimatedLocation.isLiveAis ? "Live AIS" : "Est. Position"}: {vesselTelemetry.estimatedLocation.lat.toFixed(2)}°, {vesselTelemetry.estimatedLocation.lng.toFixed(2)}° ({vesselTelemetry.estimatedLocation.progressPercent}% along corridor)
                     </span>
                   </p>
+
+                  {/* Journey Timeline Date Strip */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                      fontSize: "11px",
+                      marginTop: "6px",
+                      padding: "5px 10px",
+                      background: "var(--surface-muted)",
+                      borderRadius: "6px",
+                      border: "1px solid var(--line)",
+                    }}
+                  >
+                    <span>
+                      🛫 <b>Journey Start (Dep):</b>{" "}
+                      {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
+                        new Date((selected as any).createdAt || Date.now() - 5 * 86400000)
+                      )}
+                    </span>
+                    <span>·</span>
+                    <span>
+                      🎯 <b>Target Planned Arrival:</b>{" "}
+                      {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
+                        new Date(selected.plannedEta)
+                      )}
+                    </span>
+                    <span>·</span>
+                    <span>
+                      🛰️ <b>Weather-Adjusted Arrival:</b>{" "}
+                      <b style={{ color: vesselTelemetry.delayHours > 0 ? "#c98431" : "var(--primary)" }}>
+                        {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(
+                          new Date(selected.weatherAdjustedEta ?? selected.plannedEta)
+                        )}
+                        {vesselTelemetry.delayHours > 0 ? ` (+${vesselTelemetry.delayHours.toFixed(1)}h)` : " (On Time)"}
+                      </b>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      🏁 <b>Site ROS Deadline:</b>{" "}
+                      <b>{new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(selected.requiredOnSite))}</b>
+                    </span>
+                  </div>
                   {/* Active Regional Disruption Banner */}
                   {assessment?.threats && assessment.threats.length > 0 && (
                     <div
