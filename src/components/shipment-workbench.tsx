@@ -11,6 +11,14 @@ import {
   RefreshCw,
   Route,
   Sparkles,
+  Anchor,
+  Lock,
+  Building,
+  Truck,
+  ShieldCheck,
+  Target,
+  Flag,
+  Calendar,
 } from "lucide-react";
 import { ShipmentMapLoader } from "@/components/shipment-map-loader";
 import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
@@ -831,7 +839,7 @@ export function ShipmentWorkbench({
                     </label>
 
                     <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <span>🔒 Canal/Chokepoint Queuing (days)</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><Lock size={12} /> Canal/Chokepoint Queuing (days)</span>
                       <input
                         type="number"
                         min={0}
@@ -842,7 +850,7 @@ export function ShipmentWorkbench({
                     </label>
 
                     <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <span>⚓ Port Offloading &amp; Visas (days)</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><Anchor size={12} /> Port Offloading &amp; Visas (days)</span>
                       <input
                         type="number"
                         min={0}
@@ -855,7 +863,7 @@ export function ShipmentWorkbench({
                 )}
 
                 <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span>🏛️ Import Customs Tariff Dwell (days)</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><Building size={12} /> Import Customs Tariff Dwell (days)</span>
                   <input
                     type="number"
                     min={0}
@@ -866,7 +874,7 @@ export function ShipmentWorkbench({
                 </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span>🚚 Overland Site Drayage (days)</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><Truck size={12} /> Overland Site Drayage (days)</span>
                   <input
                     type="number"
                     min={0}
@@ -877,7 +885,7 @@ export function ShipmentWorkbench({
                 </label>
 
                 <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span>🛡️ Site ROS Buffer Margin (days)</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}><ShieldCheck size={12} /> Site ROS Buffer Margin (days)</span>
                   <input
                     type="number"
                     min={0}
@@ -909,12 +917,12 @@ export function ShipmentWorkbench({
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                  <span>
-                    🎯 <b>Calculated Planned ETA:</b>{" "}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    <Target size={13} style={{ color: "var(--primary)" }} /> <b>Calculated Planned ETA:</b>{" "}
                     {calculatedPlannedEta ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(calculatedPlannedEta)) : "—"}
                   </span>
-                  <span>
-                    🏁 <b>Required On-Site (ROS):</b>{" "}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    <Flag size={13} style={{ color: "#a91f32" }} /> <b>Required On-Site (ROS):</b>{" "}
                     {calculatedRequiredOnSite ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(calculatedRequiredOnSite)) : "—"}
                   </span>
                 </div>

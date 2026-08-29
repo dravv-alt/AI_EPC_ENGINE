@@ -1115,12 +1115,27 @@ export function RouteThreatRadar({
                             <button
                               type="button"
                               className="button button-secondary"
-                              style={{ fontSize: "11px", padding: "4px 10px", height: "auto" }}
+                              style={{ fontSize: "11px", padding: "4px 10px", height: "auto", display: "inline-flex", alignItems: "center", gap: "6px" }}
                               onClick={() => {
                                 alert(`Logistics schedule action generated for ${selected.name}:\n• Projected Arrival: ${etaDate.toISOString().slice(0, 10)}\n• Float Margin: ${floatDays} days\n• Notification logged to EPC Audit Ledger.`);
                               }}
                             >
-                              {isBreach ? "⚡ Dispatch Crane Reschedule Notice" : isTight ? "📋 Stage Expedited Drayage" : "✅ Verify Milestone Alignment"}
+                              {isBreach ? (
+                                <>
+                                  <Zap size={13} color="#a91f32" />
+                                  <span>Dispatch Crane Reschedule Notice</span>
+                                </>
+                              ) : isTight ? (
+                                <>
+                                  <Truck size={13} color="#c98431" />
+                                  <span>Stage Expedited Drayage</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle2 size={13} color="#5b7a6e" />
+                                  <span>Verify Milestone Alignment</span>
+                                </>
+                              )}
                             </button>
                             <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                               Auto-synced with EPC Critical Path Schedule
