@@ -652,6 +652,26 @@ export function ShipmentWorkbench({
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                   <button
                     type="button"
+                    className="button button-primary"
+                    style={{ fontSize: "10px", padding: "4px 9px", height: "auto", background: "#0284c7" }}
+                    onClick={() => {
+                      setTransportMode("sea");
+                      setExportDocsDays(3);
+                      setOnloadingDays(4);
+                      setOceanTransitDays(24);
+                      setChokepointDays(7);
+                      setOffloadingDays(4);
+                      setImportCustomsDays(3);
+                      setSiteDrayageDays(3);
+                      setBufferDays(3);
+                      setOrigin({ name: "Sanathnagar ICD, Hyderabad", lat: 17.45, lng: 78.43 });
+                      setDestination({ name: "Miami Data Center, Florida", lat: 25.76, lng: -80.19 });
+                    }}
+                  >
+                    ⭐ Flagship: Hyderabad → Florida FCL (45d)
+                  </button>
+                  <button
+                    type="button"
                     className="button button-secondary"
                     style={{ fontSize: "10px", padding: "3px 8px", height: "auto" }}
                     onClick={() => {
@@ -698,6 +718,68 @@ export function ShipmentWorkbench({
                     ✈️ Express Air (9d)
                   </button>
                 </div>
+              </div>
+
+              {/* Conditional Delay & Seasonality Modifier Toggles */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                  padding: "8px 10px",
+                  background: "color-mix(in srgb, var(--surface) 60%, var(--field))",
+                  border: "1px dashed var(--line)",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--ink)", marginRight: "4px" }}>Conditional Rules:</span>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ fontSize: "10px", padding: "2px 7px", height: "auto" }}
+                  onClick={() => setOnloadingDays((prev) => prev + 3)}
+                  title="Adds +3 days to inland rail corridor due to monsoon weather"
+                >
+                  🌧️ Indian Monsoon (+3d)
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ fontSize: "10px", padding: "2px 7px", height: "auto" }}
+                  onClick={() => setOceanTransitDays((prev) => prev + 4)}
+                  title="Adds +4 days due to Atlantic hurricane route deviation & Florida port closure"
+                >
+                  🌀 Atlantic Hurricane (+4d)
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ fontSize: "10px", padding: "2px 7px", height: "auto" }}
+                  onClick={() => setExportDocsDays((prev) => prev + 5)}
+                  title="Adds +5 days due to festival trucking driver shortages in India"
+                >
+                  🪔 Diwali Trucking Shortage (+5d)
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ fontSize: "10px", padding: "2px 7px", height: "auto", color: "#c84b3d" }}
+                  onClick={() => setOnloadingDays((prev) => prev + 7)}
+                  title="Missed strict 48h Container Yard cut-off: mandatory 7-day weekly vessel rollover penalty"
+                >
+                  ⚠️ Missed CY Cut-Off (+7d Rollover)
+                </button>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ fontSize: "10px", padding: "2px 7px", height: "auto", color: "#c98431" }}
+                  onClick={() => setImportCustomsDays((prev) => prev + 5)}
+                  title="US CBP Intensive Physical Inspection & VACIS X-ray exam hold"
+                >
+                  🔍 CBP Intensive Exam (+5d)
+                </button>
               </div>
 
               {/* Stage breakdown grid */}

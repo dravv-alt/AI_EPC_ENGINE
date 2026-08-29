@@ -737,72 +737,64 @@ export function RouteThreatRadar({
                       <div className="impact-step is-complete">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>1. Export Docs &amp; Licences</b>
-                          <span>Export B/L, HazMat approvals &amp; customs release verified at {selected.originName ?? "Origin"}</span>
+                          <b>Phase 1: Procurement, VGM &amp; Booking (Days 1–3)</b>
+                          <span>EPC Forwarder · Crated server racks, chillers &amp; UPS; VGM &amp; HS 8471 locked</span>
                         </div>
                       </div>
 
                       <div className="impact-step is-complete">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>2. Port Onloading &amp; Rigging</b>
-                          <span>Heavy-lift stevedoring &amp; container lashing completed</span>
+                          <b>Phase 2: Inland Haulage &amp; ICEGATE Customs (Days 4–11)</b>
+                          <span>CHA / CONCOR · 40ft HC sealed at Hyderabad ICD, ICEGATE LEO cleared, 711km rail to JNPT</span>
+                        </div>
+                      </div>
+
+                      <div className="impact-step is-complete">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>Phase 3: Origin Port Stacking &amp; CY Cut-off (Days 12–16)</b>
+                          <span>JNPT Operator · Straddle carrier weight stacking, 48h strict CY Cut-off cleared, crane stowed</span>
                         </div>
                       </div>
 
                       <div className="impact-step is-active">
                         <span className="step-dot pulse" />
                         <div className="step-body">
-                          <b>3. Deep-Ocean Transit (Kwon Physics)</b>
+                          <b>Phase 4: Blue-Water Ocean Voyage (~9,317 nm) (Days 17–48)</b>
                           <span>
                             {vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region ? (
                               <span style={{ color: "#f97316", fontWeight: 600 }}>
-                                Hydrodynamic delay +{vesselTelemetry.delayHours.toFixed(1)}h in {assessment.threats[0].region}
+                                Mainline sailing ({vesselTelemetry.estimatedLocation.progressPercent}%) · Hydrodynamic delay +{vesselTelemetry.delayHours.toFixed(1)}h in {assessment.threats[0].region} (Suez/Atlantic corridor)
                               </span>
                             ) : (
-                              `Active passage (${vesselTelemetry.estimatedLocation.progressPercent}% completed) · Speed: ${vesselTelemetry.speed} kts`
+                              `Mainline sailing via Suez & Gibraltar (${vesselTelemetry.estimatedLocation.progressPercent}% completed) · Speed: ${vesselTelemetry.speed} kts`
                             )}
                           </span>
                         </div>
                       </div>
 
-                      <div className={`impact-step ${vesselTelemetry.estimatedLocation.progressPercent > 60 ? "is-complete" : "is-active"}`}>
+                      <div className="impact-step">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>4. Chokepoint / Canal Transit</b>
-                          <span>Convoy scheduling &amp; draft clearance (Suez / Panama / Malacca)</span>
+                          <b>Phase 5: Destination Port &amp; US CBP Clearance (Days 49–53)</b>
+                          <span>US CBP / Broker · Pre-departure ISF-10 verified, Entry 7501, VACIS non-intrusive scan</span>
                         </div>
                       </div>
 
                       <div className="impact-step">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>5. Port Offloading &amp; Visas</b>
-                          <span>Pilotage, heavy crane unlading &amp; port security/visa inspection</span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>6. Import Customs &amp; Tariff Dwell</b>
-                          <span>Bill of entry clearance, duty assessment &amp; terminal release</span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>7. Site Drayage &amp; Milestone Handover</b>
+                          <b>Phase 6: Last-Mile Florida Drayage &amp; De-Stuffing (Days 54–55)</b>
                           <span>
-                            Target:{" "}
+                            Target ROS:{" "}
                             {new Intl.DateTimeFormat("en-IN", {
                               month: "short",
                               day: "numeric",
                             }).format(new Date(selected.requiredOnSite))}
                             {vesselTelemetry.delayHours > 0 && (
                               <span style={{ color: "#ef4444", display: "block", fontSize: "10px" }}>
-                                ⚠️ Downstream arrival slip: +{vesselTelemetry.delayHours.toFixed(1)}h
+                                ⚠️ Downstream site arrival slip: +{vesselTelemetry.delayHours.toFixed(1)}h
                               </span>
                             )}
                           </span>
