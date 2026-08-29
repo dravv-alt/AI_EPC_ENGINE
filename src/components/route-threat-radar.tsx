@@ -89,6 +89,21 @@ export function RouteThreatRadar({
     [shipments, selectedId]
   );
 
+  // Dynamic corridor lead-time estimator based on geographic distances, port benchmarks, and regulatory regimes
+  const dynamicEstimate = useMemo(() => {
+    if (!selected) return null;
+    return estimateDynamicSupplyChainPhases({
+      originLat: Number(selected.originLat) || 17.45,
+      originLng: Number(selected.originLng) || 78.43,
+      originName: selected.originName || "Origin Port",
+      destinationLat: Number(selected.destinationLat) || 25.76,
+      destinationLng: Number(selected.destinationLng) || -80.19,
+      destinationName: selected.destinationName || "Project Site",
+      transportMode: selected.transportMode,
+      portCongestion: selected.portCongestion,
+    });
+  }, [selected]);
+
   const leadTimeHours = useMemo(() => {
     if (!selected) return 45 * 24;
     return dynamicEstimate?.totalLeadTimeHours || (45 * 24);
@@ -332,21 +347,6 @@ export function RouteThreatRadar({
     () => assets.find((a) => a.id === selected?.equipmentId),
     [assets, selected]
   );
-
-  // Dynamic corridor lead-time estimator based on geographic distances, port benchmarks, and regulatory regimes
-  const dynamicEstimate = useMemo(() => {
-    if (!selected) return null;
-    return estimateDynamicSupplyChainPhases({
-      originLat: Number(selected.originLat) || 17.45,
-      originLng: Number(selected.originLng) || 78.43,
-      originName: selected.originName || "Origin Port",
-      destinationLat: Number(selected.destinationLat) || 25.76,
-      destinationLng: Number(selected.destinationLng) || -80.19,
-      destinationName: selected.destinationName || "Project Site",
-      transportMode: selected.transportMode,
-      portCongestion: selected.portCongestion,
-    });
-  }, [selected]);
 
   // Dynamic End-to-End Freight Lifecycle Matrix for any shipment corridor
   const freightPhases = useMemo(() => {
