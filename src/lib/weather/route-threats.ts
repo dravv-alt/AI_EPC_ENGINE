@@ -317,22 +317,27 @@ export async function assessRouteThreats(
     const { windSpeed, precipitation, weatherCode } = data;
     let isThreat = false;
     let type: "Wind" | "Precipitation" | "Thunderstorm" = "Wind";
-    let severity: "WARNING" | "DANGER" = "WARNING";
-    let delayHours = 0;
+    // Dynamic Meteorological & Hydrodynamic Delay Formulation:
+    // Factors in wind aerodynamic drag exponent, convective cell intensity, and precipitation sightlines.
+    const windDragDelay = windSpeed > 30 ? Math.pow(windSpeed / 35, 1.7) * 0.75 : 0;
+    const precipDelay = precipitation > 5 ? Math.min(6.0, Math.pow(precipitation / 8, 1.2) * 0.8) : 0;
 
-    // 🔴 Danger: Wind > 80 km/h OR thunderstorm (codes 95-99)
-    if (windSpeed > 80 || (weatherCode >= 95 && weatherCode <= 99)) {
+    // 🔴 Danger: Severe convective thunderstorm (codes 95-99) OR storm winds > 75 km/h
+    if (weatherCode >= 95 || windSpeed > 75) {
       isThreat = true;
       severity = "DANGER";
       type = weatherCode >= 95 ? "Thunderstorm" : "Wind";
-      delayHours = 12 + Math.floor((windSpeed > 80 ? windSpeed - 80 : 0) / 10);
+      const convectiveBase = weatherCode >= 96 ? 4.2 : weatherCode === 95 ? 2.6 : 1.8;
+      const rawDelay = convectiveBase + windDragDelay + precipDelay;
+      delayHours = Number(Math.max(2.5, Math.min(18.0, rawDelay)).toFixed(1));
     }
-    // 🟡 Warning: Wind > 50 km/h OR precipitation > 10 mm/h
-    else if (windSpeed > 50 || precipitation > 10) {
+    // 🟡 Warning: Moderate gale wind > 45 km/h OR heavy oceanic downpour > 8 mm/h
+    else if (windSpeed > 45 || precipitation > 8 || (weatherCode >= 80 && weatherCode <= 90)) {
       isThreat = true;
       severity = "WARNING";
-      type = windSpeed > 50 ? "Wind" : "Precipitation";
-      delayHours = 4 + Math.floor((windSpeed > 50 ? windSpeed - 50 : 0) / 10);
+      type = windSpeed > 45 ? "Wind" : "Precipitation";
+      const rawDelay = 0.8 + windDragDelay + precipDelay;
+      delayHours = Number(Math.max(1.0, Math.min(8.0, rawDelay)).toFixed(1));
     }
 
     const dateHour = new Date().toISOString().slice(0, 13);

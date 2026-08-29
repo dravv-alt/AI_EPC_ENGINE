@@ -45,7 +45,7 @@ export async function GET(request: Request) {
         s.transportMode === "air"
           ? VESSEL_PROFILES.Container_Feeder
           : s.transportMode === "land"
-            ? VESSEL_PROFILES.GeneralCargo_Handysize
+            ? VESSEL_PROFILES.HeavyLift_ProjectCargo
             : VESSEL_PROFILES.Container_PostPanamax;
 
       const evalContext = {

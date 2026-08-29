@@ -11,6 +11,7 @@ import {
   Tooltip,
   useMap,
 } from "react-leaflet";
+import { type LatLngExpression, latLngBounds } from "leaflet";
 import { AlertTriangle, CloudRain, Compass, Eye, Layers, LocateFixed, Radio, RefreshCw, Wind, Navigation } from "lucide-react";
 import { interpolatePositionAlongPolyline, computeTimelineProgress } from "@/lib/maritime/route-decomposition";
 
