@@ -2,7 +2,17 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import Papa from "papaparse";
-import { CheckCircle2, Droplets, FileUp, MapPin, Save, Sparkles, Zap } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronsUpDown,
+  Droplets,
+  FileUp,
+  MapPin,
+  Save,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { PlanningInsights } from "@/components/planning-insights";
 import {
   coolingEquipmentGroups,
@@ -1044,13 +1054,96 @@ function ManagerSiteSummary({
   answers: SiteAnswerMap;
   handoff: Handoff | null;
 }) {
-  const decisions = siteSections
-    .filter((section) => section.id !== "review")
-    .map((section) => ({
-      section,
-      values: section.questions.filter((question) => answers[question.key]?.trim()),
-    }))
-    .filter((item) => item.values.length);
+  const decisions = useMemo(
+    () =>
+      siteSections
+        .filter((section) => section.id !== "review")
+        .map((section) => ({
+          section,
+          values: section.questions.filter((question) => answers[question.key]?.trim()),
+        }))
+        .filter((item) => item.values.length),
+    [answers]
+  );
+
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (id: string) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const expandAll = () => {
+    const allOpen: Record<string, boolean> = {};
+    decisions.forEach(({ section }) => {
+      allOpen[section.id] = true;
+    });
+    setOpenSections(allOpen);
+  };
+
+  const collapseAll = () => {
+    setOpenSections({});
+  };
+
+  const allExpanded =
+    decisions.length > 0 && decisions.every(({ section }) => openSections[section.id]);
+
+  const leftColumn = useMemo(
+    () => decisions.filter((_, i) => i % 2 === 0),
+    [decisions]
+  );
+  const rightColumn = useMemo(
+    () => decisions.filter((_, i) => i % 2 === 1),
+    [decisions]
+  );
+
+  const renderCard = (
+    section: (typeof decisions)[number]["section"],
+    values: (typeof decisions)[number]["values"]
+  ) => {
+    const isOpen = Boolean(openSections[section.id]);
+    return (
+      <div
+        key={section.id}
+        className={`site-decision-card ${isOpen ? "is-open" : ""}`}
+      >
+        <button
+          type="button"
+          className="site-decision-header"
+          onClick={() => toggleSection(section.id)}
+          aria-expanded={isOpen}
+        >
+          <div className="site-decision-title">
+            <span className="site-decision-icon" aria-hidden="true">
+              <ChevronDown
+                size={16}
+                className={`chevron ${isOpen ? "rotate" : ""}`}
+              />
+            </span>
+            <b>{section.title}</b>
+          </div>
+          <span className="site-decision-badge">
+            {values.length} decision{values.length === 1 ? "" : "s"}
+          </span>
+        </button>
+        {isOpen && (
+          <div className="site-decision-body">
+            <dl>
+              {values.map((question) => (
+                <div key={question.key}>
+                  <dt>{question.label}</dt>
+                  <dd>{answers[question.key]}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section className="surface site-manager-summary" aria-label="Final Site Analysis summary">
       <header>
@@ -1086,23 +1179,28 @@ function ManagerSiteSummary({
           <strong>{handoff ? `${handoff.taskCount} tasks · ${handoff.checklistCount} test plans` : "Saved"}</strong>
         </article>
       </div>
-      <div className="site-manager-decisions">
-        {decisions.map(({ section, values }) => (
-          <details key={section.id}>
-            <summary>
-              <b>{section.title}</b>
-              <span>{values.length} decision{values.length === 1 ? "" : "s"}</span>
-            </summary>
-            <dl>
-              {values.map((question) => (
-                <div key={question.key}>
-                  <dt>{question.label}</dt>
-                  <dd>{answers[question.key]}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        ))}
+      <div className="site-manager-decisions-header">
+        <div>
+          <h3>Confirmed section decisions</h3>
+          <p>Click any section to expand its confirmed parameters independently.</p>
+        </div>
+        <button
+          type="button"
+          className="site-manager-expand-btn"
+          onClick={allExpanded ? collapseAll : expandAll}
+          aria-label={allExpanded ? "Collapse all sections" : "Expand all sections"}
+        >
+          <ChevronsUpDown size={14} />
+          {allExpanded ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      <div className="site-manager-decisions-columns">
+        <div className="site-manager-decisions-column">
+          {leftColumn.map(({ section, values }) => renderCard(section, values))}
+        </div>
+        <div className="site-manager-decisions-column">
+          {rightColumn.map(({ section, values }) => renderCard(section, values))}
+        </div>
       </div>
       <p className="site-manager-caveat">
         Planning inputs are now traceable and downstream work is created, but proposed requirements and commissioning plans still require accountable human review before they affect certified readiness.
