@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { riskSignals, scheduleTasks, shipments } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { getGeographicRegion } from "@/lib/weather/route-threats";
 
 // Slice 11: the Live Events feed unifies the most recent polled signals so the
 // demo shows automatic activity. When unfiltered, only signals from the latest
@@ -38,10 +39,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
     }
 
     const polled = await db.select().from(shipments).where(and(eq(shipments.projectId, projectId), eq(shipments.positionSource, "aisstream"))).orderBy(desc(shipments.lastPolledAt)).limit(100);
-    const aisItems: LiveEvent[] = polled.filter((s) => s.lastPolledAt).map((s) => ({ kind: "ais", label: s.name, detail: s.currentLat && s.currentLng ? `Position ${Number(s.currentLat).toFixed(3)}, ${Number(s.currentLng).toFixed(3)} via ${s.positionSource}.` : `Position update via ${s.positionSource}.`, positionSource: s.positionSource, mmsi: s.mmsi, at: (s.lastPolledAt as Date).toISOString() }));
+    const aisItems: LiveEvent[] = polled.filter((s) => s.lastPolledAt).map((s) => {
+      const region = s.currentLat && s.currentLng ? getGeographicRegion(Number(s.currentLat), Number(s.currentLng)) : null;
+      return {
+        kind: "ais",
+        label: s.name,
+        detail: s.currentLat && s.currentLng
+          ? `Position in ${region ?? "transit corridor"} (${Number(s.currentLat).toFixed(2)}°, ${Number(s.currentLng).toFixed(2)}°) via ${s.positionSource}.`
+          : `Position update via ${s.positionSource}.`,
+        positionSource: s.positionSource,
+        mmsi: s.mmsi,
+        at: (s.lastPolledAt as Date).toISOString(),
+      };
+    });
 
     const weathered = await db.select().from(shipments).where(eq(shipments.projectId, projectId)).orderBy(desc(shipments.lastPolledAt)).limit(100);
-    const weatherItems: LiveEvent[] = weathered.filter((s) => s.lastPolledAt).map((s) => ({ kind: "weather", label: s.name, detail: `Status ${s.status} · weather delay factor ${Number(s.weatherDelayFactor).toFixed(2)}${s.weatherAdjustedEta ? ` · adjusted ETA ${(s.weatherAdjustedEta as Date).toISOString()}` : ""}.`, weatherDelayFactor: s.weatherDelayFactor, status: s.status, at: (s.lastPolledAt as Date).toISOString() }));
+    const weatherItems: LiveEvent[] = weathered.filter((s) => s.lastPolledAt).map((s) => {
+      const region = s.currentLat && s.currentLng ? getGeographicRegion(Number(s.currentLat), Number(s.currentLng)) : null;
+      const delayNum = Number(s.weatherDelayFactor) || 0;
+      return {
+        kind: "weather",
+        label: s.name,
+        detail: `Status: ${s.status} · Delay: +${delayNum.toFixed(1)}h ${region ? `in ${region}` : ""}${s.weatherAdjustedEta ? ` · Adjusted ETA ${(s.weatherAdjustedEta as Date).toISOString().slice(0, 16)}` : ""}.`,
+        weatherDelayFactor: s.weatherDelayFactor,
+        status: s.status,
+        at: (s.lastPolledAt as Date).toISOString(),
+      };
+    });
 
     const items = [...riskItems, ...aisItems, ...weatherItems].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
     return NextResponse.json({ items });
@@ -49,3 +73,4 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load live risk signals." }, { status: error instanceof AccessError ? error.status : 500 });
   }
 }
+

@@ -14,34 +14,52 @@ import { assessRouteThreats } from "@/lib/weather/route-threats";
 
 const schema = z.object({ plannedEta: z.string().datetime().optional(), requiredOnSite: z.string().datetime().optional(), portCongestion: z.boolean().optional(), weatherDelayFactor: z.coerce.number().min(0).optional(), status: z.enum(["green", "amber", "red", "delivered"]).optional(), currentPosition: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), source: z.enum(["live", "simulated"]), reason: z.string().trim().max(1000).optional() }).optional(), assessedThreats: z.array(z.string()).optional() });
 
-export async function GET(_: Request, { params }: { params: Promise<{ shipmentId: string }> }) {
-  const { shipmentId } = await params; const shipment = await db.query.shipments.findFirst({ where: eq(shipments.id, shipmentId) }); if (!shipment) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+export async function GET(request: Request, { params }: { params: Promise<{ shipmentId: string }> }) {
+  const { shipmentId } = await params;
+  const shipment = await db.query.shipments.findFirst({ where: eq(shipments.id, shipmentId) });
+  if (!shipment) return NextResponse.json({ error: "Shipment not found." }, { status: 404 });
+
+  const url = new URL(request.url);
+  const intervalKm = Math.max(25, Math.min(2000, Number(url.searchParams.get("intervalKm")) || 200));
+
   try {
     await requireProjectPermission(shipment.projectId, "audit:view");
     if (!shipment.originLat || !shipment.originLng || !shipment.destinationLat || !shipment.destinationLng) return NextResponse.json({ shipment, route: [], estimate: true, routeAvailable: false, reason: "Origin and destination coordinates are required before a route can be drawn." });
     const mode = shipment.transportMode === "air" || shipment.transportMode === "land" ? shipment.transportMode : "sea";
-    const hasCurrentPosition = shipment.currentLat !== null
-      && shipment.currentLng !== null
-      && Number.isFinite(Number(shipment.currentLat))
-      && Number.isFinite(Number(shipment.currentLng));
-    const routeStart = hasCurrentPosition
-      ? { lat: Number(shipment.currentLat), lng: Number(shipment.currentLng), source: shipment.positionSource === "live" || shipment.positionSource === "aisstream" ? "live AIS position" : "latest simulated position" }
-      : { lat: Number(shipment.originLat), lng: Number(shipment.originLng), source: "shipment origin" };
+    const isLivePosition =
+      (shipment.positionSource === "live" || shipment.positionSource === "aisstream") &&
+      shipment.currentLat !== null &&
+      shipment.currentLng !== null &&
+      (shipment.currentLat !== shipment.originLat || shipment.currentLng !== shipment.originLng);
+
+    const routeStart = isLivePosition
+      ? {
+          lat: Number(shipment.currentLat),
+          lng: Number(shipment.currentLng),
+          source: "live AIS position",
+        }
+      : {
+          lat: Number(shipment.originLat),
+          lng: Number(shipment.originLng),
+          source: "shipment origin",
+        };
+
     const route = await getShipmentRoute(
       routeStart.lat,
       routeStart.lng,
       Number(shipment.destinationLat),
       Number(shipment.destinationLng),
       mode,
-      { originIsInTransit: hasCurrentPosition }
+      { originIsInTransit: isLivePosition }
     );
     const weather = route.length
-      ? await assessRouteThreats(route.flatMap((segment) => segment.coords))
+      ? await assessRouteThreats(route.flatMap((segment) => segment.coords), [], intervalKm)
       : { dataAvailable: false, unavailableReasons: ["A verified route is required before live waypoint weather can be sampled."], observations: [], threats: [], newThreats: [], totalNewDelayHours: 0 };
     return NextResponse.json({
       shipment,
       route,
       routeStart,
+      intervalKm,
       weather: { ...weather, source: "Open-Meteo current conditions", observedAt: new Date().toISOString() },
       estimate: true,
       routeAvailable: route.length > 0,
