@@ -290,10 +290,10 @@ export function RouteThreatRadar({
       </div>
 
       {/* Main Radar Layout: Fleet Manifest (Left) + Threat Deep Dive Deck (Right) */}
-      <div className="threat-radar-body">
+      <div className="threat-radar-main-layout">
         {/* Left Side: Fleet Manifest & Multi-Mode Selector */}
-        <aside className="threat-manifest-panel surface">
-          <div className="threat-manifest-header">
+        <aside className="threat-fleet-panel surface">
+          <div className="threat-fleet-header">
             <div>
               <p className="eyebrow">Corridor Radar</p>
               <h3>Transit Cargo Manifest</h3>
