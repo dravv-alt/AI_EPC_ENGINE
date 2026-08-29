@@ -67,7 +67,7 @@ export function RouteThreatRadar({
 }: Props) {
   const [filterMode, setFilterMode] = useState<"all" | "sea" | "air" | "land">("all");
   const [threatFilter, setThreatFilter] = useState<"all" | "delayed" | "critical">("all");
-  const [isExplainDrawerOpen, setIsExplainDrawerOpen] = useState(false);
+  const [deckTab, setDeckTab] = useState<"telemetry" | "causal">("telemetry");
 
   const selected = useMemo(
     () => shipments.find((s) => s.id === selectedId) ?? shipments[0],
@@ -429,14 +429,11 @@ export function RouteThreatRadar({
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <button
                     type="button"
-                    className="button button-secondary"
-                    onClick={() => {
-                      const el = document.getElementById("causal-why-breakdown");
-                      if (el) el.scrollIntoView({ behavior: "smooth" });
-                    }}
+                    className={`button ${deckTab === "causal" ? "button-primary" : "button-secondary"}`}
+                    onClick={() => setDeckTab(deckTab === "causal" ? "telemetry" : "causal")}
                   >
                     <Sparkles size={14} />
-                    Causal &quot;Why&quot; Breakdown ↓
+                    {deckTab === "causal" ? "View Corridor Telemetry" : "Causal \"Why\" Breakdown"}
                   </button>
 
                   <button
@@ -451,204 +448,230 @@ export function RouteThreatRadar({
                 </div>
               </div>
 
-              {/* Realtime Corridor Gauge Grid */}
-              <div className="corridor-telemetry-grid">
-                <div className="corridor-card">
-                  <div className="card-top">
-                    <Wind size={16} />
-                    <span>Sustained Wind</span>
-                  </div>
-                  <strong>{vesselTelemetry.windSpeed} km/h</strong>
-                  <div className="threat-meter">
-                    <div
-                      className="threat-meter-fill"
-                      style={{
-                        width: `${Math.min(100, (Number(vesselTelemetry.windSpeed) / 100) * 100)}%`,
-                        background: Number(vesselTelemetry.windSpeed) > 60 ? "#a91f32" : Number(vesselTelemetry.windSpeed) > 35 ? "#c98431" : "#10b981",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="corridor-card">
-                  <div className="card-top">
-                    <Waves size={16} />
-                    <span>Significant Wave</span>
-                  </div>
-                  <strong>{vesselTelemetry.waveHeight} m</strong>
-                  <div className="threat-meter">
-                    <div
-                      className="threat-meter-fill"
-                      style={{
-                        width: `${Math.min(100, (Number(vesselTelemetry.waveHeight) / 8) * 100)}%`,
-                        background: Number(vesselTelemetry.waveHeight) > 4 ? "#a91f32" : Number(vesselTelemetry.waveHeight) > 2 ? "#c98431" : "#10b981",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="corridor-card">
-                  <div className="card-top">
-                    <Gauge size={16} />
-                    <span>Transit Speed</span>
-                  </div>
-                  <strong>{vesselTelemetry.speed} kts</strong>
-                  <small>Bearing: {vesselTelemetry.heading}°</small>
-                </div>
-
-                <div
-                  className="corridor-card"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => {
-                    const el = document.getElementById("causal-why-breakdown");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
-                  }}
+              {/* Segmented Deep Dive Deck Tabs */}
+              <div className="threat-deck-tabs" role="tablist" aria-label="Threat Deck Sections">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={deckTab === "telemetry"}
+                  className={`deck-tab-btn ${deckTab === "telemetry" ? "is-active" : ""}`}
+                  onClick={() => setDeckTab("telemetry")}
                 >
-                  <div className="card-top">
-                    <Clock size={16} />
-                    <span>Predicted Delay</span>
-                    <span style={{ fontSize: "10px", color: "var(--primary, #2d463e)", marginLeft: "auto", display: "flex", alignItems: "center", gap: "2px" }}>
-                      <Sparkles size={11} /> p10-p90
-                    </span>
-                  </div>
-                  <strong className={vesselTelemetry.delayHours > 0 ? "text-warn" : ""}>
-                    +{vesselTelemetry.delayHours.toFixed(1)} hrs
-                  </strong>
-                  <small style={{ color: "var(--primary, #2d463e)", fontWeight: 500 }}>
-                    [{causalExplanation ? `+${causalExplanation.uncertaintyInterval.p10OptimisticHours.toFixed(1)}h – +${causalExplanation.uncertaintyInterval.p90ConservativeHours.toFixed(1)}h` : "Analyzing spread..."}]
-                  </small>
-                </div>
+                  <Radio size={14} />
+                  Realtime Corridor Threat Telemetry
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={deckTab === "causal"}
+                  className={`deck-tab-btn ${deckTab === "causal" ? "is-active" : ""}`}
+                  onClick={() => setDeckTab("causal")}
+                >
+                  <Sparkles size={14} />
+                  Causal &quot;Why&quot; Delay Breakdown &amp; Physics
+                </button>
               </div>
 
-              {/* Waypoint Corridor Threat Sampler */}
-              <div className="corridor-sampler-section">
-                <div className="sampler-header">
-                  <div className="sampler-title">
-                    <Navigation size={16} />
-                    <h3>Route Corridor Threat Sampling</h3>
-                  </div>
-                  <span className="sample-count">
-                    {assessment?.threats?.length
-                      ? `${assessment.threats.length} Sample Points Analyzed`
-                      : "Multi-Point Marine Sampling Active"}
-                  </span>
-                </div>
+              {/* TAB 1: Realtime Corridor Threat Telemetry */}
+              {deckTab === "telemetry" && (
+                <>
+                  {/* Realtime Corridor Gauge Grid */}
+                  <div className="corridor-telemetry-grid">
+                    <div className="corridor-card">
+                      <div className="card-top">
+                        <Wind size={16} />
+                        <span>Sustained Wind</span>
+                      </div>
+                      <strong>{vesselTelemetry.windSpeed} km/h</strong>
+                      <div className="threat-meter">
+                        <div
+                          className="threat-meter-fill"
+                          style={{
+                            width: `${Math.min(100, (Number(vesselTelemetry.windSpeed) / 100) * 100)}%`,
+                            background: Number(vesselTelemetry.windSpeed) > 60 ? "#a91f32" : Number(vesselTelemetry.windSpeed) > 35 ? "#c98431" : "#10b981",
+                          }}
+                        />
+                      </div>
+                    </div>
 
-                {assessment?.threats && assessment.threats.length > 0 ? (
-                  <div className="threat-sample-list">
-                    {assessment.threats.map((threat, idx) => (
-                      <div key={idx} className="threat-sample-card">
-                        <div className="threat-sample-icon">
-                          <ShieldAlert size={16} />
-                        </div>
-                        <div className="threat-sample-content">
-                          <div className="sample-row">
-                            <div>
-                              <b style={{ color: "#38bdf8", marginRight: "6px" }}>
-                                📍 {threat.region || `Waypoint #${threat.waypointIndex ?? idx + 1}`}
-                              </b>
-                              <small style={{ color: "var(--muted)" }}>
-                                ({threat.lat.toFixed(2)}°, {threat.lng.toFixed(2)}°)
-                              </small>
+                    <div className="corridor-card">
+                      <div className="card-top">
+                        <Waves size={16} />
+                        <span>Significant Wave</span>
+                      </div>
+                      <strong>{vesselTelemetry.waveHeight} m</strong>
+                      <div className="threat-meter">
+                        <div
+                          className="threat-meter-fill"
+                          style={{
+                            width: `${Math.min(100, (Number(vesselTelemetry.waveHeight) / 8) * 100)}%`,
+                            background: Number(vesselTelemetry.waveHeight) > 4 ? "#a91f32" : Number(vesselTelemetry.waveHeight) > 2 ? "#c98431" : "#10b981",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="corridor-card">
+                      <div className="card-top">
+                        <Gauge size={16} />
+                        <span>Transit Speed</span>
+                      </div>
+                      <strong>{vesselTelemetry.speed} kts</strong>
+                      <small>Bearing: {vesselTelemetry.heading}°</small>
+                    </div>
+
+                    <div
+                      className="corridor-card"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setDeckTab("causal")}
+                    >
+                      <div className="card-top">
+                        <Clock size={16} />
+                        <span>Predicted Delay</span>
+                        <span style={{ fontSize: "10px", color: "var(--primary)", marginLeft: "auto", display: "flex", alignItems: "center", gap: "2px" }}>
+                          <Sparkles size={11} /> p10-p90
+                        </span>
+                      </div>
+                      <strong className={vesselTelemetry.delayHours > 0 ? "text-warn" : ""}>
+                        +{vesselTelemetry.delayHours.toFixed(1)} hrs
+                      </strong>
+                      <small style={{ color: "var(--primary)", fontWeight: 500 }}>
+                        [{causalExplanation ? `+${causalExplanation.uncertaintyInterval.p10OptimisticHours.toFixed(1)}h – +${causalExplanation.uncertaintyInterval.p90ConservativeHours.toFixed(1)}h` : "Analyzing spread..."}]
+                      </small>
+                    </div>
+                  </div>
+
+                  {/* Waypoint Corridor Threat Sampler */}
+                  <div className="corridor-sampler-section">
+                    <div className="sampler-header">
+                      <div className="sampler-title">
+                        <Navigation size={16} />
+                        <h3>Route Corridor Threat Sampling</h3>
+                      </div>
+                      <span className="sample-count">
+                        {assessment?.threats?.length
+                          ? `${assessment.threats.length} Sample Points Analyzed`
+                          : "Multi-Point Marine Sampling Active"}
+                      </span>
+                    </div>
+
+                    {assessment?.threats && assessment.threats.length > 0 ? (
+                      <div className="threat-sample-list">
+                        {assessment.threats.map((threat, idx) => (
+                          <div key={idx} className="threat-sample-card">
+                            <div className="threat-sample-icon">
+                              <ShieldAlert size={16} />
                             </div>
-                            <span className="sample-severity">
-                              Wind: {threat.windSpeed} km/h · Precip: {threat.precipitation} mm · Est. delay: +{threat.estimatedDelayHours}h
-                            </span>
+                            <div className="threat-sample-content">
+                              <div className="sample-row">
+                                <div>
+                                  <b style={{ color: "var(--primary)", marginRight: "6px" }}>
+                                    📍 {threat.region || `Waypoint #${threat.waypointIndex ?? idx + 1}`}
+                                  </b>
+                                  <small style={{ color: "var(--muted)" }}>
+                                    ({threat.lat.toFixed(2)}°, {threat.lng.toFixed(2)}°)
+                                  </small>
+                                </div>
+                                <span className="sample-severity">
+                                  Wind: {threat.windSpeed} km/h · Precip: {threat.precipitation} mm · Est. delay: +{threat.estimatedDelayHours}h
+                                </span>
+                              </div>
+                              <p style={{ marginTop: "4px", fontSize: "12px" }}>
+                                {threat.summary || (
+                                  <>
+                                    {threat.type ? `${threat.type.replaceAll("_", " ")}: ` : ""}
+                                    {threat.weatherCode ? `WMO Code ${threat.weatherCode} · ` : ""}
+                                    Adverse weather corridor condition sampled along verified route polyline.
+                                  </>
+                                )}
+                              </p>
+                            </div>
                           </div>
-                          <p style={{ marginTop: "4px", fontSize: "12px" }}>
-                            {threat.summary || (
-                              <>
-                                {threat.type ? `${threat.type.replaceAll("_", " ")}: ` : ""}
-                                {threat.weatherCode ? `WMO Code ${threat.weatherCode} · ` : ""}
-                                Adverse weather corridor condition sampled along verified route polyline.
-                              </>
-                            )}
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="threat-clean-state">
+                        <Anchor size={20} />
+                        <div>
+                          <b>Corridor Sampling Verified</b>
+                          <p>
+                            Route waypoints verified across nautical bathymetry & atmospheric models.
+                            No blocking cyclonic or wave disruptions exceed threshold.
                           </p>
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                ) : (
-                  <div className="threat-clean-state">
-                    <Anchor size={20} />
-                    <div>
-                      <b>Corridor Sampling Verified</b>
-                      <p>
-                        Route waypoints verified across nautical bathymetry & atmospheric models.
-                        No blocking cyclonic or wave disruptions exceed threshold.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Downstream Schedule Impact Cascade */}
-              <div className="downstream-impact-panel">
-                <div className="impact-header">
-                  <Zap size={16} />
-                  <h3>Connected EPC Milestone Impact</h3>
-                </div>
-                <div className="impact-steps">
-                  <div className="impact-step is-complete">
-                    <span className="step-dot" />
-                    <div className="step-body">
-                      <b>Origin Dispatch</b>
-                      <span>{selected.originName ?? "Port of Departure"}</span>
+                  {/* Downstream Schedule Impact Cascade */}
+                  <div className="downstream-impact-panel">
+                    <div className="impact-header">
+                      <Zap size={16} />
+                      <h3>Connected EPC Milestone Impact</h3>
                     </div>
-                  </div>
-                  <div className="impact-step is-active">
-                    <span className="step-dot pulse" />
-                    <div className="step-body">
-                      <b>Transit Corridor</b>
-                      <span>
-                        {vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region ? (
-                          <span style={{ color: "#f97316", fontWeight: 600 }}>
-                            Delayed by +{vesselTelemetry.delayHours.toFixed(1)} hrs in {assessment.threats[0].region}
+                    <div className="impact-steps">
+                      <div className="impact-step is-complete">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>Origin Dispatch</b>
+                          <span>{selected.originName ?? "Port of Departure"}</span>
+                        </div>
+                      </div>
+                      <div className="impact-step is-active">
+                        <span className="step-dot pulse" />
+                        <div className="step-body">
+                          <b>Transit Corridor</b>
+                          <span>
+                            {vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region ? (
+                              <span style={{ color: "#f97316", fontWeight: 600 }}>
+                                Delayed by +{vesselTelemetry.delayHours.toFixed(1)} hrs in {assessment.threats[0].region}
+                              </span>
+                            ) : (
+                              `Speed: ${vesselTelemetry.speed} kts · On Schedule`
+                            )}
                           </span>
-                        ) : (
-                          `Speed: ${vesselTelemetry.speed} kts · On Schedule`
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="impact-step">
-                    <span className="step-dot" />
-                    <div className="step-body">
-                      <b>Site Receipt & Uncrating</b>
-                      <span>
-                        Target:{" "}
-                        {new Intl.DateTimeFormat("en-IN", {
-                          month: "short",
-                          day: "numeric",
-                        }).format(new Date(selected.requiredOnSite))}
-                        {vesselTelemetry.delayHours > 0 && (
-                          <span style={{ color: "#ef4444", display: "block", fontSize: "10px" }}>
-                            ⚠️ Downstream risk: +{vesselTelemetry.delayHours.toFixed(1)}h arrival slip
+                        </div>
+                      </div>
+                      <div className="impact-step">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>Site Receipt & Uncrating</b>
+                          <span>
+                            Target:{" "}
+                            {new Intl.DateTimeFormat("en-IN", {
+                              month: "short",
+                              day: "numeric",
+                            }).format(new Date(selected.requiredOnSite))}
+                            {vesselTelemetry.delayHours > 0 && (
+                              <span style={{ color: "#ef4444", display: "block", fontSize: "10px" }}>
+                                ⚠️ Downstream risk: +{vesselTelemetry.delayHours.toFixed(1)}h arrival slip
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
+                        </div>
+                      </div>
+                      <div className="impact-step">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>Commissioning & Turnover</b>
+                          <span>
+                            {linkedAsset
+                              ? `${linkedAsset.tag} (${linkedAsset.assetType}) Verification`
+                              : "Primary commissioning & readiness gate"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="impact-step">
-                    <span className="step-dot" />
-                    <div className="step-body">
-                      <b>Commissioning & Turnover</b>
-                      <span>
-                        {linkedAsset
-                          ? `${linkedAsset.tag} (${linkedAsset.assetType}) Verification`
-                          : "Primary commissioning & readiness gate"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </>
+              )}
 
-              {/* Native Inline Causal "Why" Delay Breakdown Section */}
-              {causalExplanation && (
-                <div id="causal-why-breakdown" className="causal-inline-section">
+              {/* TAB 2: Causal "Why" Delay Breakdown & Naval Hydrodynamics */}
+              {deckTab === "causal" && causalExplanation && (
+                <div id="causal-why-breakdown" className="causal-inline-section" style={{ borderTop: "none", paddingTop: 0, marginTop: 0 }}>
                   <div className="causal-inline-header">
                     <div className="causal-inline-title">
-                      <Sparkles size={16} color="var(--primary, #2d463e)" />
+                      <Sparkles size={16} color="var(--primary)" />
                       <h3>Causal &quot;Why&quot; Delay Breakdown &amp; Naval Hydrodynamics</h3>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -689,8 +712,8 @@ export function RouteThreatRadar({
 
                     <div className="causal-inline-card is-p50">
                       <div className="causal-inline-card-header">
-                        <span style={{ color: "var(--primary, #2d463e)" }}>p50 Calibrated Delay</span>
-                        <span style={{ color: "var(--primary, #2d463e)", fontSize: "10px", fontWeight: 700 }}>Expected</span>
+                        <span style={{ color: "var(--primary)" }}>p50 Calibrated Delay</span>
+                        <span style={{ color: "var(--primary)", fontSize: "10px", fontWeight: 700 }}>Expected</span>
                       </div>
                       <strong>
                         +{causalExplanation.totalPredictedDelayHours.toFixed(1)}h
@@ -766,12 +789,12 @@ export function RouteThreatRadar({
                               style={{
                                 width: `${Math.max(4, Math.min(100, pct))}%`,
                                 background: isHydro
-                                  ? "#2d463e"
+                                  ? "var(--primary)"
                                   : isChoke
                                     ? "#c98431"
                                     : isMl
                                       ? "#5b7a6e"
-                                      : "#888888",
+                                      : "var(--muted)",
                               }}
                             />
                           </div>
