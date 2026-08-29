@@ -33,7 +33,8 @@ export type MapShipment = {
 };
 
 type RouteSegment = { mode: "sea" | "air" | "land"; coords: [number, number][] };
-type WeatherThreat = {
+
+export type WeatherThreat = {
   lat: number;
   lng: number;
   type: string;
@@ -42,20 +43,28 @@ type WeatherThreat = {
   precipitation: number;
   estimatedDelayHours: number;
   waypointIndex: number;
+  region?: string;
+  summary?: string;
+  severity?: string;
 };
+
+export type WeatherObservation = {
+  waypointIndex: number;
+  lat: number;
+  lng: number;
+  windSpeed: number;
+  precipitation: number;
+  weatherCode: number;
+  threat: WeatherThreat | null;
+  region?: string;
+  summary?: string;
+};
+
 export type RouteThreatAssessment = {
   dataAvailable: boolean;
   source?: string;
   observedAt?: string;
-  observations?: Array<{
-    waypointIndex: number;
-    lat: number;
-    lng: number;
-    windSpeed: number;
-    precipitation: number;
-    weatherCode: number;
-    threat: WeatherThreat | null;
-  }>;
+  observations?: WeatherObservation[];
   threats: WeatherThreat[];
   unavailableReasons?: string[];
   totalNewDelayHours?: number;
