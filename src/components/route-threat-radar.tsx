@@ -255,6 +255,129 @@ export function RouteThreatRadar({
     [assets, selected]
   );
 
+  // Dynamic End-to-End Freight Lifecycle Matrix for any shipment corridor
+  const freightPhases = useMemo(() => {
+    if (!selected || !vesselTelemetry) return [];
+    const origin = selected.originName || "Origin Port";
+    const dest = selected.destinationName || "Project Site";
+    const mode = selected.transportMode;
+    const progress = vesselTelemetry.estimatedLocation.progressPercent;
+    const isAir = mode === "air";
+    const isRoad = mode === "land";
+
+    if (isAir) {
+      return [
+        {
+          title: "Phase 1: Procurement & Air Waybill (Days 1–2)",
+          subtitle: "Air Forwarder · Equipment crated, IATA HazMat check & Air Waybill issued",
+          status: "is-complete",
+          isPulse: false,
+        },
+        {
+          title: `Phase 2: Airport Gate-In & Export Customs (Days 3–4)`,
+          subtitle: `Airport Authority · ULD palletized & export customs release at ${origin}`,
+          status: "is-complete",
+          isPulse: false,
+        },
+        {
+          title: `Phase 3: Flight Air Corridor Transit (Days 5–6)`,
+          subtitle: `Air Cargo Carrier · Flight active (${progress}% completed) · Cruising: 480 kts`,
+          status: "is-active",
+          isPulse: true,
+        },
+        {
+          title: `Phase 4: Destination Airport Terminal & Customs (Days 7–8)`,
+          subtitle: `Ground Handler · Cargo de-consolidation, import duty release at destination`,
+          status: "",
+          isPulse: false,
+        },
+        {
+          title: `Phase 5: Last-Mile Express Drayage (Day 9)`,
+          subtitle: `Dedicated Carrier · Direct delivery to ${dest} & cleanroom handover`,
+          status: "",
+          isPulse: false,
+        },
+      ];
+    }
+
+    if (isRoad) {
+      return [
+        {
+          title: "Phase 1: Factory Packaging & Bill of Lading (Days 1–2)",
+          subtitle: "EPC Logistics · Heavy machinery crate strapping & commercial invoice verified",
+          status: "is-complete",
+          isPulse: false,
+        },
+        {
+          title: `Phase 2: Heavy-Haul Trailer Loading & Lashing (Days 3–4)`,
+          subtitle: `Heavy Drayage Specialist · Lowbed multi-axle trailer loading & road permits from ${origin}`,
+          status: "is-complete",
+          isPulse: false,
+        },
+        {
+          title: `Phase 3: National Highway Corridor Transit (Days 5–8)`,
+          subtitle: `Overland Freight Fleet · Highway passage (${progress}% completed) · GPS speed: ${vesselTelemetry.speed} km/h`,
+          status: "is-active",
+          isPulse: true,
+        },
+        {
+          title: `Phase 4: State / Regional Border Checkpost (Days 9–10)`,
+          subtitle: "Commercial Tax Authority · Transit pass verification & e-Waybill clearance",
+          status: "",
+          isPulse: false,
+        },
+        {
+          title: `Phase 5: Site Gate-In & Rigging Handover (Day 11)`,
+          subtitle: `EPC Site Rigging Team · Final gate arrival at ${dest}, crane unhooking & uncrating`,
+          status: "",
+          isPulse: false,
+        },
+      ];
+    }
+
+    // Standard & Flagship Maritime Deep-Sea / Multimodal
+    return [
+      {
+        title: "Phase 1: Procurement, VGM & Booking (Days 1–3)",
+        subtitle: `EPC Forwarder · Crated ${linkedAsset ? linkedAsset.tag : "capital equipment"}; Verified Gross Mass (VGM) & HS 8471 locked`,
+        status: "is-complete",
+        isPulse: false,
+      },
+      {
+        title: `Phase 2: Inland Rail Haulage & Export Customs (Days 4–11)`,
+        subtitle: `CHA / CONCOR · 40ft High-Cube sealed at ${origin} ICD, ICEGATE LEO customs cleared, rail to seaport`,
+        status: "is-complete",
+        isPulse: false,
+      },
+      {
+        title: `Phase 3: Origin Port Stacking & CY Cut-off (Days 12–16)`,
+        subtitle: "Port Operator · Straddle carrier weight stacking, strict 48h CY Cut-off cleared, crane stowed",
+        status: "is-complete",
+        isPulse: false,
+      },
+      {
+        title: `Phase 4: Blue-Water Ocean Voyage (Days 17–48)`,
+        subtitle: vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region
+          ? `Mainline sailing (${progress}%) · Kwon hydrodynamic delay +${vesselTelemetry.delayHours.toFixed(1)}h in ${assessment.threats[0].region}`
+          : `Mainline sailing (${progress}% completed) · Speed: ${vesselTelemetry.speed} kts · On Schedule`,
+        status: "is-active",
+        isPulse: true,
+      },
+      {
+        title: `Phase 5: Destination Port & Import Customs (Days 49–53)`,
+        subtitle: "Customs Broker / CBP Authority · Pre-departure ISF-10 / Import Entry cleared, VACIS scan",
+        status: "",
+        isPulse: false,
+      },
+      {
+        title: `Phase 6: Last-Mile Drayage & De-Stuffing (Days 54–55)`,
+        subtitle: `Intermodal Drayage · Highway container transport to ${dest}, technical de-stuffing & empty depot return`,
+        status: "",
+        isPulse: false,
+      },
+    ];
+  }, [selected, vesselTelemetry, assessment, linkedAsset]);
+
   // Compute Comprehensive Causal Explanation for the selected shipment
   const causalExplanation = useMemo<ComprehensiveCausalExplanation | null>(() => {
     const rawDelay = vesselTelemetry.delayHours || 0;
@@ -734,72 +857,15 @@ export function RouteThreatRadar({
                       <h3>Connected EPC Milestone Impact</h3>
                     </div>
                     <div className="impact-steps">
-                      <div className="impact-step is-complete">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Phase 1: Procurement, VGM &amp; Booking (Days 1–3)</b>
-                          <span>EPC Forwarder · Crated server racks, chillers &amp; UPS; VGM &amp; HS 8471 locked</span>
+                      {freightPhases.map((phase, idx) => (
+                        <div key={idx} className={`impact-step ${phase.status}`}>
+                          <span className={`step-dot ${phase.isPulse ? "pulse" : ""}`} />
+                          <div className="step-body">
+                            <b>{phase.title}</b>
+                            <span>{phase.subtitle}</span>
+                          </div>
                         </div>
-                      </div>
-
-                      <div className="impact-step is-complete">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Phase 2: Inland Haulage &amp; ICEGATE Customs (Days 4–11)</b>
-                          <span>CHA / CONCOR · 40ft HC sealed at Hyderabad ICD, ICEGATE LEO cleared, 711km rail to JNPT</span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step is-complete">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Phase 3: Origin Port Stacking &amp; CY Cut-off (Days 12–16)</b>
-                          <span>JNPT Operator · Straddle carrier weight stacking, 48h strict CY Cut-off cleared, crane stowed</span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step is-active">
-                        <span className="step-dot pulse" />
-                        <div className="step-body">
-                          <b>Phase 4: Blue-Water Ocean Voyage (~9,317 nm) (Days 17–48)</b>
-                          <span>
-                            {vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region ? (
-                              <span style={{ color: "#f97316", fontWeight: 600 }}>
-                                Mainline sailing ({vesselTelemetry.estimatedLocation.progressPercent}%) · Hydrodynamic delay +{vesselTelemetry.delayHours.toFixed(1)}h in {assessment.threats[0].region} (Suez/Atlantic corridor)
-                              </span>
-                            ) : (
-                              `Mainline sailing via Suez & Gibraltar (${vesselTelemetry.estimatedLocation.progressPercent}% completed) · Speed: ${vesselTelemetry.speed} kts`
-                            )}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Phase 5: Destination Port &amp; US CBP Clearance (Days 49–53)</b>
-                          <span>US CBP / Broker · Pre-departure ISF-10 verified, Entry 7501, VACIS non-intrusive scan</span>
-                        </div>
-                      </div>
-
-                      <div className="impact-step">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Phase 6: Last-Mile Florida Drayage &amp; De-Stuffing (Days 54–55)</b>
-                          <span>
-                            Target ROS:{" "}
-                            {new Intl.DateTimeFormat("en-IN", {
-                              month: "short",
-                              day: "numeric",
-                            }).format(new Date(selected.requiredOnSite))}
-                            {vesselTelemetry.delayHours > 0 && (
-                              <span style={{ color: "#ef4444", display: "block", fontSize: "10px" }}>
-                                ⚠️ Downstream site arrival slip: +{vesselTelemetry.delayHours.toFixed(1)}h
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
 
                     {/* Date-Aligned Decision & Next-Step Action Engine */}
