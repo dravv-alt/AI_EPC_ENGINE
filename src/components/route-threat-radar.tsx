@@ -737,29 +737,63 @@ export function RouteThreatRadar({
                       <div className="impact-step is-complete">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>Origin Dispatch</b>
-                          <span>{selected.originName ?? "Port of Departure"}</span>
+                          <b>1. Export Docs &amp; Licences</b>
+                          <span>Export B/L, HazMat approvals &amp; customs release verified at {selected.originName ?? "Origin"}</span>
                         </div>
                       </div>
+
+                      <div className="impact-step is-complete">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>2. Port Onloading &amp; Rigging</b>
+                          <span>Heavy-lift stevedoring &amp; container lashing completed</span>
+                        </div>
+                      </div>
+
                       <div className="impact-step is-active">
                         <span className="step-dot pulse" />
                         <div className="step-body">
-                          <b>Transit Corridor</b>
+                          <b>3. Deep-Ocean Transit (Kwon Physics)</b>
                           <span>
                             {vesselTelemetry.delayHours > 0 && assessment?.threats?.[0]?.region ? (
                               <span style={{ color: "#f97316", fontWeight: 600 }}>
-                                Delayed by +{vesselTelemetry.delayHours.toFixed(1)} hrs in {assessment.threats[0].region}
+                                Hydrodynamic delay +{vesselTelemetry.delayHours.toFixed(1)}h in {assessment.threats[0].region}
                               </span>
                             ) : (
-                              `Speed: ${vesselTelemetry.speed} kts · On Schedule`
+                              `Active passage (${vesselTelemetry.estimatedLocation.progressPercent}% completed) · Speed: ${vesselTelemetry.speed} kts`
                             )}
                           </span>
                         </div>
                       </div>
+
+                      <div className={`impact-step ${vesselTelemetry.estimatedLocation.progressPercent > 60 ? "is-complete" : "is-active"}`}>
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>4. Chokepoint / Canal Transit</b>
+                          <span>Convoy scheduling &amp; draft clearance (Suez / Panama / Malacca)</span>
+                        </div>
+                      </div>
+
                       <div className="impact-step">
                         <span className="step-dot" />
                         <div className="step-body">
-                          <b>Site Receipt & Uncrating</b>
+                          <b>5. Port Offloading &amp; Visas</b>
+                          <span>Pilotage, heavy crane unlading &amp; port security/visa inspection</span>
+                        </div>
+                      </div>
+
+                      <div className="impact-step">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>6. Import Customs &amp; Tariff Dwell</b>
+                          <span>Bill of entry clearance, duty assessment &amp; terminal release</span>
+                        </div>
+                      </div>
+
+                      <div className="impact-step">
+                        <span className="step-dot" />
+                        <div className="step-body">
+                          <b>7. Site Drayage &amp; Milestone Handover</b>
                           <span>
                             Target:{" "}
                             {new Intl.DateTimeFormat("en-IN", {
@@ -768,20 +802,9 @@ export function RouteThreatRadar({
                             }).format(new Date(selected.requiredOnSite))}
                             {vesselTelemetry.delayHours > 0 && (
                               <span style={{ color: "#ef4444", display: "block", fontSize: "10px" }}>
-                                ⚠️ Downstream risk: +{vesselTelemetry.delayHours.toFixed(1)}h arrival slip
+                                ⚠️ Downstream arrival slip: +{vesselTelemetry.delayHours.toFixed(1)}h
                               </span>
                             )}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="impact-step">
-                        <span className="step-dot" />
-                        <div className="step-body">
-                          <b>Commissioning & Turnover</b>
-                          <span>
-                            {linkedAsset
-                              ? `${linkedAsset.tag} (${linkedAsset.assetType}) Verification`
-                              : "Primary commissioning & readiness gate"}
                           </span>
                         </div>
                       </div>

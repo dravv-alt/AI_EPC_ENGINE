@@ -74,6 +74,48 @@ export function ShipmentWorkbench({
   const [destination, setDestination] = useState<{ name: string; lat: number; lng: number } | null>(null);
   const approvedPlans = useMemo(() => plans.filter((item) => item.status === "approved"), [plans]);
 
+  // Realistic EPC End-to-End Logistics Lifecycle Stage Durations
+  const [transportMode, setTransportMode] = useState<"sea" | "air" | "land">("sea");
+  const [departureDate, setDepartureDate] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  });
+  const [exportDocsDays, setExportDocsDays] = useState(3);
+  const [onloadingDays, setOnloadingDays] = useState(2);
+  const [oceanTransitDays, setOceanTransitDays] = useState(20);
+  const [chokepointDays, setChokepointDays] = useState(2);
+  const [offloadingDays, setOffloadingDays] = useState(2);
+  const [importCustomsDays, setImportCustomsDays] = useState(3);
+  const [siteDrayageDays, setSiteDrayageDays] = useState(2);
+  const [bufferDays, setBufferDays] = useState(3);
+
+  const totalLeadTimeDays = useMemo(() => {
+    if (transportMode === "air") {
+      return exportDocsDays + 1 + 2 + 0 + 1 + importCustomsDays + siteDrayageDays;
+    }
+    if (transportMode === "land") {
+      return exportDocsDays + 1 + 5 + 0 + 1 + importCustomsDays + siteDrayageDays;
+    }
+    return exportDocsDays + onloadingDays + oceanTransitDays + chokepointDays + offloadingDays + importCustomsDays + siteDrayageDays;
+  }, [transportMode, exportDocsDays, onloadingDays, oceanTransitDays, chokepointDays, offloadingDays, importCustomsDays, siteDrayageDays]);
+
+  const calculatedPlannedEta = useMemo(() => {
+    const depMs = new Date(departureDate).getTime();
+    if (isNaN(depMs)) return "";
+    const arr = new Date(depMs + totalLeadTimeDays * 24 * 3600_000);
+    arr.setMinutes(arr.getMinutes() - arr.getTimezoneOffset());
+    return arr.toISOString().slice(0, 16);
+  }, [departureDate, totalLeadTimeDays]);
+
+  const calculatedRequiredOnSite = useMemo(() => {
+    const depMs = new Date(departureDate).getTime();
+    if (isNaN(depMs)) return "";
+    const ros = new Date(depMs + (totalLeadTimeDays + bufferDays) * 24 * 3600_000);
+    ros.setMinutes(ros.getMinutes() - ros.getTimezoneOffset());
+    return ros.toISOString().slice(0, 16);
+  }, [departureDate, totalLeadTimeDays, bufferDays]);
+
   async function refresh() {
     const [shipmentResponse, planResponse] = await Promise.all([
       fetch(`/api/projects/${projectId}/shipments`),
@@ -556,12 +598,17 @@ export function ShipmentWorkbench({
             </label>
             <label>
               Transport mode
-              <select name="transportMode" defaultValue="land">
-                <option value="land">Road</option>
-                <option value="sea">Sea</option>
-                <option value="air">Air</option>
+              <select
+                name="transportMode"
+                value={transportMode}
+                onChange={(e) => setTransportMode(e.target.value as any)}
+              >
+                <option value="sea">Sea (Maritime Deep Ocean & Multimodal)</option>
+                <option value="land">Road (Overland Heavy-Haul Drayage)</option>
+                <option value="air">Air (Express Air Freight)</option>
               </select>
             </label>
+
             <fieldset>
               <legend>Origin</legend>
               <LocationSearch
@@ -578,21 +625,230 @@ export function ShipmentWorkbench({
                 onSelect={setDestination}
               />
             </fieldset>
-            <label>
-              Planned ETA
-              <input name="plannedEta" type="datetime-local" required />
-            </label>
-            <label>
-              Required on site
-              <input name="requiredOnSite" type="datetime-local" required />
-            </label>
-            <label className="check-label">
+
+            {/* Realistic EPC Supply Chain Lead-Time & Stage-Gate Calculator */}
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                padding: "16px",
+                background: "var(--surface-muted)",
+                border: "1px solid var(--line)",
+                borderRadius: "10px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                marginTop: "6px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                <div>
+                  <b style={{ fontSize: "13px", color: "var(--ink)" }}>⏱️ EPC Supply Chain Lead-Time &amp; Stage-Gate Calculator</b>
+                  <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--muted)" }}>
+                    Calculates realistic door-to-site arrival incorporating documentation, canal transits, port visas, on/offloading, and customs dwell.
+                  </p>
+                </div>
+
+                {/* Preset Fast-Pick Buttons */}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    style={{ fontSize: "10px", padding: "3px 8px", height: "auto" }}
+                    onClick={() => {
+                      setTransportMode("sea");
+                      setExportDocsDays(3);
+                      setOnloadingDays(2);
+                      setOceanTransitDays(20);
+                      setChokepointDays(2);
+                      setOffloadingDays(2);
+                      setImportCustomsDays(3);
+                      setSiteDrayageDays(2);
+                    }}
+                  >
+                    🌍 Global Deep Sea (34d)
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    style={{ fontSize: "10px", padding: "3px 8px", height: "auto" }}
+                    onClick={() => {
+                      setTransportMode("sea");
+                      setExportDocsDays(2);
+                      setOnloadingDays(1);
+                      setOceanTransitDays(8);
+                      setChokepointDays(1);
+                      setOffloadingDays(1);
+                      setImportCustomsDays(2);
+                      setSiteDrayageDays(1);
+                    }}
+                  >
+                    ⚡ Regional Coastal (16d)
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    style={{ fontSize: "10px", padding: "3px 8px", height: "auto" }}
+                    onClick={() => {
+                      setTransportMode("air");
+                      setExportDocsDays(2);
+                      setImportCustomsDays(2);
+                      setSiteDrayageDays(1);
+                    }}
+                  >
+                    ✈️ Express Air (9d)
+                  </button>
+                </div>
+              </div>
+
+              {/* Stage breakdown grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "10px", fontSize: "11px" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <span>🛫 Journey Departure Date</span>
+                  <input
+                    type="datetime-local"
+                    value={departureDate}
+                    onChange={(e) => setDepartureDate(e.target.value)}
+                    required
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <span>📄 Export Docs &amp; Licences (days)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={exportDocsDays}
+                    onChange={(e) => setExportDocsDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+
+                {transportMode === "sea" && (
+                  <>
+                    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <span>🏗️ Port Onloading &amp; Rigging (days)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={onloadingDays}
+                        onChange={(e) => setOnloadingDays(Math.max(0, Number(e.target.value)))}
+                      />
+                    </label>
+
+                    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <span>🚢 Ocean Voyage Passage (days)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={oceanTransitDays}
+                        onChange={(e) => setOceanTransitDays(Math.max(1, Number(e.target.value)))}
+                      />
+                    </label>
+
+                    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <span>🔒 Canal/Chokepoint Queuing (days)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={chokepointDays}
+                        onChange={(e) => setChokepointDays(Math.max(0, Number(e.target.value)))}
+                      />
+                    </label>
+
+                    <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <span>⚓ Port Offloading &amp; Visas (days)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={offloadingDays}
+                        onChange={(e) => setOffloadingDays(Math.max(0, Number(e.target.value)))}
+                      />
+                    </label>
+                  </>
+                )}
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <span>🏛️ Import Customs Tariff Dwell (days)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={importCustomsDays}
+                    onChange={(e) => setImportCustomsDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <span>🚚 Overland Site Drayage (days)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={siteDrayageDays}
+                    onChange={(e) => setSiteDrayageDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <span>🛡️ Site ROS Buffer Margin (days)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={bufferDays}
+                    onChange={(e) => setBufferDays(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+              </div>
+
+              {/* Live Lead Time Summary Bar */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "10px",
+                  padding: "10px 12px",
+                  background: "color-mix(in srgb, var(--primary) 8%, var(--surface))",
+                  border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                }}
+              >
+                <div>
+                  <span style={{ color: "var(--muted)", marginRight: "4px" }}>Total Door-to-Site Duration:</span>
+                  <b style={{ color: "var(--primary)", fontSize: "14px" }}>{totalLeadTimeDays} Days ({totalLeadTimeDays * 24} Hours)</b>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                  <span>
+                    🎯 <b>Calculated Planned ETA:</b>{" "}
+                    {calculatedPlannedEta ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(calculatedPlannedEta)) : "—"}
+                  </span>
+                  <span>
+                    🏁 <b>Required On-Site (ROS):</b>{" "}
+                    {calculatedRequiredOnSite ? new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric", year: "numeric" }).format(new Date(calculatedRequiredOnSite)) : "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Synchronized form payload inputs */}
+              <input type="hidden" name="plannedEta" value={calculatedPlannedEta} />
+              <input type="hidden" name="requiredOnSite" value={calculatedRequiredOnSite} />
+            </div>
+
+            <label className="check-label" style={{ gridColumn: "1 / -1" }}>
               <input name="portCongestion" type="checkbox" />
-              Manual port congestion
+              Flag strategic port / berth congestion
             </label>
-            <button className="button button-primary" disabled={saving || !assets.length}>
+            <button className="button button-primary" disabled={saving || !assets.length} style={{ gridColumn: "1 / -1" }}>
               <Route size={16} />
-              Create route
+              Create route with Stage-Gate Lead Time ({totalLeadTimeDays}d)
             </button>
           </form>
         </section>
