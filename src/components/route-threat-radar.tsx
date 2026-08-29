@@ -429,15 +429,6 @@ export function RouteThreatRadar({
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <button
                     type="button"
-                    className={`button ${deckTab === "causal" ? "button-primary" : "button-secondary"}`}
-                    onClick={() => setDeckTab(deckTab === "causal" ? "telemetry" : "causal")}
-                  >
-                    <Sparkles size={14} />
-                    {deckTab === "causal" ? "View Corridor Telemetry" : "Causal \"Why\" Breakdown"}
-                  </button>
-
-                  <button
-                    type="button"
                     className="button button-primary refresh-threat-btn"
                     disabled={loading}
                     onClick={() => onAssessRoute(selected)}
