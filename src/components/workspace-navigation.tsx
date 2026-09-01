@@ -121,7 +121,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
   return (
     <aside className={`sidebar ${collapsed ? "is-collapsed" : ""}`} aria-label="Primary navigation">
       <div className="sidebar-brand-row">
-        <Link className="brand" href="/" onClick={handleBrandClick} title={collapsed ? "Expand navigation" : "Pramana Control Center"}><span className="brand-mark"><img src="/brand/pramana-mark.png" alt="" /></span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
+        <Link className="brand" href="/" prefetch={false} onClick={handleBrandClick} title={collapsed ? "Expand navigation" : "Pramana Control Center"}><span className="brand-mark"><img src="/brand/pramana-mark.png" alt="" /></span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
         <button className="sidebar-toggle" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSidebar(); }} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
       </div>
       <label className="project-switcher">
@@ -136,7 +136,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
       <nav className="nav-list" aria-label="Project areas">
         <div className="nav-primary">
           {primaryWorkspaceLinks.map(([Icon, label, href]) => (
-            <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
+            <Link prefetch={false} aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
               <Icon size={18} /><span>{label}</span>
             </Link>
           ))}
@@ -146,7 +146,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
             <h2 className="nav-group-label" id={`nav-group-${group.label.toLowerCase()}`}>{group.label}</h2>
             <div className="nav-children">
               {group.links.map(([Icon, label, href]) => (
-                <Link aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
+                <Link prefetch={false} aria-current={routeIsActive(pathname, href) ? "page" : undefined} aria-label={label} title={collapsed ? label : undefined} className={`nav-item ${routeIsActive(pathname, href) ? "is-active" : ""}`} href={href as Route} key={href}>
                   <Icon size={18} /><span>{label}</span>
                 </Link>
               ))}
