@@ -60,7 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const seo = getRouteSeo(pathname);
   return {
     ...baseMetadata,
-    title: seo.title,
+    title: `${seo.title} | Pramana Cx`,
     description: seo.description,
     alternates: { canonical: pathname },
     openGraph: { ...baseMetadata.openGraph, url: pathname, title: `${seo.title} | Pramana Cx`, description: seo.description },
