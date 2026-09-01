@@ -1,6 +1,6 @@
 import { FeatureShell } from "@/components/feature-shell";
 import { GraphWorkbench } from "@/components/graph-workbench";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { getProjectGraph } from "@/lib/graph/entities";
 import { getActiveProjectId } from "@/lib/projects/current";
 
@@ -10,7 +10,7 @@ export default async function GraphPage({ searchParams }: { searchParams: Promis
   const projectId = await getActiveProjectId();
   const { focus } = await searchParams;
   const [data, graph] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     getProjectGraph(projectId)
   ]);
   if (!data) throw new Error("Project not found");

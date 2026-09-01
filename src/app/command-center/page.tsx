@@ -1,7 +1,7 @@
 import { FeatureShell } from "@/components/feature-shell";
 import { LiveFeed } from "@/components/live-feed";
 import { getActiveProjectId } from "@/lib/projects/current";
-import { getDashboardData, resolveAlertLinks, type AlertRow } from "@/lib/dashboard-data";
+import { getProjectShellData, resolveAlertLinks, type AlertRow } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { alerts } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
@@ -21,7 +21,7 @@ function humanAlertFacts(alert: AlertRow) {
 
 export default async function CommandCenterPage() {
   const projectId = await getActiveProjectId();
-  const [data, items] = await Promise.all([getDashboardData(projectId), db.select().from(alerts).where(eq(alerts.projectId, projectId)).orderBy(desc(alerts.createdAt))]);
+  const [data, items] = await Promise.all([getProjectShellData(projectId), db.select().from(alerts).where(eq(alerts.projectId, projectId)).orderBy(desc(alerts.createdAt))]);
   if (!data) throw new Error("Project not found");
   const resolved = await resolveAlertLinks(projectId, items);
   const active = resolved.filter(({ alert }) => alert.status === "active");

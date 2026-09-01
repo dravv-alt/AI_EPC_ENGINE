@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { EvidenceWorkbench } from "@/components/evidence-workbench";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { assets, edges, evidence, requirements, systems, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function EvidencePage() {
   const projectId = await getActiveProjectId();
   const [data, evidenceRows, systemRows, assetRows, requirementRows, userRows, edgeRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select().from(evidence).where(eq(evidence.projectId, projectId)).orderBy(asc(evidence.capturedAt)),
     db.select().from(systems).where(eq(systems.projectId, projectId)).orderBy(asc(systems.name)),
     db.select().from(assets).where(eq(assets.projectId, projectId)).orderBy(asc(assets.tag)),

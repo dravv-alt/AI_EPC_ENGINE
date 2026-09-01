@@ -3,7 +3,7 @@ import { DocumentLibrary } from "@/components/document-library";
 import { FeatureShell } from "@/components/feature-shell";
 import { SourceUploadForm } from "@/components/source-upload-form";
 import { getActiveProjectId } from "@/lib/projects/current";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, sourceRegions } from "@/lib/db/schema";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function SourcesPage() {
   const projectId = await getActiveProjectId();
   const [data, rows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({
       versionId: documentVersions.id,
       title: documents.title,

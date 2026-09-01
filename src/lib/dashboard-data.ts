@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { alerts, assets, auditEvents, documentVersions, documents, evidence, findings, gates, projectMembers, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, siteAnalyses, sourceRegions, systems, users } from "@/lib/db/schema";
+import { alerts, assets, auditEvents, documentVersions, documents, evidence, findings, gates, projectMembers, projects, requirements, scheduleRisks, scheduleTasks, scheduleVersions, shipments, siteAnalyses, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getProjectGateReadiness, type GateReadiness } from "@/lib/readiness/project-readiness";
 import { requireProjectPermission } from "@/lib/projects/access";
 
@@ -46,6 +46,15 @@ export interface AlertLink { href: string; label: string }
 export interface AlertRow { id: string; projectId: string; eventType: string; dedupKey: string; status: string; title: string; payload: unknown; createdAt: Date }
 
 export interface ResolvedAlert { alert: AlertRow; links: AlertLink[] }
+
+/** Lightweight shared-shell data for feature pages. Keep the dashboard's
+ * expensive aggregate (readiness, history, evidence and schedule) on the
+ * overview/brief only—feature pages need just the authorized project label. */
+export async function getProjectShellData(projectId: string): Promise<{ project: string } | null> {
+  await requireProjectPermission(projectId, "audit:view");
+  const [project] = await db.select({ project: projects.name }).from(projects).where(eq(projects.id, projectId)).limit(1);
+  return project ?? null;
+}
 
 // Slice 10: resolve each Command Center alert to deep-links pointing at the real
 // records it concerns. Link targets are validated against live rows so a stale

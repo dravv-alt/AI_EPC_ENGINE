@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
 import { SystemsWorkbench } from "@/components/systems-workbench";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { assets, gates, systems } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function SystemsPage() {
   const projectId = await getActiveProjectId();
   const [data, systemRows, assetRows, gateRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select().from(systems).where(eq(systems.projectId, projectId)).orderBy(asc(systems.name)),
     db.select().from(assets).where(eq(assets.projectId, projectId)).orderBy(asc(assets.tag)),
     db.select().from(gates).where(eq(gates.projectId, projectId)).orderBy(asc(gates.sequenceNumber))

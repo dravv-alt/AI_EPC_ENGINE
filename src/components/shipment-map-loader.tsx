@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import "leaflet/dist/leaflet.css";
 import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
 
 const ShipmentMap = dynamic(() => import("@/components/shipment-map"), {

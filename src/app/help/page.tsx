@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { getActiveProjectId } from "@/lib/projects/current";
 
 export const dynamic = "force-dynamic";
 
 export default async function HelpPage() {
   const projectId = await getActiveProjectId();
-  const data = await getDashboardData(projectId);
+  const data = await getProjectShellData(projectId);
   if (!data) throw new Error("Project not found");
   return <FeatureShell projectName={data.project} projectId={projectId} eyebrow="Product guidance" title="Help" description="Quick paths for the controlled workflows used most often in this project.">
     <div className="workflow-grid">

@@ -4,7 +4,7 @@ import { FeatureShell } from "@/components/feature-shell";
 import { EvidenceEntropyPanel } from "@/components/evidence-entropy-panel";
 import { GateDecisionForm } from "@/components/gate-decision-form";
 import { can } from "@/lib/auth/roles";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { gates } from "@/lib/db/schema";
 import { requireProjectPermission } from "@/lib/projects/access";
@@ -22,7 +22,7 @@ export default async function ReadinessPage({ searchParams }: { searchParams: Pr
   // all newly emitted links use the explicit `gate` parameter.
   const focusedGateId = gate ?? id;
   const actor = await requireProjectPermission(projectId, "audit:view");
-  const [data, gateRows] = await Promise.all([getDashboardData(projectId), db.select().from(gates).where(eq(gates.projectId, projectId)).orderBy(asc(gates.sequenceNumber))]);
+  const [data, gateRows] = await Promise.all([getProjectShellData(projectId), db.select().from(gates).where(eq(gates.projectId, projectId)).orderBy(asc(gates.sequenceNumber))]);
   if (!data) throw new Error("Project not found");
   const contexts = (await Promise.all(gateRows.map((gate) => getGateReviewContext(projectId, gate.id)))).filter((item): item is NonNullable<typeof item> => Boolean(item)).sort((left, right) => Number(right.gate.id === focusedGateId) - Number(left.gate.id === focusedGateId));
   return <FeatureShell projectName={data.project} eyebrow="Deterministic rules" title="Readiness & decisions" description="Inspect every proof category, prerequisite and blocker behind a gate state. Schedule status is cross-linked but never changes readiness.">

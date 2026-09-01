@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ActionsWorkbench } from "@/components/actions-workbench";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { findings, gates, projectMembers, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -14,7 +14,7 @@ export default async function ActionsPage({ searchParams }: { searchParams: Prom
   const { finding } = await searchParams;
   if (finding) redirect(`/actions/${finding}`);
   const [data, findingRows, gateRows, memberRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({
       id: findings.id,
       gateId: findings.gateId,

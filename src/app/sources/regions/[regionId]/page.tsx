@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, sourceRegions } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -12,7 +12,7 @@ export default async function SourceRegionPage({ params }: { params: Promise<{ r
   const projectId = await getActiveProjectId();
   const { regionId } = await params;
   const [data, row] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({ region: sourceRegions, version: documentVersions, document: documents })
       .from(sourceRegions)
       .innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
