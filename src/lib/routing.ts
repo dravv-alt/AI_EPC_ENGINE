@@ -1,11 +1,11 @@
 "use server";
 
-// @ts-ignore
+// @ts-expect-error -- searoute-js does not publish TypeScript declarations.
 import searoute from "searoute-js";
 import { greatCircle } from "@turf/great-circle";
-import { point, lineString } from "@turf/helpers";
-import bezierSpline from "@turf/bezier-spline";
+import { point } from "@turf/helpers";
 import { findNearestPort, findNearestAirport, getDistance } from "./geo/nearest";
+import { findMasterInternationalRoute } from "./geo/master-routes";
 
 // Haversine distance in km
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -63,7 +63,12 @@ export async function getShipmentRoute(
         actualDestLng = dAir.lng;
       }
 
-      const airSegs = getAirRoute(actualOriginLat, actualOriginLng, actualDestLat, actualDestLng);
+      const controlledAirRoute = findMasterInternationalRoute(
+        "air", actualOriginLat, actualOriginLng, actualDestLat, actualDestLng
+      );
+      const airSegs = controlledAirRoute
+        ? [controlledAirRoute.waypoints.map(({ lat, lng }) => [lat, lng] as [number, number])]
+        : getAirRoute(actualOriginLat, actualOriginLng, actualDestLat, actualDestLng);
       segments.push(...airSegs.map(coords => ({ mode: "air" as const, coords })));
 
       if (dAir && dDist > 2) {
@@ -100,11 +105,18 @@ export async function getShipmentRoute(
         actualDestLng = dPort.lng;
       }
 
-      const seaSegs = getMarineRoute(
-        actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
-        options.originIsInTransit ? undefined : oPort?.seaRouteWaypoints,
-        dPort?.seaRouteWaypoints
-      );
+      const controlledSeaRoute = options.originIsInTransit
+        ? null
+        : findMasterInternationalRoute(
+            "sea", actualOriginLat, actualOriginLng, actualDestLat, actualDestLng
+          );
+      const seaSegs = controlledSeaRoute
+        ? [controlledSeaRoute.waypoints.map(({ lat, lng }) => [lat, lng] as [number, number])]
+        : getMarineRoute(
+            actualOriginLat, actualOriginLng, actualDestLat, actualDestLng,
+            options.originIsInTransit ? undefined : oPort?.seaRouteWaypoints,
+            dPort?.seaRouteWaypoints
+          );
       // Fail closed instead of presenting land legs without a verified marine
       // middle. A straight great-circle is an air route and can cross land.
       if (!seaSegs.length) return [];
@@ -233,7 +245,7 @@ async function getLandRoute(originLat: number, originLng: number, destLat: numbe
       const coords = data.routes[0].geometry.coordinates as [number, number][];
       return [coords.map(([lng, lat]) => [lat, lng] as [number, number])];
     }
-  } catch (e) {
+  } catch {
     // Ignore fetch errors
   }
   if (haversineKm(originLat, originLng, destLat, destLng) > 100) {

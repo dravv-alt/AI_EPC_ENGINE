@@ -174,7 +174,7 @@ export const skills: Skill[] = [
     steps: [
       "1. For a general project export, call export.project with format (pdf or csv), title, and optional theme/watermark.",
       "2. For a turnover pack, first check that the target gate is already approved — do not attempt to approve it; approval is permanently off-limits.",
-      "3. Call export.turnover_pack only once an approved gate is confirmed; state that the returned downloadUrl expires in 300 seconds.",
+      "3. Call export.turnover_pack only once an approved gate is confirmed; state that the returned downloadUrl is a project-scoped local link requiring an authorized session.",
       "4. Report the download as started; the drawer performs the actual fetch/download client-side."
     ],
     preconditions: [

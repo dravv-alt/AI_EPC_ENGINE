@@ -6,18 +6,18 @@ import { db } from "@/lib/db/client";
 import { cxTestRecords, storageObjects } from "@/lib/db/schema";
 import { editableReportSchema } from "@/lib/cx/generation";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
-import { objectStorage } from "@/lib/storage/service";
+import { projectObjectContentUrl } from "@/lib/storage/http";
 
 const editSchema = z.object({ title: z.string().trim().min(3).max(300), executiveSummary: z.string().trim().min(20).max(4000), conclusion: z.string().trim().min(10).max(2000), reason: z.string().trim().min(5).max(2000) });
 
-export async function GET(_: Request, { params }: { params: Promise<{ reportId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ reportId: string }> }) {
   const { reportId } = await params;
   const report = await db.query.cxTestRecords.findFirst({ where: eq(cxTestRecords.id, reportId) });
   if (!report) return NextResponse.json({ error: "Report not found." }, { status: 404 });
   try {
     await requireProjectPermission(report.projectId, "audit:view");
     const artifact = report.reportArtifactObjectId ? await db.query.storageObjects.findFirst({ where: eq(storageObjects.id, report.reportArtifactObjectId) }) : null;
-    return NextResponse.json({ report, label: report.reportStatus === "approved" ? "ENGINEER APPROVED — IMMUTABLE ARTIFACT" : "DRAFT — PENDING ENGINEER REVIEW", artifactUrl: artifact ? await objectStorage.signedReadUrl(artifact.objectKey, 300) : null, artifactHash: artifact?.sha256 ?? null });
+    return NextResponse.json({ report, label: report.reportStatus === "approved" ? "ENGINEER APPROVED — IMMUTABLE ARTIFACT" : "DRAFT — PENDING ENGINEER REVIEW", artifactUrl: artifact ? projectObjectContentUrl(report.projectId, artifact.id, request.url) : null, artifactHash: artifact?.sha256 ?? null });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load report." }, { status: error instanceof AccessError ? error.status : 500 }); }
 }
 

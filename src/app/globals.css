@@ -353,9 +353,9 @@
   min-width: 0;
   height: clamp(440px, calc(100dvh - 350px), 650px);
   min-height: 0;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(
-      190px,
-      260px
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) minmax(
+      310px,
+      370px
     );
 }
 .rack-object-tree,
@@ -387,6 +387,162 @@
   padding: 14px;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
   backdrop-filter: blur(14px);
+}
+.rack-tree-item > span b {
+  font-size: 11px;
+  font-weight: 700;
+}
+.rack-tree-item > span em {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rack-selection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.rack-selection-status > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rack-suggestion-card,
+.rack-implementation-editor {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+}
+.rack-suggestion-card {
+  margin-bottom: 14px;
+  border-color: color-mix(in srgb, #e8a94d 48%, var(--line));
+  background: color-mix(in srgb, #f5c66d 11%, var(--panel));
+}
+.rack-suggestion-card header,
+.rack-implementation-editor > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rack-suggestion-card header span,
+.rack-implementation-editor header span,
+.rack-implementation-editor label > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.rack-suggestion-card header b {
+  max-width: 190px;
+  font-size: 13px;
+  text-align: right;
+}
+.rack-suggestion-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.rack-suggestion-card dl {
+  margin: 0;
+}
+.rack-suggestion-card button,
+.rack-implementation-editor > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink, #fff);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rack-suggestion-card button:disabled,
+.rack-implementation-editor > button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.rack-implementation-editor {
+  margin: 4px 0 18px;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+.rack-implementation-editor h4 {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+.rack-implementation-code {
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: var(--field);
+  font-family: var(--font-mono);
+}
+.rack-implementation-editor fieldset {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.rack-implementation-editor label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rack-implementation-editor input,
+.rack-implementation-editor select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+.rack-implementation-editor input:focus,
+.rack-implementation-editor select:focus {
+  border-color: var(--accent);
+  outline: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.rack-implementation-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.rack-implementation-dimensions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.rack-editor-locked {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
 }
 .rack-detail-panel .rack-panel-title {
   top: -16px;
@@ -850,8 +1006,8 @@
   gap: 10px;
   padding: 10px;
   grid-template-columns: minmax(210px, 240px) minmax(390px, 1fr) minmax(
-      245px,
-      285px
+      310px,
+      370px
     );
   border-color: var(--theme-line, var(--line));
   border-radius: 22px;
@@ -1209,8 +1365,8 @@
 @media (max-width: 1180px) {
   .rack-model-layout {
     grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(
-        220px,
-        250px
+        270px,
+        310px
       );
   }
 }
@@ -2980,6 +3136,171 @@ td small {
 .source-frame {
   width: 100%;
   min-height: 720px;
+}
+.document-library-surface {
+  padding: 0;
+  overflow: hidden;
+}
+.document-library-surface > form {
+  margin: 18px;
+}
+.document-library {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.38fr) minmax(520px, 1fr);
+  min-height: 760px;
+}
+.document-index {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--theme-sidebar, #f7f8f6) 68%, transparent);
+}
+.document-index > header,
+.document-preview > header {
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.document-index h2,
+.document-preview h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.document-index > header > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.document-index > div {
+  max-height: 690px;
+  overflow-y: auto;
+}
+.document-group-toggle {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  align-items: center;
+  font-weight: 600;
+}
+.document-group-toggle[aria-expanded="true"] > svg:last-child {
+  transform: rotate(180deg);
+}
+.document-group-toggle > svg:last-child {
+  transition: transform 180ms ease;
+}
+.document-revisions {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--theme-surface-strong, #fff) 72%, transparent);
+}
+.document-revisions > button {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 16px 12px 45px;
+  border-bottom: 0;
+}
+.document-revisions > button + button {
+  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+}
+.document-index button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 15px 17px;
+  color: var(--ink);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+.document-index button:hover,
+.document-index button.is-selected {
+  background: var(--theme-accent-soft, var(--soft));
+}
+.document-index button.is-selected {
+  box-shadow: inset 3px 0 var(--theme-accent, var(--primary));
+}
+.document-index button span,
+.document-index button b,
+.document-index button small {
+  display: block;
+  min-width: 0;
+}
+.document-index button b {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-index button small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.document-index button i {
+  grid-column: auto;
+  width: fit-content;
+  margin-top: 0;
+  font-style: normal;
+}
+.document-preview {
+  display: grid;
+  grid-template-rows: auto minmax(580px, 1fr) auto;
+  min-width: 0;
+  background: #e8e8e5;
+}
+.document-preview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--theme-surface-strong, #fff);
+}
+.document-preview > header p:last-child {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.document-preview > object {
+  width: calc(100% - 32px);
+  height: 650px;
+  margin: 16px;
+  border: 1px solid #cfd3d0;
+  border-radius: 8px;
+  background: #fff;
+}
+.document-preview > footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--theme-surface-strong, #fff);
+}
+.document-preview > footer > span {
+  font-size: 10px;
+  font-weight: 600;
+}
+.document-preview > footer > div {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.document-preview > footer a {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  color: var(--theme-accent-strong, var(--primary));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--theme-field, #fff);
+  font-size: 8px;
+}
+.document-preview-fallback {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  min-height: 560px;
+  padding: 30px;
+  color: #27312e;
+  text-align: center;
 }
 .readiness-detail-card {
   min-width: 0;
@@ -11666,8 +11987,7 @@ body:has(.topbar) .theme-global-control {
 .trace-edges .is-related path {
   stroke: var(--theme-accent, var(--primary));
   stroke-width: 2.3;
-  stroke-dasharray: 9 6;
-  animation: trace-flow 3.8s linear infinite;
+  stroke-dasharray: none;
 }
 .trace-edges .is-dimmed {
   opacity: 0.13;
@@ -11790,6 +12110,21 @@ body:has(.topbar) .theme-global-control {
   font-size: 8px;
   text-overflow: ellipsis;
 }
+.trace-selected-explainer {
+  margin: 0 0 11px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.trace-open-record {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--theme-accent-strong, var(--primary));
+  font-size: 10px;
+  font-weight: 650;
+}
 .trace-detail-rail > section {
   padding: 19px 21px;
   border-bottom: 1px solid var(--line);
@@ -11861,7 +12196,9 @@ body:has(.topbar) .theme-global-control {
   background: var(--trace-evidence);
 }
 .trace-document {
+  display: block;
   padding: 10px 0;
+  color: inherit;
 }
 .trace-document + .trace-document {
   border-top: 1px solid var(--line);
@@ -11946,9 +12283,181 @@ body:has(.topbar) .theme-global-control {
   margin: 0;
   font-size: 9px;
 }
-@keyframes trace-flow {
-  to {
-    stroke-dashoffset: -30;
+
+/* A calendar-first schedule keeps dates readable while the Gantt remains available below. */
+.schedule-calendar-surface {
+  padding: 0;
+  overflow: hidden;
+}
+.schedule-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 19px 21px;
+  border-bottom: 1px solid var(--line);
+}
+.schedule-calendar-header h2 {
+  margin: 6px 0 3px;
+  font-size: 19px;
+  font-weight: 600;
+}
+.schedule-calendar-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.schedule-calendar-header > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+.schedule-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.schedule-calendar-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.schedule-calendar-toolbar h3 {
+  min-width: 160px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+.schedule-calendar-toolbar > div button {
+  padding: 5px 8px;
+  color: var(--theme-accent-strong, var(--primary));
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 8px;
+}
+.schedule-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(620px, 1fr) 270px;
+}
+.schedule-month {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+}
+.schedule-weekdays,
+.schedule-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(86px, 1fr));
+}
+.schedule-weekdays span {
+  padding: 9px 7px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  font-size: 8px;
+  font-weight: 650;
+  text-align: center;
+  text-transform: uppercase;
+}
+.schedule-days > div {
+  min-height: 105px;
+  padding: 7px;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--theme-surface-strong, #fff);
+}
+.schedule-days > div.is-outside {
+  opacity: 0.38;
+  background: color-mix(in srgb, var(--theme-sidebar, #f4f5f2) 70%, transparent);
+}
+.schedule-days > div.is-today time {
+  color: #fff;
+  background: var(--theme-accent, var(--primary));
+}
+.schedule-days time {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 0 5px auto;
+  border-radius: 50%;
+  font-size: 9px;
+}
+.schedule-days button {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 5px 6px;
+  overflow: hidden;
+  color: var(--theme-accent-strong, #174d42);
+  border: 0;
+  border-left: 3px solid var(--theme-accent, var(--primary));
+  border-radius: 4px;
+  background: var(--theme-accent-soft, #e5f1ec);
+  font-size: 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.schedule-days button.is-critical {
+  color: #7d1927;
+  border-color: var(--danger);
+  background: #fdebed;
+}
+.schedule-days small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 7px;
+}
+.schedule-day-detail {
+  padding: 22px;
+  background: color-mix(in srgb, var(--theme-sidebar, #f7f8f6) 70%, transparent);
+}
+.schedule-day-detail h3 {
+  margin: 8px 0 11px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.schedule-day-detail dl {
+  margin: 22px 0;
+}
+.schedule-day-detail dl div {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.schedule-day-detail dt {
+  color: var(--muted);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+.schedule-day-detail dd {
+  margin: 4px 0 0;
+  font-size: 10px;
+}
+.calendar-authority-note {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+@media (max-width: 980px) {
+  .document-library,
+  .schedule-calendar-layout {
+    grid-template-columns: 1fr;
+  }
+  .document-index,
+  .schedule-month {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .schedule-month {
+    overflow-x: auto;
+  }
+  .schedule-weekdays,
+  .schedule-days {
+    min-width: 700px;
   }
 }
 
@@ -15162,4 +15671,18 @@ html[data-theme="dark"] .requirement-document-states i {
   .planning-metrics {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+.demo-mode-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0.48rem 1rem;
+  background: #9d651e;
+  color: #fffaf0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
 }

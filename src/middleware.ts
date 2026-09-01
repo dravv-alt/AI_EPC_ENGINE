@@ -1,7 +1,7 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 
-const publicClerkPaths = ["/sign-in", "/sign-up", "/pending-access", "/api/health"];
+const publicClerkPaths = ["/sign-in", "/sign-up", "/pending-access", "/offline", "/api/health"];
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function isPublicClerkPath(pathname: string) {
@@ -11,6 +11,13 @@ function isPublicClerkPath(pathname: string) {
 function applyRequestBoundaryChecks(request: NextRequest) {
   if (!request.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
   if (!mutationMethods.has(request.method.toUpperCase())) return NextResponse.next();
+
+  // The public Vercel workspace is populated with representative records.
+  // Keep it inspectable without letting anonymous visitors alter the shared
+  // demo corpus, audit trail, or readiness state.
+  if (process.env.DEMO_MODE === "true") {
+    return NextResponse.json({ error: "This public demo is read-only." }, { status: 403 });
+  }
 
   const fetchSite = request.headers.get("sec-fetch-site");
   if (fetchSite === "cross-site") {

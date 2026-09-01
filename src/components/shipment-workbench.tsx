@@ -5,6 +5,7 @@ import { Check, LocateFixed, Plus, RefreshCw, Route, Sparkles } from "lucide-rea
 import { ShipmentMapLoader } from "@/components/shipment-map-loader";
 import type { MapShipment, RouteThreatAssessment } from "@/components/shipment-map";
 import { LocationSearch } from "@/components/location-search";
+import { localDateTimeValue, prefillForm } from "@/lib/demo/prefill";
 
 type Shipment = MapShipment & { equipmentId: string | null; destinationName: string | null; transportMode: "sea" | "air" | "land"; requiredOnSite: Date | string; weatherDelayFactor: string; telemetryReason: string | null; lastPolledAt: Date | string | null };
 type Asset = { id: string; tag: string; assetType: string };
@@ -29,6 +30,15 @@ export function ShipmentWorkbench({ projectId, initialShipments, assets, initial
   const [origin, setOrigin] = useState<{ name: string; lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState<{ name: string; lat: number; lng: number } | null>(null);
   const approvedPlans = useMemo(() => plans.filter((item) => item.status === "approved"), [plans]);
+  const loadShipmentDemo = (form: HTMLFormElement | null) => {
+    const eta = new Date(); eta.setDate(eta.getDate() + 1); eta.setHours(16, 0, 0, 0);
+    const required = new Date(eta); required.setDate(required.getDate() + 2); required.setHours(12, 0, 0, 0);
+    setSelectedPlanId("");
+    setOrigin({ name: "Jawaharlal Nehru Port, Navi Mumbai", lat: 18.9497, lng: 72.9518 });
+    setDestination({ name: "Mumbai DC-07, Thane", lat: 19.2183, lng: 72.9781 });
+    prefillForm(form, { planId: "", name: "CHWP-02 inbound delivery", equipmentId: assets[0]?.id ?? "", transportMode: "land", plannedEta: localDateTimeValue(eta), requiredOnSite: localDateTimeValue(required), portCongestion: false });
+    setMessage("Mumbai DC-07 inbound-road example loaded. Review the route inputs, then use Create route.");
+  };
 
   async function refresh() {
     const [shipmentResponse, planResponse] = await Promise.all([fetch(`/api/projects/${projectId}/shipments`), fetch(`/api/projects/${projectId}/shipment-plans`)]);
@@ -67,6 +77,7 @@ export function ShipmentWorkbench({ projectId, initialShipments, assets, initial
 
   return <div className="workflow-stack">
     <section className="surface shipment-manual-panel"><div className="section-heading"><div><p className="eyebrow">Manual logistics entry</p><h2><Plus size={19} /> Add shipment manually</h2><p>Manual shipments work without Site Analysis. Select an approved plan only to link this route back to a recommended package.</p></div></div><form className="shipment-registration" onSubmit={submit}>
+      <button type="button" className="button button-secondary" disabled={!assets.length} onClick={(event) => loadShipmentDemo(event.currentTarget.form)}>Load Mumbai DC-07 example</button>
       <label>Approved plan<select name="planId" value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)}><option value="">Manual shipment</option>{approvedPlans.map((plan) => <option key={plan.id} value={plan.id}>{labels[plan.requirementLevel]} · {plan.name}</option>)}</select></label>
       <label>Shipment name<input key={selectedPlanId} name="name" minLength={3} required defaultValue={approvedPlans.find((plan) => plan.id === selectedPlanId)?.name ?? ""} /></label><label>Registered asset<select name="equipmentId" required><option value="">Select asset</option>{assets.map((asset) => <option value={asset.id} key={asset.id}>{asset.tag} · {asset.assetType}</option>)}</select></label><label>Transport mode<select name="transportMode" defaultValue="land"><option value="land">Road</option><option value="sea">Sea</option><option value="air">Air</option></select></label>
       <fieldset><legend>Origin</legend><LocationSearch placeholder="Search origin port, airport, city…" value={origin?.name ?? ""} onSelect={setOrigin} /></fieldset><fieldset><legend>Destination</legend><LocationSearch placeholder="Search destination port, airport, city…" value={destination?.name ?? ""} onSelect={setDestination} /></fieldset><label>Planned ETA<input name="plannedEta" type="datetime-local" required /></label><label>Required on site<input name="requiredOnSite" type="datetime-local" required /></label><label className="check-label"><input name="portCongestion" type="checkbox" />Manual port congestion</label><button className="button button-primary" disabled={saving || !assets.length}><Route size={16} />Create route</button>

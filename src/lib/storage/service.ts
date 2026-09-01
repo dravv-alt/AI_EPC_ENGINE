@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "@/lib/env";
 
@@ -32,6 +32,18 @@ class LocalStorage {
     return { objectKey, sha256, byteSize: input.bytes.byteLength, mediaType: input.mediaType };
   }
   async read(objectKey: string) { assertSafeKey(objectKey); return readFile(resolve(env.LOCAL_UPLOAD_DIR, objectKey)); }
+  async byteSize(objectKey: string) { assertSafeKey(objectKey); return (await stat(resolve(env.LOCAL_UPLOAD_DIR, objectKey))).size; }
+  async readRange(objectKey: string, start: number, end: number) {
+    assertSafeKey(objectKey);
+    const handle = await open(resolve(env.LOCAL_UPLOAD_DIR, objectKey), "r");
+    try {
+      const body = Buffer.alloc(end - start + 1);
+      const { bytesRead } = await handle.read(body, 0, body.length, start);
+      return body.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  }
   async remove(objectKey: string) { assertSafeKey(objectKey); await unlink(resolve(env.LOCAL_UPLOAD_DIR, objectKey)).catch(() => undefined); }
   async signedReadUrl(objectKey: string, expiresInSeconds = 300) {
     const expires = Math.floor(Date.now() / 1000) + Math.min(Math.max(expiresInSeconds, 30), 900);
@@ -53,6 +65,8 @@ class S3Storage {
   async put(input: PutObjectInput): Promise<StoredObject> { const sha256 = createHash("sha256").update(input.bytes).digest("hex"); const objectKey = `${input.tenantId}/${input.projectId}/${sha256}${safeExtension(input.fileName)}`; await this.ensureBucket(); await this.client.send(new PutObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey, Body: input.bytes, ContentType: input.mediaType, Metadata: { sha256, project: input.projectId } })); return { objectKey, sha256, byteSize: input.bytes.byteLength, mediaType: input.mediaType }; }
   async remove(objectKey: string) { await this.client.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey })); }
   async read(objectKey: string) { const result = await this.client.send(new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey })); if (!result.Body) throw new Error("Object body is unavailable."); return Buffer.from(await result.Body.transformToByteArray()); }
+  async byteSize(objectKey: string) { const result = await this.client.send(new HeadObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey })); if (result.ContentLength == null) throw new Error("Object size is unavailable."); return result.ContentLength; }
+  async readRange(objectKey: string, start: number, end: number) { const result = await this.client.send(new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey, Range: `bytes=${start}-${end}` })); if (!result.Body) throw new Error("Object body is unavailable."); return Buffer.from(await result.Body.transformToByteArray()); }
   async signedReadUrl(objectKey: string, expiresInSeconds = 300) { return getSignedUrl(this.client, new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: objectKey }), { expiresIn: Math.min(Math.max(expiresInSeconds, 30), 900) }); }
   async health() { try { await this.ensureBucket(); return { status: "ok" as const, driver: "s3" as const }; } catch (error) { return { status: "unavailable" as const, driver: "s3" as const, reason: error instanceof Error ? error.message : "Object storage unavailable" }; } }
 }

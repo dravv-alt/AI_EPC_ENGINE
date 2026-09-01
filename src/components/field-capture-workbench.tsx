@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CheckCircle2, CloudOff, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { listCaptures, queueCapture, removeCapture, updateCaptureState, type QueuedCapture } from "@/lib/offline/capture-queue";
 import { evidenceLabel, evidenceTaxonomy, recommendEvidenceType } from "@/lib/evidence/taxonomy";
+import { prefillForm } from "@/lib/demo/prefill";
 
 type System = { id: string; name: string };
 type Asset = { id: string; systemId: string; tag: string };
@@ -24,6 +25,7 @@ export function FieldCaptureWorkbench({ projectId, systems, assets }: { projectI
   const [evidenceType, setEvidenceType] = useState("photo");
   const [captureRoute, setCaptureRoute] = useState<(typeof captureRoutes)[number]["value"]>("site");
   const [artifact, setArtifact] = useState<File | null>(null);
+  const demoSystem = systems.find((system) => system.name.toLowerCase().includes("chilled water")) ?? systems[0];
 
   const refresh = useCallback(async () => setQueue(await listCaptures()), []);
 
@@ -75,6 +77,7 @@ export function FieldCaptureWorkbench({ projectId, systems, assets }: { projectI
     <form className="surface capture-form" onSubmit={capture}>
       <div className="capture-state"><span className={`connection-dot ${online ? "online" : "offline"}`} /><strong>{online ? "Online" : "Offline"}</strong><span>{online ? "Server synchronization available" : "Local encrypted queue only"}</span></div>
       <div><p className="eyebrow">Offline-capable PWA</p><h2>Capture field evidence</h2><p>Every submission starts as Pending Sync or Needs Review. Local records never count toward readiness.</p></div>
+      <button type="button" className="button button-secondary" disabled={!demoSystem} onClick={(event) => { setCaptureRoute("site"); setEvidenceType("measurement"); setSystemId(demoSystem?.id ?? ""); prefillForm(event.currentTarget.form, { notes: "CHWP-02 chilled-water supply temperature measured at 6.8 °C during the witnessed design-load test. Meter calibration reference to be attached before acceptance." }); setMessage("Mumbai DC-07 field example loaded. Attach an artifact if available, then use the normal Encrypt and queue capture action."); }}>Load Mumbai DC-07 example</button>
       <label>Evidence route<select value={captureRoute} onChange={(event) => { const next = captureRoutes.find((route) => route.value === event.target.value) ?? captureRoutes[0]; setCaptureRoute(next.value); setEvidenceType(next.types[0]); }}><option value="site">Site / asset condition</option><option value="commercial">Vendor commercial record</option><option value="technical">Vendor technical document</option><option value="authority">Permit / authority record</option></select><small>{selectedRoute.help}</small></label>
       <label>System<select name="systemId" value={systemId} onChange={(event) => setSystemId(event.target.value)} required><option value="">{systems.length ? "Select system" : "Create a system first"}</option>{systems.map((system) => <option value={system.id} key={system.id}>{system.name}</option>)}</select><small>Choose the controlled system that owns or is affected by this evidence. Create one in <Link href="/systems">Systems &amp; Assets</Link>; it will appear here after the page refreshes.</small></label>
       <label>Asset<select name="assetId"><option value="">System-level evidence</option>{assets.filter((asset) => asset.systemId === systemId).map((asset) => <option value={asset.id} key={asset.id}>{asset.tag}</option>)}</select></label>

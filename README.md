@@ -2,6 +2,8 @@
 
 Pramana Cx is an evidence control plane for mission-critical EPC commissioning. It connects controlled requirements to systems, assets, tests, measurements, findings, approvals, schedules, shipments, and immutable source evidence so that an authorized engineer can make a defensible gate decision.
 
+**Live seeded demo:** [pramana-cx.vercel.app](https://pramana-cx.vercel.app) — the public workspace is intentionally marked as a demo and contains representative Mumbai DC-07 records across every product surface.
+
 The product is **advisory by design**. AI may extract, retrieve, rank, draft, and explain. Deterministic services calculate readiness, schedule feasibility, and test verdicts. Only an authorized human review can accept requirements, evidence, checklists, reports, precedents, or gate decisions.
 
 ## Why Pramana exists

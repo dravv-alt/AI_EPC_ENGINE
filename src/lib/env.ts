@@ -35,6 +35,10 @@ const environmentSchema = z.object({
   // working without deployment credentials. Deployment manifests must set it
   // to true, which turns insecure fallbacks into startup errors.
   REQUIRE_PRODUCTION_CONFIG: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  // Demo mode serves the fully seeded Mumbai DC-07 sample project. It is
+  // intentionally visible in the interface so representative records are not
+  // mistaken for a live operational project.
+  DEMO_MODE: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   // Local Ollama is the normal runtime. Mock remains available only for
   // deterministic tests and explicitly opted-in development scenarios.
   MODEL_PROVIDER: z.enum(["mock", "ollama", "gemini", "nim", "groq", "cerebras"]).default("ollama"),
@@ -160,6 +164,7 @@ export const env = environmentSchema.parse({
   REDIS_PREFIX: process.env.REDIS_PREFIX,
   INFRA_ALLOW_DEGRADED: process.env.INFRA_ALLOW_DEGRADED,
   REQUIRE_PRODUCTION_CONFIG: process.env.REQUIRE_PRODUCTION_CONFIG,
+  DEMO_MODE: process.env.DEMO_MODE,
   MODEL_PROVIDER: process.env.MODEL_PROVIDER,
   COPILOT_MODEL_PROVIDER: process.env.COPILOT_MODEL_PROVIDER ?? process.env.MODEL_PROVIDER,
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL,

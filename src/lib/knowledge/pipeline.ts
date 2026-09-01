@@ -199,7 +199,17 @@ export async function answerKnowledgeQuery(input: {
     }
   }
   const deduped = [...byChunkId.values()];
-  const reranked = await rerankCitations(input.query, deduped, RETRIEVAL_LIMIT);
+  const rerankedCandidates = await rerankCitations(input.query, deduped, RETRIEVAL_LIMIT);
+  // Citations are authority-bound to source-region IDs. If more than one
+  // candidate chunk points at the same region, keep only the highest-ranked
+  // chunk so synthesis cannot cite one chunk and later resolve that shared
+  // region ID to a different passage.
+  const seenRegionIds = new Set<string>();
+  const reranked = rerankedCandidates.filter((citation) => {
+    if (seenRegionIds.has(citation.sourceRegionId)) return false;
+    seenRegionIds.add(citation.sourceRegionId);
+    return true;
+  });
 
   if (!reranked.length) {
     return {
