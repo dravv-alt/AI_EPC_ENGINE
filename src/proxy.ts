@@ -5,6 +5,14 @@ import { checkRateLimit } from "@/lib/redis/rate-limit";
 const publicClerkPaths = ["/sign-in", "/sign-up", "/pending-access", "/api/health"];
 const mutationMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function nextResponse(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  // This header never leaves the server. It gives the root layout a reliable
+  // route key for server-rendered metadata, including dynamic feature pages.
+  requestHeaders.set("x-pramana-pathname", request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 function isPublicClerkPath(pathname: string) {
   return publicClerkPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
@@ -41,7 +49,7 @@ function requestBoundaryRejection(request: NextRequest) {
  * routes with no category of their own.
  */
 async function applyApiBoundary(request: NextRequest) {
-  if (!request.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
+  if (!request.nextUrl.pathname.startsWith("/api/")) return nextResponse(request);
 
   // The public workspace is seeded with representative records. Keep it
   // inspectable while preventing anonymous visitors from altering shared data.
@@ -62,8 +70,9 @@ async function applyApiBoundary(request: NextRequest) {
       { status: 429, headers: { ...headers, "retry-after": String(result.retryAfter) } },
     );
   }
-  const response = NextResponse.next();
+  const response = nextResponse(request);
   Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value));
+  response.headers.set("Cache-Control", "private, no-store, max-age=0");
   return response;
 }
 

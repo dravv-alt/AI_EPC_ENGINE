@@ -22,6 +22,17 @@ async function pollHealth() {
 }
 
 export async function GET() {
+  // A public demo must not reveal provider topology, internal service URLs, or
+  // raw dependency failure messages. Keep a small database-backed liveness
+  // signal for uptime checks; detailed diagnostics remain available only in a
+  // protected, non-demo deployment.
+  if (env.DEMO_MODE) {
+    const healthy = await db.execute(sql`select 1`).then(() => true).catch(() => false);
+    return NextResponse.json(
+      { status: healthy ? "ok" : "degraded", service: "pramana-cx", mode: "demo", timestamp: new Date().toISOString() },
+      { status: healthy ? 200 : 503, headers: { "Cache-Control": "private, no-store, max-age=0" } }
+    );
+  }
   const serviceHealth = async (url: string, service: string) => { try { const response = await fetch(url, { signal: AbortSignal.timeout(2_000), cache: "no-store" }); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { status: "ok" as const, service }; } catch (error) { return { status: "unavailable" as const, service, reason: error instanceof Error ? error.message : "Service unavailable" }; } };
   const [database, redis, objectStore, ingestion, solver, retrieval, poll, generationProvider, copilotProvider, embeddingProvider] = await Promise.all([
     db.execute(sql`select 1`).then(() => ({ status: "ok" as const })).catch((error) => ({ status: "unavailable" as const, reason: error instanceof Error ? error.message : "Database unavailable" })),

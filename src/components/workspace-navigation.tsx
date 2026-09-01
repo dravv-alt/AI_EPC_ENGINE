@@ -121,7 +121,7 @@ export function WorkspaceNavigation({ projectName }: { projectName: string }) {
   return (
     <aside className={`sidebar ${collapsed ? "is-collapsed" : ""}`} aria-label="Primary navigation">
       <div className="sidebar-brand-row">
-        <Link className="brand" href="/" onClick={handleBrandClick} title={collapsed ? "Expand navigation" : "Pramana Control Center"}><span className="brand-mark">P</span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
+        <Link className="brand" href="/" onClick={handleBrandClick} title={collapsed ? "Expand navigation" : "Pramana Control Center"}><span className="brand-mark"><img src="/brand/pramana-mark.png" alt="" /></span><span className="brand-name">pramana<span className="brand-muted">.cx</span></span></Link>
         <button className="sidebar-toggle" type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggleSidebar(); }} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button>
       </div>
       <label className="project-switcher">

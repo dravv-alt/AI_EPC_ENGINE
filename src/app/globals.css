@@ -1589,6 +1589,12 @@ a {
   font-weight: 700;
   border-radius: 8px;
 }
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 .brand-muted {
   color: #aab9b0;
 }
@@ -11534,6 +11540,61 @@ html[data-palette] .brand-mark {
   color: var(--theme-button-text) !important;
   background: var(--theme-accent) !important;
   box-shadow: none !important;
+}
+
+/* Privacy notice: no analytics or advertising cookies are loaded. This only
+   acknowledges the message locally so it does not interrupt every visit. */
+.cookie-notice {
+  position: fixed;
+  z-index: 90;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: min(410px, calc(100vw - 40px));
+  padding: 18px;
+  color: #eff5f1;
+  border: 1px solid rgba(203, 232, 218, 0.26);
+  border-radius: 16px;
+  background: rgba(22, 46, 39, 0.96);
+  box-shadow: 0 20px 54px rgba(15, 32, 27, 0.32);
+}
+.cookie-notice h2 {
+  margin: 0 0 7px;
+  color: inherit;
+  font-family: var(--font-brand);
+  font-size: 14px;
+  letter-spacing: -0.03em;
+}
+.cookie-notice p {
+  margin: 0;
+  color: rgba(239, 245, 241, 0.8);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cookie-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+.cookie-notice button {
+  min-height: 36px;
+  padding: 0 14px;
+  color: #13372d;
+  border: 0;
+  border-radius: 8px;
+  background: #9ce3c1;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+.cookie-notice a {
+  color: #d7eee1;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .cookie-notice { right: 14px; bottom: 74px; width: calc(100vw - 28px); }
 }
 html[data-palette] .sidebar-toggle,
 html[data-palette] .project-switcher {
