@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   assets,
   cxClauseCitations,
   cxChecklistSteps,
   cxChecklists,
+  cxStepResults,
   documentVersions,
   documents,
+  edges,
   gates,
   projects,
   requirements,
@@ -106,7 +108,23 @@ export async function finalizeSiteAnalysis(input: {
     .from(documentVersions)
     .where(eq(documentVersions.documentId, document.id))
     .orderBy(desc(documentVersions.createdAt));
+  // documentVersions.sha256 is globally unique, so identical content can only
+  // ever be one row. When the answers revert to an earlier revision (A -> B ->
+  // A) that row must be promoted back to the head instead of being reused as
+  // it stands, or new checklists would cite a version still marked superseded
+  // while a different version remains approved.
   let version = latestVersions.find((item) => item.sha256 === sha256);
+  if (version && latestVersions[0] && latestVersions[0].id !== version.id) {
+    await db
+      .update(documentVersions)
+      .set({ status: "superseded", updatedAt: new Date() })
+      .where(eq(documentVersions.id, latestVersions[0].id));
+    [version] = await db
+      .update(documentVersions)
+      .set({ status: "approved", updatedAt: new Date() })
+      .where(eq(documentVersions.id, version.id))
+      .returning();
+  }
   let region: typeof sourceRegions.$inferSelect | undefined;
   if (!version) {
     const stored = await objectStorage.put({
@@ -183,6 +201,19 @@ export async function finalizeSiteAnalysis(input: {
     });
   }
   if (!region) throw new Error("Site Analysis source region is unavailable.");
+
+  // Requirements are written once per version, but the gates they qualify are
+  // created per section below. Without a requirement -> AFFECTS -> gate edge,
+  // readiness counts zero accepted requirements for every gate this function
+  // creates, so each one evaluates to "unknown" and the materialized planning
+  // basis is a set of disconnected records. Rebuild the association from the
+  // statements so it also holds when an existing version is reused.
+  const regionRequirements = await db
+    .select({ id: requirements.id, statement: requirements.statement })
+    .from(requirements)
+    .where(eq(requirements.sourceRegionId, region.id));
+  const requirementIdByStatement = new Map(regionRequirements.map((row) => [row.statement, row.id]));
+  const edgeRows: Array<typeof edges.$inferInsert> = [];
 
   let systemCount = 0;
   let assetCount = 0;
@@ -263,6 +294,21 @@ export async function finalizeSiteAnalysis(input: {
         set: { sequenceNumber: String(sectionIndex + 1), updatedAt: new Date() },
       })
       .returning();
+
+    for (const question of answered) {
+      const requirementId = requirementIdByStatement.get(
+        `${question.label}: ${input.answers[question.key].trim()}`,
+      );
+      if (requirementId)
+        edgeRows.push({
+          projectId: input.projectId,
+          fromType: "requirement",
+          fromId: requirementId,
+          relationshipType: "AFFECTS",
+          toType: "gate",
+          toId: gate.id,
+        });
+    }
 
     const checklistTitle = `${section.title} · Site Analysis verification plan · ${version.revision}`;
     let checklist = await db.query.cxChecklists.findFirst({
@@ -351,7 +397,40 @@ export async function finalizeSiteAnalysis(input: {
           ...citationValues,
         });
     }
+
+    // Steps left over from a finalize that had more answered questions must not
+    // keep asking an engineer to verify a planning value that has since been
+    // withdrawn. A step that already carries recorded results is evidence, so
+    // it is rejected in place rather than deleted; an unused one is removed
+    // together with its citation.
+    const staleSteps = existingSteps.filter((step) => Number(step.sequenceNumber) > answered.length);
+    if (staleSteps.length) {
+      const staleIds = staleSteps.map((step) => step.id);
+      const recorded = await db
+        .select({ stepId: cxStepResults.stepId })
+        .from(cxStepResults)
+        .where(inArray(cxStepResults.stepId, staleIds));
+      const recordedIds = new Set(recorded.map((row) => row.stepId));
+      const removableIds = staleIds.filter((id) => !recordedIds.has(id));
+      if (removableIds.length) {
+        await db.delete(cxClauseCitations).where(inArray(cxClauseCitations.stepId, removableIds));
+        await db.delete(cxChecklistSteps).where(inArray(cxChecklistSteps.id, removableIds));
+      }
+      if (recordedIds.size)
+        await db
+          .update(cxChecklistSteps)
+          .set({
+            reviewState: "rejected",
+            reviewNote: "Withdrawn: the Site Analysis answer this step verified was removed in a later finalize. Recorded results are retained for traceability.",
+            updatedAt: new Date(),
+          })
+          .where(inArray(cxChecklistSteps.id, [...recordedIds]));
+    }
   }
+
+  // edges_project_edge_unique makes this idempotent across re-finalizes.
+  if (edgeRows.length)
+    await db.insert(edges).values(edgeRows).onConflictDoNothing();
 
   return {
     documentId: document.id,

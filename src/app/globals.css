@@ -2692,6 +2692,19 @@ td small {
   color: var(--primary);
   font-size: 12px;
 }
+.inline-feedback.is-warning {
+  align-items: center;
+  background: color-mix(in srgb, #f0a34a 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, #f0a34a 42%, transparent);
+  border-radius: 10px;
+  color: color-mix(in srgb, #8b4b00 84%, var(--text));
+  display: flex;
+  gap: .5rem;
+}
+.inline-feedback.is-warning svg {
+  flex: none;
+}
+
 .empty-state {
   padding: 34px;
   text-align: center;
@@ -4236,6 +4249,17 @@ td small {
   background: color-mix(in srgb, #f0a34a 16%, var(--surface));
   border-color: color-mix(in srgb, #f0a34a 48%, transparent);
   color: color-mix(in srgb, #8b4b00 82%, var(--text));
+}
+
+.knowledge-authority-badge.is-superseded {
+  background: color-mix(in srgb, #b04b4b 14%, var(--surface));
+  border-color: color-mix(in srgb, #b04b4b 46%, transparent);
+  color: color-mix(in srgb, #7a2020 82%, var(--text));
+}
+
+.knowledge-graph-node.is-document.is-superseded rect {
+  stroke: #b04b4b;
+  stroke-dasharray: 2 3;
 }
 
 .knowledge-graph-node.is-document.is-draft rect {

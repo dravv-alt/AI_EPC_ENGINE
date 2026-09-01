@@ -23,4 +23,14 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-import('@opennextjs/cloudflare').then(m => m.initOpenNextCloudflareForDev());
+// Development-only Cloudflare binding shim. next.config.ts is also loaded by
+// `next build` and `next start`, where @opennextjs/cloudflare may not be
+// installed (e.g. `npm ci --omit=dev`); an unhandled rejection there would
+// terminate the server, so this is both guarded and caught.
+if (process.env.NODE_ENV === "development") {
+  import("@opennextjs/cloudflare")
+    .then((m) => m.initOpenNextCloudflareForDev())
+    .catch((error) => {
+      console.warn("[next.config] Cloudflare dev bindings unavailable:", error instanceof Error ? error.message : error);
+    });
+}

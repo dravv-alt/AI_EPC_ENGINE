@@ -27,6 +27,11 @@ function CitationChips({ claims }: { claims: Claim[] }) {
           <BookOpen size={13} />
           {claim.documentTitle ?? "Controlled source"} · Region {claim.sourceRegionId.slice(0, 8)} · Rev {claim.documentVersionId?.slice(0, 8) ?? "—"} · SHA {claim.contentHash.slice(0, 12)}…
           {claim.documentVersionStatus === "draft" && <strong className="knowledge-authority-badge is-draft">Draft · advisory</strong>}
+          {/* A superseded revision is still indexed and still retrievable, but it
+              has been replaced by a later one. Without this it renders exactly
+              like a current controlled source, so a reader can cite a withdrawn
+              revision believing it governs. */}
+          {claim.documentVersionStatus === "superseded" && <strong className="knowledge-authority-badge is-superseded">Superseded · withdrawn</strong>}
           <span>{Math.round(claim.similarity * 100)}%</span>
         </Link>
       ))}
@@ -93,7 +98,7 @@ function KnowledgeLinkGraph({ groups }: { groups: AnswerGroup[] }) {
         <text x="105" y="24" textAnchor="middle" className="knowledge-graph-column">SOURCES</text><text x="350" y="24" textAnchor="middle" className="knowledge-graph-column">CITED REGIONS</text><text x="605" y="24" textAnchor="middle" className="knowledge-graph-column">LINKED RECORDS</text>
         {regionNodes.map(([regionId, region]) => { const from = docPositions.get(region.documentId); const to = regionPositions.get(regionId); return from && to ? <line key={`${region.documentId}-${regionId}`} className="knowledge-graph-edge" x1={from.x + 65} y1={from.y} x2={to.x - 72} y2={to.y} /> : null; })}
         {uniqueRelationEdges.map((edge) => { const from = regionPositions.get(edge.regionId); const to = linkedPositions.get(edge.linkId); return from && to ? <g key={`${edge.regionId}-${edge.linkId}-${edge.relationship}`}><line className="knowledge-graph-edge is-context" x1={from.x + 72} y1={from.y} x2={to.x - 76} y2={to.y} /><text className="knowledge-graph-relation" x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 4} textAnchor="middle">{edge.relationship.replaceAll("_", " ")}</text></g> : null; })}
-        {docNodes.map(([id, node]) => { const p = docPositions.get(id)!; return <a href={node.href} key={id} className={`knowledge-graph-node is-document ${node.status === "draft" ? "is-draft" : ""}`}><rect x={p.x - 65} y={p.y - 16} width="130" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.status === "draft" ? "draft source" : "controlled source"}</text></a>; })}
+        {docNodes.map(([id, node]) => { const p = docPositions.get(id)!; return <a href={node.href} key={id} className={`knowledge-graph-node is-document ${node.status === "draft" ? "is-draft" : node.status === "superseded" ? "is-superseded" : ""}`}><rect x={p.x - 65} y={p.y - 16} width="130" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.status === "draft" ? "draft source" : node.status === "superseded" ? "superseded source" : "controlled source"}</text></a>; })}
         {regionNodes.map(([id, node]) => { const p = regionPositions.get(id)!; return <a href={`/sources/regions/${id}`} key={id} className="knowledge-graph-node is-region"><rect x={p.x - 72} y={p.y - 16} width="144" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{node.label}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">citation</text></a>; })}
         {linkedNodes.map(([id, node]) => { const p = linkedPositions.get(id)!; return <a href={`/graph?focus=${encodeURIComponent(id)}`} key={id} className="knowledge-graph-node is-context"><rect x={p.x - 76} y={p.y - 16} width="152" height="32" rx="6" /><text x={p.x} y={p.y - 3} textAnchor="middle">{shorten(node.label)}</text><text x={p.x} y={p.y + 10} textAnchor="middle" className="knowledge-graph-node-type">{node.relationship.replaceAll("_", " ")}</text></a>; })}
       </svg>

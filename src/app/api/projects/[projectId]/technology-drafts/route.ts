@@ -30,9 +30,26 @@ const schema = z.object({
 });
 
 const generatedMessageSchema = z.object({ subject: z.string().trim().min(5).max(180), message: z.string().trim().min(80).max(1800), useCaseSummary: z.string().trim().min(30).max(900) });
+// Section ids must exist in siteSections; a typo here silently drops the
+// planning basis from the vendor package instead of failing. The assertion
+// below is deterministic, so a bad id is caught the first time this module
+// loads rather than in a shipped RFQ.
 const sectionByCategory: Record<string, string[]> = {
-  cooling: ["cooling", "rack_plan", "power", "availability", "site_fit"], power: ["power", "availability", "rack_plan", "schedule_commissioning"], "it / oem": ["workload_platform", "rack_plan", "network_storage", "cooling"], "electrical infrastructure": ["power", "availability", "building_systems", "schedule_commissioning"], "mechanical / water": ["cooling", "site_fit", "building_systems", "availability"], "controls / software": ["controls_security", "network_storage", "availability"], procurement: ["commercial_responsibilities", "logistics", "schedule_commissioning", "rack_plan"], "permitting / advisory": ["project", "site_fit", "schedule_commissioning", "commercial_responsibilities"],
+  cooling: ["cooling", "racks", "power", "availability", "site_fit"],
+  power: ["power", "availability", "racks", "schedule"],
+  "it / oem": ["workload", "racks", "network", "cooling"],
+  "electrical infrastructure": ["power", "availability", "building_systems", "schedule"],
+  "mechanical / water": ["cooling", "site_fit", "building_systems", "availability"],
+  "controls / software": ["controls", "network", "availability"],
+  procurement: ["commercial", "logistics", "schedule", "racks"],
+  "permitting / advisory": ["project", "site_fit", "schedule", "commercial"],
 };
+
+const knownSectionIds = new Set(siteSections.map((section) => section.id));
+for (const [category, ids] of Object.entries(sectionByCategory)) {
+  const unknown = ids.filter((id) => !knownSectionIds.has(id));
+  if (unknown.length) throw new Error(`sectionByCategory["${category}"] references unknown Site Analysis section ids: ${unknown.join(", ")}.`);
+}
 
 function stringValue(value: unknown) { return typeof value === "string" ? value.trim() : typeof value === "number" || typeof value === "boolean" ? String(value) : ""; }
 function siteLabelMap() {

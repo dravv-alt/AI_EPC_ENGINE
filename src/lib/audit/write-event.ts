@@ -56,7 +56,11 @@ export async function writeAuditEventInTransaction(
   `)) as unknown as Array<{ eventHash: string }>;
   if (headRows.length > 1) {
     throw new Error(
-      "Cannot append to a forked audit chain; verify and repair the chain first.",
+      `Cannot append to a forked audit chain for project ${input.projectId}. ` +
+        "Every mutation stays blocked until it is repaired: run " +
+        "`npx tsx scripts/repair-development-audit-chain.ts --confirm-development-repair " +
+        `--project=${input.projectId}` +
+        "` (add --allow-non-development-project for a non-seed project).",
     );
   }
   const previousEventHash = headRows[0]?.eventHash ?? null;

@@ -1,5 +1,7 @@
 # Pramana Cx
 
+"Special Mention" at ET Gen AI Hackathon 2.0 conduted at T-Hub, Hyderabad on 25th August, 2026.
+
 Pramana Cx is an evidence control plane for mission-critical EPC commissioning. It connects controlled requirements to systems, assets, tests, measurements, findings, approvals, schedules, shipments, and immutable source evidence so that an authorized engineer can make a defensible gate decision.
 
 **Live seeded demo:** [pramana-cx.vercel.app](https://pramana-cx.vercel.app) — the public workspace is intentionally marked as a demo and contains representative Mumbai DC-07 records across every product surface.
@@ -125,95 +127,65 @@ Serve the documentation independently from the application with `npm run docs:se
 
 Pramana Cx is not a general document chatbot. It is a governed commissioning workspace: controlled project sources become cited records, human-reviewed requirements, linked systems/assets/gates, reviewed evidence, deterministic readiness, and verifiable turnover artefacts. AI can help extract, retrieve, rank, draft, and explain, but it cannot approve compliance, close a finding, certify a facility, or decide a gate.
 
-## Product tour
+## Workspace tabs
 
-### 1. Project overview
+The left sidebar is the whole application. Five pinned destinations sit at the top, then five grouped sections, then Settings and Profile in the footer. Every tab is project-scoped: the active project is chosen in **Projects** and every other tab reads and writes only that project's records.
 
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20222626.png" alt="Project overview dashboard showing readiness, evidence, actions, alerts, and delivery health" width="100%" />
-</p>
+### Pinned
 
-The commissioning control room brings readiness, evidence, actions, alerts, and delivery health into one project view.
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Projects | `/projects` | Every project you are a member of, with per-project readiness and approved-gate counts. Selecting one activates it for every other tab. Project creation, membership and role assignment live here. |
+| Overview | `/` | The project control room: readiness percentage and remaining blockers, evidence accepted vs. required, open issues by priority, the attention gate, site analysis planning basis, readiness by gate, evidence composition, contributors and the open-issue queue. |
+| Site Analysis | `/site-analysis` | The guided planning intake — project, sources, workload, rack plan, campus, site fit, power, availability, cooling, building systems, network, logistics, controls, schedule and commercial sections. Saving stores a versioned answer set; finalizing writes an immutable planning-basis revision and materialises requirements, systems, assets, gates, advisory commissioning plans and handoff tasks from the confirmed answers. |
+| Readiness | `/readiness` | Per-gate proof state: which accepted requirements are proven, missing, stale, failed or unapproved; blocking findings by severity and overdue status; unmet prerequisite gates; linked schedule tasks; full decision history; and the authorized gate-decision form for approvers. |
+| Issues | `/actions` | The findings lifecycle, grouped by status. Each row carries severity, owner, due date, linked gate and resolution note. Closing a finding requires a written resolution, recomputes readiness and clears any commissioning alert it raised. |
 
-### 2. Graph and timeline
+### Project records
 
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20222803.png" alt="Graph and timeline showing linked assets, gates, requirements, and audit relationships" width="100%" />
-</p>
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Documents | `/sources` | The controlled source library. PDF, CSV and XLSX uploads are hashed, stored immutably and extracted into exact source regions. Revisions are tracked, and each region has its own permanent citation page at `/sources/regions/[regionId]` showing the excerpt, region hash, bounding box, revision state and a signed link to the original bytes at the right page. |
+| Requirements | `/requirements` | Proposed and accepted obligations, each rooted in a source region. The review queue accepts, edits, rejects or marks duplicates. Only accepted requirements count toward readiness or can be proven by evidence. |
+| Systems & Assets | `/systems` | The physical and functional hierarchy — systems, their assets and tags, and the approval gates defined against them with sequence, authority role and current status. |
+| Digital Rack Model | `/rack-model` | Versioned rack geometry generated from project and site inputs, or authored by hand. Supports mixed GPU clusters, rack-unit equipment placement, ports and inter-rack links, GLB/OBJ import, and GLB/OBJ/PDF/YAML export. Approved revisions are immutable until explicitly superseded. |
+| Evidence | `/evidence` | Every evidence record with its validity state — pending, accepted, stale or failed — its content hash, capture time and the requirements it proves. Reviewing evidence here links it to accepted requirements and immediately recomputes gate readiness. |
+| Capture Evidence | `/field-capture` | Offline-tolerant field capture for photos, readings and observations, queued locally and synced into pending evidence against a system or asset. |
 
-Explore the authority graph that connects project assets, gates, requirements, evidence, and the audit trail.
+### Delivery
 
-### 3. Readiness and decisions
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Schedule | `/schedule` | Four views. **Inputs & review** holds task, resource and dependency proposals with a mandatory human review queue and DAG validation. **Board** shows the solved CP-SAT assignments and critical path, with a warning when accepted inputs have changed since the version was solved. **History** lists immutable solved versions with a deterministic diff between any two. **Events** is the durable event pipeline with per-event processing status. Predictive risk signals and advisory mitigations sit above the tabs. |
+| Commissioning Tests | `/cx` | Controlled standards ingestion, citation-verified checklist drafts, the test register with progress and stage per plan, deterministic step readings, narrative review, and report approval. An approved report becomes immutable accepted evidence linked to its gate, asset and proven requirements. |
+| Shipments & Logistics | `/shipments` | Asset-linked shipment legs on a route map with current position, weather overlay, port congestion and ETA against the required-on-site date. Status is recomputed on every write and by the recurring poll; delays raise alerts and recoveries clear them. |
 
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20222845.png" alt="Readiness board showing accepted and missing proof with an authorized decision form" width="100%" />
-</p>
+### Assurance
 
-Make gate readiness transparent through accepted proof, missing evidence, prerequisites, blockers, and controlled decisions.
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Compliance | `/compliance` | Relevance-gated semantic scanning of accepted requirements against approved target revisions, exact cited-line comparison, authority-conflict detection and the engineer review queue. Accepting a deviation creates a severity-rated finding against the affected gate and recomputes readiness. Reviewed precedents are recorded for reuse. |
+| Change Control | `/changes` | Revision blast radius. Assessing a new document revision supersedes the previous one, marks the evidence proving affected requirements as stale, reopens approved gates for review and raises a reassessment finding — in one transaction, with the reached entities listed. |
+| Traceability | `/graph` | The typed relationship map across systems, assets, gates, requirements, evidence and schedule records, with connected-entity and relationship counts, proof links, blocking links and a per-node relationship story. Read-only; authority changes stay in their owning workflow. |
+| Turnover & Closeout | `/turnover` | Handover pack generation. Only an approved gate can be exported, and only accepted evidence is included. The manifest carries canonical hashes, the source register, the graph edges, the full audit chain, approved Cx records and the schedule snapshot, and can be verified independently at `/api/turnover-packs/[packId]/verify`. |
 
-### 4. Schedule management
+### Commercial
 
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20222934.png" alt="Schedule management view showing critical-path tasks and deterministic planning" width="100%" />
-</p>
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Financial Modeler · Beta | `/financial-modeler` | Capacity, utilization, tariff, budget and scenario inputs producing USD-authoritative economics with display-currency conversion, NPV, IRR, payback and the key drivers behind each. |
+| Technology Draft Studio | `/technology-drafts` | Vendor RFQ/RFI package authoring. Pulls the confirmed planning basis for the relevant Site Analysis sections plus registered systems and assets, drafts a cover message and use-case summary, and renders a branded PDF with letterhead and signature blocks. The package is stored as a controlled document revision and indexed for search. |
 
-Review deterministic project schedules, critical-path activities, task sequencing, and advisory planning insights.
+### Project tools
 
-### 5. Risk mitigation review
+| Tab | Route | What it contains |
+| --- | --- | --- |
+| Knowledge Search | `/knowledge` | Project-scoped hybrid retrieval over indexed chunks with metadata filters for document, system, asset, gate, revision and date. Every result carries its source region, revision, content hash and similarity, links to the citation page, and shows connected graph context. Draft revisions are badged advisory and superseded revisions are badged withdrawn, so neither can be mistaken for a controlling source. |
+| Alert Center | `/command-center` | The unified operational event view. Each alert routes to the exact finding, gate, task, risk or shipment it came from, alongside a live event feed. Alerts clear when their underlying condition resolves; clearing one by hand is recorded in the audit chain. |
 
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223002.png" alt="Risk mitigation cards for procurement, workforce, weather, and equipment risks" width="100%" />
-</p>
+### Footer and non-sidebar routes
 
-Review actionable, advisory mitigation options for schedule, procurement, workforce, weather, and equipment risks.
-
-### 6. Shipment navigator
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223035.png" alt="Shipment navigator with route map, weather overlay, ETA, and congestion context" width="100%" />
-</p>
-
-Track equipment movements with route monitoring, weather intelligence, ETA updates, and congestion context.
-
-### 7. Commissioning tests
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223152.png" alt="Commissioning test workspace for controlled standards and cited draft checklists" width="100%" />
-</p>
-
-Turn controlled standards into citation-verified commissioning checklists and governed test records.
-
-### 8. Compliance workbench
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223231.png" alt="Compliance workbench for cited requirement comparisons and review proposals" width="100%" />
-</p>
-
-Surface structured compliance deviations while keeping final disposition under engineer review.
-
-### 9. Controlled sources
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223303.png" alt="Controlled sources library showing immutable documents, revisions, and extracted citation regions" width="100%" />
-</p>
-
-Manage immutable project documents with revision tracking and traceable extracted citation regions.
-
-### 10. Command center
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223330.png" alt="Command center showing operational alerts and live event feed" width="100%" />
-</p>
-
-Route operational alerts directly to the affected task, risk, gate, finding, or shipment alongside a live event feed.
-
-### 11. Turnover
-
-<p align="center">
-  <img src="Demo_images/Screenshot%202026-07-30%20223414.png" alt="Turnover workspace for generating an immutable handover pack from accepted evidence" width="100%" />
-</p>
-
-Generate hash-verifiable handover packs from accepted evidence and approved commissioning gates.
+`/settings` holds project, member and security settings. `/profile` holds identity, password, TOTP enrolment and session revocation. `/brief` renders the project brief, `/help` the in-app guidance, `/login` and `/sign-in` `/sign-up` the auth entry points depending on `AUTH_MODE`, and `/offline` the offline fallback for field use.
 
 ## Current status
 
@@ -272,24 +244,6 @@ npm run source:query -- \
 Add one or more `--query "..."` arguments to test specific questions. Add
 `--synthesize` to run the complete planner, retrieval, reranking, citation
 guard, and grounded-answer pipeline for the first query.
-
-## Application surfaces
-
-- Overview and current-project selection
-- Controlled Sources, exact source-region viewer, and revisions
-- Requirements proposal and human review
-- Systems, assets, and readiness gates
-- Evidence capture/review and offline Field Capture
-- Deterministic Readiness and authorized gate decisions
-- Schedule inputs, review queue, solver versions, diffs, and explanations
-- Live schedule signals, task risks, advisory mitigations, and risk review
-- Findings/Actions lifecycle and typed Graph explorer
-- Cx Standards, cited checklists, readings, reports, and approval
-- Shipments and map visualization
-- Compliance review queue with semantic scan and Knowledge search with cited synthesis
-- Command Center alerts
-- Turnover packs and independent verification
-- Project/member/security Settings and Profile
 
 ## What remains before production deployment
 
@@ -475,6 +429,193 @@ flowchart TD
 
 Predictive risk can observe, explain, and propose. It cannot apply a mitigation, change a dependency/resource constraint, invoke a re-solve, or alter dates. A scheduler must make a separate reviewed schedule change before the deterministic solver can create another immutable version.
 
+## API reference
+
+All 98 route handlers, generated from `src/app/api`. Every project-scoped route enforces membership and a named permission before it runs; cross-project identifiers are rejected at the boundary. Mutating routes append a hash-linked audit event unless noted otherwise.
+
+### Health and platform
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` | `/api/health` |
+| `GET` | `/api/jobs/[jobId]` |
+| `GET` | `/api/objects/[...key]` |
+| `GET` `PATCH` | `/api/profile` |
+
+### Authentication and session
+
+| Methods | Endpoint |
+| --- | --- |
+| `POST` | `/api/auth/login` |
+| `POST` | `/api/auth/logout` |
+| `POST` | `/api/auth/password` |
+| `POST` | `/api/auth/register` |
+| `DELETE` | `/api/auth/sessions/[sessionId]` |
+| `POST` | `/api/auth/totp/challenge` |
+| `POST` | `/api/auth/totp/disable` |
+| `POST` | `/api/auth/totp/enroll` |
+| `POST` | `/api/auth/totp/verify` |
+
+### Projects and membership
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/projects` |
+| `GET` `PATCH` | `/api/projects/[projectId]` |
+| `POST` | `/api/projects/[projectId]/activate` |
+| `GET` | `/api/projects/[projectId]/audit/verify` |
+| `GET` | `/api/projects/[projectId]/entropy` |
+| `POST` | `/api/projects/[projectId]/export` |
+| `GET` `POST` | `/api/projects/[projectId]/members` |
+| `PATCH` | `/api/projects/[projectId]/members/[memberId]` |
+| `GET` | `/api/projects/[projectId]/overview` |
+
+### Controlled sources
+
+| Methods | Endpoint |
+| --- | --- |
+| `POST` | `/api/document-versions/[versionId]/assess-change` |
+| `POST` | `/api/documents/[documentId]/revisions` |
+| `GET` `POST` | `/api/projects/[projectId]/sources` |
+
+### Requirements and evidence
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/evidence/[evidenceId]/review` |
+| `PATCH` | `/api/findings/[findingId]` |
+| `GET` `POST` | `/api/projects/[projectId]/claims` |
+| `GET` `POST` | `/api/projects/[projectId]/evidence` |
+| `GET` `POST` | `/api/projects/[projectId]/field-captures` |
+| `GET` `POST` | `/api/projects/[projectId]/findings` |
+| `GET` `PATCH` | `/api/requirements/[requirementId]/review` |
+
+### Systems, assets and gates
+
+| Methods | Endpoint |
+| --- | --- |
+| `POST` | `/api/gates/[gateId]/decisions` |
+| `GET` `POST` | `/api/projects/[projectId]/assets` |
+| `GET` `POST` | `/api/projects/[projectId]/gates` |
+| `GET` | `/api/projects/[projectId]/gates/[gateId]/readiness` |
+| `GET` `POST` | `/api/projects/[projectId]/systems` |
+
+### Readiness and traceability
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/projects/[projectId]/edges` |
+| `GET` | `/api/projects/[projectId]/graph` |
+| `GET` | `/api/projects/[projectId]/graph/nodes/[nodeId]` |
+| `POST` | `/api/projects/[projectId]/readiness/recompute` |
+
+### Digital rack model
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/projects/[projectId]/rack-models` |
+| `GET` `PATCH` | `/api/projects/[projectId]/rack-models/[modelId]` |
+| `POST` `DELETE` | `/api/projects/[projectId]/rack-models/[modelId]/equipment` |
+| `POST` | `/api/projects/[projectId]/rack-models/[modelId]/export` |
+| `POST` | `/api/projects/[projectId]/rack-models/[modelId]/racks` |
+| `POST` | `/api/projects/[projectId]/rack-models/import` |
+
+### Schedule and risk
+
+| Methods | Endpoint |
+| --- | --- |
+| `POST` | `/api/projects/[projectId]/schedule/baseline` |
+| `GET` | `/api/projects/[projectId]/schedule/current` |
+| `POST` | `/api/projects/[projectId]/schedule/dependencies` |
+| `GET` | `/api/projects/[projectId]/schedule/live-events` |
+| `GET` `POST` | `/api/projects/[projectId]/schedule/resources` |
+| `GET` `POST` | `/api/projects/[projectId]/schedule/risks` |
+| `GET` `POST` | `/api/projects/[projectId]/schedule/tasks` |
+| `GET` `POST` | `/api/projects/[projectId]/schedule/versions` |
+| `POST` | `/api/schedule/events` |
+| `GET` `POST` | `/api/schedule/resources/[resourceId]/review` |
+| `GET` `PATCH` | `/api/schedule/risks/[riskId]/review` |
+| `POST` | `/api/schedule/risks/recurring` |
+| `GET` `POST` | `/api/schedule/tasks/[taskId]/review` |
+| `GET` | `/api/schedule/versions/[versionId]` |
+| `GET` | `/api/schedule/versions/[versionId]/diff` |
+| `GET` | `/api/schedule/versions/[versionId]/explanation` |
+
+### Shipments and logistics
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/projects/[projectId]/shipment-plans` |
+| `GET` `POST` | `/api/projects/[projectId]/shipments` |
+| `POST` | `/api/projects/[projectId]/shipments/bulk` |
+| `GET` `PATCH` | `/api/shipments/[shipmentId]` |
+
+### Commissioning (Cx)
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` | `/api/cx/checklists/[checklistId]` |
+| `GET` `POST` | `/api/cx/checklists/[checklistId]/review` |
+| `POST` | `/api/cx/checklists/[checklistId]/steps/[stepId]/reading` |
+| `GET` `PATCH` | `/api/cx/reports/[reportId]` |
+| `POST` | `/api/cx/test-records/[testRecordId]/report` |
+| `POST` | `/api/cx/test-records/[testRecordId]/report/approve` |
+| `GET` `POST` | `/api/projects/[projectId]/cx/checklists` |
+| `POST` | `/api/projects/[projectId]/cx/checklists/[checklistId]/steps/[stepId]/vision-reading` |
+| `GET` `POST` | `/api/projects/[projectId]/cx/standards` |
+
+### Compliance
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `PATCH` | `/api/compliance/checks/[checkId]/review` |
+| `PATCH` | `/api/compliance/precedents/[precedentId]/review` |
+| `GET` `POST` | `/api/projects/[projectId]/compliance/checks` |
+| `GET` `POST` | `/api/projects/[projectId]/compliance/precedents` |
+| `POST` | `/api/projects/[projectId]/compliance/scan` |
+
+### Knowledge and copilot
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `POST` | `/api/copilot/conversations` |
+| `POST` | `/api/copilot/conversations/[conversationId]/attachments` |
+| `GET` `POST` | `/api/copilot/conversations/[conversationId]/messages` |
+| `GET` `DELETE` | `/api/copilot/memories` |
+| `POST` | `/api/projects/[projectId]/knowledge/query` |
+| `POST` | `/api/projects/[projectId]/knowledge/rfi-similar` |
+
+### Site analysis
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `PUT` | `/api/projects/[projectId]/site-analysis` |
+| `POST` | `/api/projects/[projectId]/site-analysis/cooling-analysis` |
+| `POST` | `/api/projects/[projectId]/site-analysis/finalize` |
+| `GET` `POST` | `/api/projects/[projectId]/site-analysis/insights` |
+
+### Commercial
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` `PUT` | `/api/projects/[projectId]/financial-model` |
+| `GET` `POST` | `/api/projects/[projectId]/technology-drafts` |
+
+### Turnover and alerts
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` | `/api/projects/[projectId]/alerts` |
+| `PATCH` | `/api/projects/[projectId]/alerts/[alertId]` |
+| `GET` `POST` | `/api/projects/[projectId]/turnover-packs` |
+| `GET` | `/api/turnover-packs/[packId]/verify` |
+
+### Signed artefact access
+
+| Methods | Endpoint |
+| --- | --- |
+| `GET` | `/api/projects/[projectId]/objects/[objectId]/url` |
+
 ## Authoritative data model
 
 ```mermaid
@@ -518,12 +659,35 @@ erDiagram
     PROJECT ||--o{ DURABLE_JOB : executes
 ```
 
+### Schema at a glance
+
+60 tables across 35 migrations, all tenant- and project-scoped.
+
+| Domain | Tables |
+| --- | --- |
+| Tenancy and identity | `tenants`, `users`, `projects`, `project_members`, `auth_sessions` |
+| Controlled sources | `documents`, `document_versions`, `source_regions`, `storage_objects`, `knowledge_chunks` |
+| Requirements and proof | `requirements`, `evidence`, `evidence_claims`, `evidence_claim_links`, `findings`, `decisions` |
+| Physical model | `systems`, `assets`, `gates`, `edges` |
+| Digital rack model | `rack_models`, `rack_model_racks`, `rack_model_clusters`, `rack_model_equipment`, `rack_model_gpu_profiles`, `rack_model_ports`, `rack_model_links`, `rack_model_artifacts` |
+| Commissioning | `cx_checklists`, `cx_checklist_steps`, `cx_clause_citations`, `cx_test_records`, `cx_step_results` |
+| Compliance | `compliance_checks`, `compliance_precedents` |
+| Schedule | `schedule_tasks`, `schedule_dependencies`, `schedule_resources`, `schedule_task_resources`, `schedule_versions`, `schedule_assignments`, `schedule_events`, `schedule_risks`, `risk_signals` |
+| Logistics | `shipments`, `shipment_plans` |
+| Planning and commercial | `site_analyses`, `site_analysis_snapshots`, `financial_models`, `technology_plugin_drafts` |
+| Copilot | `copilot_conversations`, `copilot_messages`, `copilot_attachments`, `copilot_memories`, `teachback_notes` |
+| Platform | `audit_events`, `alerts`, `durable_jobs`, `idempotency_records`, `turnover_packs` |
+
+`knowledge_chunks.embedding` is `vector(768)` with an ivfflat cosine index, and every row records the model tag that produced it, so switching embedding providers degrades to fewer results instead of silently mixing incompatible vector spaces.
+
 Every authoritative record is tenant/project scoped. Cross-project IDs are rejected at the API boundary. `edges` hold traversable provenance, while normalized relational tables remain the authority for permissions and business state. Audit events are append-only and hash-linked per project.
 
 ## Technology and authority choices
 
-- **Web/API:** Next.js 16, React 19, TypeScript, Zod
-- **Database:** PostgreSQL 16 through Drizzle; pgvector image in the Compose topology
+- **Web/API:** Next.js 16.3 (App Router, Turbopack), React 19, TypeScript 5.7, Zod 3 for every request and model-output schema
+- **Runtime edge:** `src/proxy.ts` applies the per-IP API budget and cross-origin checks ahead of every route; per-category limits (auth, upload, AI, schedule, export) apply on top
+- **Database:** PostgreSQL 16 with pgvector, accessed through Drizzle ORM 0.45 and postgres.js. 60 tables, 11 enums, 35 applied migrations. Embeddings are `vector(768)` with an ivfflat cosine index
+- **UI:** Leaflet + react-leaflet for routing maps, three.js for the rack model, lucide-react icons, PDFKit for server-side PDF generation
 - **Graph:** typed relational `edges` table, avoiding a second operational database until traversal evidence proves it necessary
 - **Jobs:** Redis and BullMQ with durable database job state and idempotency keys
 - **Object storage:** one local/S3-compatible boundary; MinIO is the local production analogue

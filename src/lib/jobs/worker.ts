@@ -12,7 +12,7 @@ import { indexDocumentKnowledgeChunks, proposeDocumentRecords } from "@/lib/inge
 import { enqueueDurableJob } from "@/lib/jobs/queue";
 import { generateChecklistDraft, generateCxReport } from "@/lib/cx/generation";
 import { pollProjectRisks, type RiskScenarioOverride } from "@/lib/predictive-risk/engine";
-import { activeEmbeddingModelTag, getModelProvider } from "@/lib/model/provider";
+import { activeEmbeddingModelTag, embedPassages, getModelProvider } from "@/lib/model/provider";
 import { getAisClient } from "@/lib/supply/ais-client";
 import { getWeatherClient } from "@/lib/supply/weather-client";
 import { calculateShipmentStatus } from "@/lib/supply/status";
@@ -59,8 +59,14 @@ export async function embedPendingKnowledgeChunks(options: { projectId?: string;
 
   const provider = getModelProvider();
   let embedded = 0;
-  for (const chunk of pending) {
-    const vector = await provider.embed(chunk.content);
+  // Must embed as passages, exactly like the interactive catch-up in
+  // knowledge/query.ts. Embedding these as queries while stamping them with
+  // the passage model tag would leave two vector spaces under one tag, and
+  // nothing would ever re-embed them.
+  const vectors = await embedPassages(provider, pending.map((chunk) => chunk.content));
+  for (const [index, chunk] of pending.entries()) {
+    const vector = vectors[index];
+    if (!vector) continue;
     await db.update(knowledgeChunks)
       .set({ embedding: vector, embeddingModel: modelTag, updatedAt: new Date() })
       .where(eq(knowledgeChunks.id, chunk.id));
