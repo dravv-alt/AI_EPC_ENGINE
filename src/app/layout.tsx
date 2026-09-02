@@ -14,7 +14,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { CookieNotice } from "@/components/cookie-notice";
 import { RouteTitle } from "@/components/route-title";
 import { RouteProgress } from "@/components/route-progress";
-import { env } from "@/lib/env";
 import { getRouteSeo } from "@/lib/seo";
 
 const baseMetadata: Metadata = {
@@ -72,5 +71,5 @@ export const viewport: Viewport = { themeColor: "#2d463e" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const themeBootstrap = "try { var preset = localStorage.getItem('pramana-theme-preset'); var stored = localStorage.getItem('pramana-theme'); var fallback = stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'midnight-bloom' : 'soft-pop'; var selected = preset || fallback; var dark = selected === 'midnight-bloom' || selected === 'northern-lights'; document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.dataset.palette = selected; } catch (_) {}";
-  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body>{env.DEMO_MODE && <div className="demo-mode-banner" role="status">Demo workspace · representative Mumbai DC-07 data</div>}<RouteProgress /><RouteTitle /><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary><div className="theme-global-control"><ThemeToggle /></div><CookieNotice /><CopilotLauncher /></body></html>;
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body><RouteProgress /><RouteTitle /><HashRouteRedirect /><AuthBoundary>{children}</AuthBoundary><div className="theme-global-control"><ThemeToggle /></div><CookieNotice /><CopilotLauncher /></body></html>;
 }

@@ -15820,17 +15820,24 @@ html[data-theme="dark"] .requirement-document-states i {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-.demo-mode-banner {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  padding: 0.48rem 1rem;
-  background: #9d651e;
-  color: #fffaf0;
-  font-family: var(--font-mono, monospace);
-  font-size: 0.72rem;
+.demo-mode-indicator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  color: #71450d;
+  border: 1px solid rgba(157, 101, 30, 0.24);
+  border-radius: 999px;
+  background: #fff3de;
+  font-family: var(--font-brand);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-align: center;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+html[data-theme="dark"] .demo-mode-indicator {
+  color: #ffe2ad;
+  border-color: rgba(255, 204, 124, 0.22);
+  background: rgba(116, 74, 16, 0.45);
 }
