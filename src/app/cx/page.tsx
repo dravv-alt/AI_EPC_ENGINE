@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { CxWorkbench } from "@/components/cx-workbench";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { assets, cxChecklistSteps, cxChecklists, cxClauseCitations, cxStepResults, cxTestRecords, documentVersions, documents, gates, sourceRegions, systems, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function CxPage() {
   const projectId = await getActiveProjectId();
   const [data, checklists, systemRows, gateRows, assetRows, standardRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select().from(cxChecklists).where(eq(cxChecklists.projectId, projectId)).orderBy(desc(cxChecklists.createdAt)),
     db.select().from(systems).where(eq(systems.projectId, projectId)),
     db.select().from(gates).where(eq(gates.projectId, projectId)),

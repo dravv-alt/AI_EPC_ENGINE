@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { ComplianceWorkbench } from "@/components/compliance-workbench";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { complianceChecks, compliancePrecedents, documents, documentVersions, requirements, sourceRegions, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function CompliancePage() {
   const projectId = await getActiveProjectId();
   const [data, checkRows, acceptedRows, regionRows, precedentRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({ check: complianceChecks, reviewerName: users.displayName }).from(complianceChecks).leftJoin(users, eq(complianceChecks.reviewedBy, users.id)).where(eq(complianceChecks.projectId, projectId)).orderBy(desc(complianceChecks.createdAt)),
     db.select({ id: requirements.id, statement: requirements.statement, sourceRegionId: requirements.sourceRegionId, numericValue: requirements.numericValue, unit: requirements.unit, tolerance: requirements.tolerance }).from(requirements).where(and(eq(requirements.projectId, projectId), eq(requirements.reviewState, "accepted"))),
     db.select({ id: sourceRegions.id, text: sourceRegions.extractedText, pageNumber: sourceRegions.pageNumber, contentHash: sourceRegions.contentHash, documentTitle: documents.title, documentType: documents.documentType, revision: documentVersions.revision }).from(sourceRegions).innerJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id)).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)),

@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
 import { RequirementsWorkbench } from "@/components/requirements-workbench";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, requirements, sourceRegions } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function RequirementsPage() {
   const projectId = await getActiveProjectId();
   const [data, items] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({ requirement: requirements, region: sourceRegions, version: documentVersions, document: documents })
       .from(requirements)
       .innerJoin(sourceRegions, eq(requirements.sourceRegionId, sourceRegions.id))

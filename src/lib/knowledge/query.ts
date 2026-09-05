@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions, knowledgeChunks, sourceRegions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
@@ -140,6 +140,10 @@ async function retrieveLexicalCitations(options: {
     .leftJoin(documentVersions, eq(sourceRegions.documentVersionId, documentVersions.id))
     .leftJoin(documents, eq(documentVersions.documentId, documents.id))
     .where(and(...filters))
+    .orderBy(
+      sql`case when ${knowledgeChunks.content} = ${options.query} then 0 else 1 end`,
+      desc(knowledgeChunks.updatedAt),
+    )
     .limit(500);
 
   const queryTokens = lexicalTokens(options.query);
@@ -190,6 +194,15 @@ export async function retrieveSemanticCitations(options: {
 }): Promise<SemanticCitation[]> {
   const threshold = options.threshold ?? env.KNOWLEDGE_SIMILARITY_THRESHOLD;
   const limit = options.limit ?? 8;
+
+  // Presentation-safe local mode: deterministic development embeddings are
+  // not a semantic authority, so search the already-ingested, project-scoped
+  // corpus directly. This avoids remote-provider quota/network delays while
+  // preserving document, revision, system, asset, gate, and date filters.
+  if (env.EMBEDDING_PROVIDER === "mock") {
+    return retrieveLexicalCitations({ ...options, limit });
+  }
+
   const provider = getModelProvider();
   let embedding: number[];
   try {

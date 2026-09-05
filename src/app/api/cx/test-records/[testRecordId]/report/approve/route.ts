@@ -7,6 +7,7 @@ import { editableReportSchema } from "@/lib/cx/generation";
 import { db } from "@/lib/db/client";
 import { cxChecklistSteps, cxChecklists, cxStepResults, cxTestRecords, edges, evidence, gates, requirements, storageObjects } from "@/lib/db/schema";
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
+import { projectObjectContentUrl } from "@/lib/storage/http";
 import { objectStorage, type StoredObject } from "@/lib/storage/service";
 
 const schema = z.object({ reason: z.string().trim().min(12).max(4000) });
@@ -55,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tes
       return { report: updated, evidence: newEvidence, object };
     });
     await writeAuditEvent({ projectId: record.projectId, actorId: actor.userId, action: "cx.report.approved", entityType: "cx_test_record", entityId: record.id, after: { evidenceId: transaction.evidence.id, artifactObjectId: transaction.object.id, artifactHash: stored.sha256, gateStatus: "in_review", reason: parsed.data.reason, provedRequirementIds: acceptedRequirements.map((requirement) => requirement.id) } });
-    return NextResponse.json({ report: transaction.report, evidenceId: transaction.evidence.id, gateState: "in_review", artifactHash: stored.sha256, artifactUrl: await objectStorage.signedReadUrl(stored.objectKey, 300), label: "ENGINEER APPROVED — IMMUTABLE ARTIFACT" });
+    return NextResponse.json({ report: transaction.report, evidenceId: transaction.evidence.id, gateState: "in_review", artifactHash: stored.sha256, artifactUrl: projectObjectContentUrl(record.projectId, transaction.object.id, request.url), label: "ENGINEER APPROVED — IMMUTABLE ARTIFACT" });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to approve report." }, { status: error instanceof AccessError ? error.status : 500 });
   }

@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { FeatureShell } from "@/components/feature-shell";
 import { IssueDetailWorkbench } from "@/components/issue-detail-workbench";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { auditEvents, findings, gates, projectMembers, users } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -13,7 +13,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ fi
   const projectId = await getActiveProjectId();
   const { findingId } = await params;
   const [data, issueRows, members, events] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({ id: findings.id, title: findings.title, description: findings.description, status: findings.status, severity: findings.severity, ownerId: findings.ownerId, ownerName: users.displayName, gateId: findings.gateId, gateName: gates.name, dueAt: findings.dueAt, resolutionNote: findings.resolutionNote, resolvedAt: findings.resolvedAt, version: findings.version, createdAt: findings.createdAt, updatedAt: findings.updatedAt })
       .from(findings).leftJoin(users, eq(findings.ownerId, users.id)).leftJoin(gates, eq(findings.gateId, gates.id)).where(and(eq(findings.id, findingId), eq(findings.projectId, projectId))).limit(1),
     db.select({ id: users.id, name: users.displayName }).from(projectMembers).innerJoin(users, eq(projectMembers.userId, users.id)).where(eq(projectMembers.projectId, projectId)),

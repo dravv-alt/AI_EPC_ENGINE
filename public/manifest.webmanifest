@@ -1,10 +1,13 @@
 {
-  "name": "Pramana Cx",
-  "short_name": "Pramana",
-  "description": "Evidence-backed commissioning field capture and readiness.",
-  "start_url": "/field-capture",
+  "name": "Pramana Cx — EPC Commissioning Intelligence",
+  "short_name": "Pramana Cx",
+  "description": "Evidence-backed readiness, delivery coordination, and governed commissioning intelligence for mission-critical EPC projects.",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#efede8",
   "theme_color": "#2d463e",
-  "icons": []
+  "icons": [
+    { "src": "/brand/pramana-mark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/pramana-mark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

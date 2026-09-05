@@ -3,7 +3,7 @@ import { FeatureShell } from "@/components/feature-shell";
 import { ScheduleWorkbench } from "@/components/schedule-workbench";
 import { PredictiveRiskWorkbench } from "@/components/predictive-risk-workbench";
 import { SourceUploadForm } from "@/components/source-upload-form";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { scheduleAssignments, scheduleDependencies, scheduleEvents, scheduleResources, scheduleRisks, scheduleTasks, scheduleVersions } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -14,7 +14,7 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const projectId = await getActiveProjectId();
   const focus = await searchParams;
   const [data, tasks, resources, dependencies, versions, events, riskRows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select().from(scheduleTasks).where(eq(scheduleTasks.projectId, projectId)),
     db.select().from(scheduleResources).where(eq(scheduleResources.projectId, projectId)),
     db.select().from(scheduleDependencies).where(eq(scheduleDependencies.projectId, projectId)),

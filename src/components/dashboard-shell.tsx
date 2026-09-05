@@ -15,7 +15,7 @@ import { ProjectSearchForm } from "@/components/project-search-form";
 import { ProjectCommandOverview } from "@/components/project-command-overview";
 import { ClerkAccountControl } from "@/components/clerk-account-control";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { clerkIsConfigured } from "@/lib/env";
+import { clerkIsConfigured, env } from "@/lib/env";
 
 const toneLabel: Record<ReadinessTone, string> = {
   ready: "Ready",
@@ -33,7 +33,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
         <header className="topbar">
           <MobileRouteMenu />
           <ProjectSearchForm />
-          <div className="topbar-actions"><Link className="icon-button" href="/command-center" aria-label="Open notifications"><Bell size={19} /><span className="notification-dot" /></Link><ThemeToggle /><Link className="help-button" href={{ pathname: "/help" }} aria-label="Open help">?</Link>{clerkIsConfigured && <ClerkAccountControl />}<span className="sync-state"><span />Synced</span></div>
+          <div className="topbar-actions">{env.DEMO_MODE && <span className="demo-mode-indicator" title="Representative Mumbai DC-07 data. Public demo changes are disabled.">Demo</span>}<Link className="icon-button" href="/command-center" aria-label="Open notifications"><Bell size={19} /><span className="notification-dot" /></Link><ThemeToggle /><Link className="help-button" href={{ pathname: "/help" }} aria-label="Open help">?</Link>{clerkIsConfigured && <ClerkAccountControl />}<span className="sync-state"><span />Synced</span></div>
         </header>
 
         <div className="content">

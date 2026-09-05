@@ -35,6 +35,7 @@ export function RequirementsWorkbench({ rows }: { rows: RequirementReviewRow[] }
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const accepted = rows.filter((row) => row.reviewState === "accepted");
+  const demoRequirement = rows.find((row) => editableStates.has(row.reviewState));
   const groups = [...rows.reduce((map, row) => {
     const key = `${row.documentTitle}\u0000${row.revision}`;
     const current = map.get(key) ?? { title: row.documentTitle, revision: row.revision, rows: [] as RequirementReviewRow[] };
@@ -53,14 +54,14 @@ export function RequirementsWorkbench({ rows }: { rows: RequirementReviewRow[] }
   }
 
   return <section className="requirements-workbench" aria-label="Requirement review queue">
-    <header className="requirements-workbench-header"><div><p className="eyebrow">Controlled review queue</p><h2>Requirements by source document</h2><p>Titles and summaries are concise review aids. The expanded corpus and exact citation remain the controlled record.</p></div><span>{rows.length} records · {groups.length} sources</span></header>
+    <header className="requirements-workbench-header"><div><p className="eyebrow">Controlled review queue</p><h2>Requirements by source document</h2><p>Titles and summaries are concise review aids. The expanded corpus and exact citation remain the controlled record.</p></div><div><span>{rows.length} records · {groups.length} sources</span><button type="button" className="button button-secondary" disabled={!demoRequirement} onClick={() => { if (!demoRequirement) return; setEditing(demoRequirement.id); setMessage("A cited Mumbai DC-07 proposal is open for demonstration. Nothing changes until you use a normal review action."); requestAnimationFrame(() => document.querySelector(`[data-requirement-id="${demoRequirement.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })); }}>Load cited review example</button></div></header>
     <aside className="requirements-classification-note"><b>How requirements are classified</b><span>A requirement is a source-cited obligation. We record its strength (shall / must / should / may) and comparison type (numeric, boolean, categorical, or narrative). Only an accepted requirement can affect readiness.</span></aside>
     {message && <p className="pm-inline-message" role="status">{message}</p>}
     <div className="requirement-document-groups">{groups.map((group) => <details className="requirement-document-group" open key={`${group.title}:${group.revision}`}>
       <summary><span className="requirement-document-icon"><FileText size={17} /></span><span><b>{group.title}</b><small>{group.revision} · {group.rows.length} requirement{group.rows.length === 1 ? "" : "s"}</small></span><span className="requirement-document-states"><i>{group.rows.filter((row) => editableStates.has(row.reviewState)).length} to review</i><ChevronDown size={17} /></span></summary>
       <div className="requirement-table" role="table" aria-label={`${group.title} requirements`}>
         <div className="requirement-table-head" role="row"><span>Requirement</span><span>Summary</span><span>Reference</span><span>State</span><span>Actions</span></div>
-        {group.rows.map((row) => <details className="requirement-row" key={row.id}>
+        {group.rows.map((row) => <details className="requirement-row" data-requirement-id={row.id} open={editing === row.id ? true : undefined} key={row.id}>
           <summary className="requirement-row-summary" role="row">
             <span className="requirement-cell requirement-title"><b>{words(row.displayTitle, row.statement, 9)}</b><small>{row.modality} · {row.comparisonModality ?? "narrative"}</small></span>
             <span className="requirement-cell requirement-summary">{words(row.displaySummary, row.statement, 28)}</span>

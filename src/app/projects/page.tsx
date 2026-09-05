@@ -2,7 +2,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { FeatureShell } from "@/components/feature-shell";
 import { ProjectDirectory } from "@/components/project-directory";
 import { getPersistedCurrentUser } from "@/lib/auth/user";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { evidence, findings, gates, projectMembers, projects } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
   const activeProjectId = await getActiveProjectId();
-  const [{ user }, activeData] = await Promise.all([getPersistedCurrentUser(), getDashboardData(activeProjectId)]);
+  const [{ user }, activeData] = await Promise.all([getPersistedCurrentUser(), getProjectShellData(activeProjectId)]);
   if (!activeData) throw new Error("Active project not found");
   const memberships = await db.select({ id: projects.id, name: projects.name, code: projects.code, status: projects.status, timezone: projects.timezone, role: projectMembers.role, updatedAt: projects.updatedAt })
     .from(projectMembers).innerJoin(projects, eq(projectMembers.projectId, projects.id)).where(eq(projectMembers.userId, user.id));

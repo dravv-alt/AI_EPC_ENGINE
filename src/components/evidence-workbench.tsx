@@ -13,6 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { compactHash } from "@/lib/presentation";
 import { evidenceTaxonomy } from "@/lib/evidence/taxonomy";
+import { prefillForm } from "@/lib/demo/prefill";
 import { ClaimEvidenceMatrix } from "@/components/claim-evidence-matrix";
 
 type SystemOption = { id: string; name: string };
@@ -59,6 +60,7 @@ export function EvidenceWorkbench({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [captureSystemId, setCaptureSystemId] = useState(systems[0]?.id ?? "");
+  const demoSystem = systems.find((system) => system.name.toLowerCase().includes("chilled water")) ?? systems[0];
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? "");
   const [requirementId, setRequirementId] = useState("");
   const [reviewNote, setReviewNote] = useState("");
@@ -204,6 +206,13 @@ export function EvidenceWorkbench({
           onSubmit={capture}
           aria-busy={busy}
         >
+          <button type="button" className="button button-secondary" disabled={!demoSystem || busy} onClick={async (event) => {
+            const payload = "Mumbai DC-07 chilled-water supply temperature field reading: 6.8 °C at design-load witness point.";
+            const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+            setCaptureSystemId(demoSystem?.id ?? "");
+            prefillForm(event.currentTarget.form, { evidenceType: "measurement", contentHash: hash });
+            setMessage("Mumbai DC-07 measurement metadata loaded. It remains a pending proposal until you use Save pending evidence and complete review.");
+          }}>Load Mumbai DC-07 example</button>
           <label>
             System
             <select

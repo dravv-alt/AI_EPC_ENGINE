@@ -11,7 +11,7 @@ import {
   storageObjects,
 } from "@/lib/db/schema";
 import type { RackModelBundle } from "@/lib/rack-model/types";
-import { objectStorage } from "@/lib/storage/service";
+import { projectObjectContentUrl } from "@/lib/storage/http";
 
 export async function loadRackModel(
   projectId: string,
@@ -64,7 +64,7 @@ export async function loadRackModel(
       where: eq(storageObjects.id, model.sourceObjectId),
     });
     if (object?.projectId === projectId) {
-      sourceUrl = await objectStorage.signedReadUrl(object.objectKey, 600);
+      sourceUrl = projectObjectContentUrl(projectId, object.id);
       sourceMediaType = object.mediaType;
     }
   }

@@ -9,6 +9,7 @@ import { activeEmbeddingModelTag, getEmbeddingProvider, getGenerationProvider } 
 import { AccessError, requireProjectPermission } from "@/lib/projects/access";
 import { coolingStatePointFields, siteSections } from "@/lib/site-analysis/questions";
 import { detectAllowedCaptureMediaType } from "@/lib/storage/magic";
+import { projectObjectContentUrl } from "@/lib/storage/http";
 import { objectStorage } from "@/lib/storage/service";
 import { createVendorPackagePdf, type VendorPackageContext, type VendorPackageInput, vendorPackageSearchText } from "@/lib/technology/vendor-package";
 
@@ -130,7 +131,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     });
     committed = true;
     await writeAuditEvent({ projectId, actorId: actor.userId, action: "technology_draft.vendor_package_created", entityType: "technology_draft", entityId: result.draft.id, after: { templateId: result.draft.templateId, category: result.draft.category, status: "draft", documentVersionId: result.version.id, artifactObjectId: result.object.id, embeddingModel: activeEmbeddingModelTag(), generationProvider: generated.provider, publishable: false } });
-    const downloadUrl = await objectStorage.signedReadUrl(stored.objectKey, 600); return NextResponse.json({ ...result, downloadUrl, generatedSubject: generated.subject }, { status: 201 });
+    const downloadUrl = projectObjectContentUrl(projectId, result.object.id, request.url); return NextResponse.json({ ...result, downloadUrl, generatedSubject: generated.subject }, { status: 201 });
   } catch (error) {
     if (storedKey && !committed) await objectStorage.remove(storedKey);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to create the vendor package." }, { status: error instanceof AccessError ? error.status : 500 });

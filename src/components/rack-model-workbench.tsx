@@ -33,6 +33,12 @@ import {
   X,
 } from "lucide-react";
 import type { RackModelBundle } from "@/lib/rack-model/types";
+import {
+  rackTagValue,
+  suggestedRackProfile,
+  suggestedRackProfiles,
+  type SuggestedRackProfile,
+} from "@/lib/rack-model/catalog";
 
 type ModelListItem = RackModelBundle["model"];
 
@@ -74,6 +80,23 @@ type RackDraft = {
 };
 
 const emptyRack: RackDraft = { name: "", rowLabel: "A", totalUnits: "48", maxPowerKw: "", widthMm: "600", depthMm: "1200", heightMm: "2200" };
+
+type RackImplementationDraft = {
+  name: string;
+  displayName: string;
+  profileKey: string;
+  role: string;
+  totalUnits: string;
+  maxPowerKw: string;
+  widthMm: string;
+  depthMm: string;
+  heightMm: string;
+  enclosure: string;
+  powerFeed: string;
+  cooling: string;
+  cableManagement: string;
+  security: string;
+};
 
 type GpuClusterDraft = {
   id: string;
@@ -173,6 +196,35 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function rackImplementationDraft(
+  rack: RackModelBundle["racks"][number],
+  suggestion: SuggestedRackProfile,
+): RackImplementationDraft {
+  return {
+    name: rack.name,
+    displayName: rackTagValue(rack.tags, "displayName") || suggestion.name,
+    profileKey: rackTagValue(rack.tags, "profile") || suggestion.key,
+    role: rackTagValue(rack.tags, "role") || suggestion.role,
+    totalUnits: String(rack.totalUnits),
+    maxPowerKw: rack.maxPowerKw ?? String(suggestion.maxPowerKw),
+    widthMm: String(rack.widthMm),
+    depthMm: String(rack.depthMm),
+    heightMm: String(rack.heightMm),
+    enclosure:
+      rackTagValue(rack.tags, "enclosure") || suggestion.enclosure,
+    powerFeed: rackTagValue(rack.tags, "powerFeed") || suggestion.powerFeed,
+    cooling: rackTagValue(rack.tags, "cooling") || suggestion.cooling,
+    cableManagement:
+      rackTagValue(rack.tags, "cableManagement") ||
+      suggestion.cableManagement,
+    security: rackTagValue(rack.tags, "security") || suggestion.security,
+  };
+}
+
+function isImplementedRack(tags: unknown) {
+  return Array.isArray(tags) && tags.includes("implemented");
 }
 
 function configFromBundle(bundle: RackModelBundle | null): RackModelConfig {
@@ -756,6 +808,8 @@ export function RackModelWorkbench({
     useState<EquipmentDraft>(emptyEquipment);
   const [rackOpen, setRackOpen] = useState(false);
   const [rackDraft, setRackDraft] = useState<RackDraft>(emptyRack);
+  const [implementationDraft, setImplementationDraft] =
+    useState<RackImplementationDraft | null>(null);
   const [rackQuery, setRackQuery] = useState("");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(
     () =>
@@ -772,19 +826,34 @@ export function RackModelWorkbench({
   );
   const selected =
     bundle?.racks.find((rack) => rack.id === selectedRack) ?? null;
+  const selectedRackIndex = selected
+    ? Math.max(0, bundle?.racks.findIndex((rack) => rack.id === selected.id) ?? 0)
+    : 0;
+  const selectedSuggestion = suggestedRackProfile(selectedRackIndex);
   const selectedEquipment =
     bundle?.equipment.filter((item) => item.rackId === selectedRack) ?? [];
   const matchingRacks = useMemo(() => {
     if (!bundle) return [];
     const query = rackQuery.trim().toLowerCase();
     return query
-      ? bundle.racks.filter((rack) =>
-          `${rack.name} ${rack.rowLabel} ${rack.maxPowerKw ?? ""}`
+      ? bundle.racks.filter((rack, index) => {
+          const suggestion = suggestedRackProfile(index);
+          const displayName =
+            rackTagValue(rack.tags, "displayName") || suggestion.name;
+          return `${rack.name} ${displayName} ${suggestion.role} ${rack.rowLabel} ${rack.maxPowerKw ?? ""}`
             .toLowerCase()
-            .includes(query),
-        )
+            .includes(query);
+        })
       : bundle.racks;
   }, [bundle, rackQuery]);
+
+  useEffect(() => {
+    setImplementationDraft(
+      selected
+        ? rackImplementationDraft(selected, selectedSuggestion)
+        : null,
+    );
+  }, [selected, selectedSuggestion]);
 
   async function generate(custom = false) {
     setBusy("generate");
@@ -950,6 +1019,32 @@ export function RackModelWorkbench({
     setConfig((current) => ({ ...current, [field]: value }));
   }
 
+  function chooseImplementationProfile(profileKey: string) {
+    const profile =
+      suggestedRackProfiles.find((item) => item.key === profileKey) ??
+      selectedSuggestion;
+    setImplementationDraft((current) =>
+      current
+        ? {
+            ...current,
+            profileKey: profile.key,
+            displayName: profile.name,
+            role: profile.role,
+            totalUnits: String(profile.totalUnits),
+            maxPowerKw: String(profile.maxPowerKw),
+            widthMm: String(profile.widthMm),
+            depthMm: String(profile.depthMm),
+            heightMm: String(profile.heightMm),
+            enclosure: profile.enclosure,
+            powerFeed: profile.powerFeed,
+            cooling: profile.cooling,
+            cableManagement: profile.cableManagement,
+            security: profile.security,
+          }
+        : current,
+    );
+  }
+
   async function importModel() {
     if (!importFile) {
       setError("Choose a GLB or OBJ model file.");
@@ -1017,6 +1112,59 @@ export function RackModelWorkbench({
     if (!response.ok) setError(result.error ?? "Unable to add custom rack.");
     else { setBundle(result); const created = result.racks.find((rack: RackModelBundle["racks"][number]) => rack.name === rackDraft.name); setSelectedRack(created?.id ?? null); setExpandedRows((current) => new Set([...current, rackDraft.rowLabel])); setRackDraft(emptyRack); setRackOpen(false); }
     setBusy(null);
+  }
+
+  async function saveRackImplementation(
+    draft: RackImplementationDraft | null = implementationDraft,
+  ) {
+    if (!bundle || !selected || !draft) return;
+    setBusy("rack-update");
+    setError("");
+    const response = await fetch(
+      `/api/projects/${projectId}/rack-models/${bundle.model.id}/racks`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...draft,
+          rackId: selected.id,
+          totalUnits: Number(draft.totalUnits),
+          maxPowerKw: optionalNumber(draft.maxPowerKw),
+          widthMm: Number(draft.widthMm),
+          depthMm: Number(draft.depthMm),
+          heightMm: Number(draft.heightMm),
+        }),
+      },
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error ?? "Unable to save the implemented rack.");
+    } else {
+      setBundle(result);
+    }
+    setBusy(null);
+  }
+
+  async function applyRackSuggestion() {
+    if (!selected) return;
+    const draft: RackImplementationDraft = {
+      name: selected.name,
+      displayName: selectedSuggestion.name,
+      profileKey: selectedSuggestion.key,
+      role: selectedSuggestion.role,
+      totalUnits: String(selectedSuggestion.totalUnits),
+      maxPowerKw: String(selectedSuggestion.maxPowerKw),
+      widthMm: String(selectedSuggestion.widthMm),
+      depthMm: String(selectedSuggestion.depthMm),
+      heightMm: String(selectedSuggestion.heightMm),
+      enclosure: selectedSuggestion.enclosure,
+      powerFeed: selectedSuggestion.powerFeed,
+      cooling: selectedSuggestion.cooling,
+      cableManagement: selectedSuggestion.cableManagement,
+      security: selectedSuggestion.security,
+    };
+    setImplementationDraft(draft);
+    await saveRackImplementation(draft);
   }
 
   async function removeEquipment(id: string) {
@@ -1886,7 +2034,18 @@ export function RackModelWorkbench({
                         </button>
                       </div>
                       {isExpanded &&
-                        rowRacks.map((rack) => (
+                        rowRacks.map((rack) => {
+                          const rackIndex = bundle.racks.findIndex(
+                            (item) => item.id === rack.id,
+                          );
+                          const suggestion = suggestedRackProfile(
+                            Math.max(0, rackIndex),
+                          );
+                          const implemented = isImplementedRack(rack.tags);
+                          const displayName =
+                            rackTagValue(rack.tags, "displayName") ||
+                            suggestion.name;
+                          return (
                           <button
                             className={`rack-tree-item ${selectedRack === rack.id ? "is-selected" : ""}`}
                             type="button"
@@ -1894,11 +2053,13 @@ export function RackModelWorkbench({
                             onClick={() => setSelectedRack(rack.id)}
                           >
                             <span>
-                              {rack.name}
+                              <b>{rack.name}</b>
+                              <em>{displayName}</em>
                               <small>
+                                {implemented ? "Implemented" : "Suggested"} ·{" "}
                                 {rack.maxPowerKw
                                   ? `${rack.maxPowerKw} kW`
-                                  : "Power unresolved"}
+                                  : `${suggestion.maxPowerKw} kW basis`}
                               </small>
                             </span>
                             <i
@@ -1914,7 +2075,8 @@ export function RackModelWorkbench({
                               )}
                             </i>
                           </button>
-                        ))}
+                          );
+                        })}
                     </section>
                   );
                 })
@@ -1954,8 +2116,45 @@ export function RackModelWorkbench({
                 <>
                   <div className="rack-selection-status">
                     <span />
-                    Selected in model
+                    {isImplementedRack(selected.tags)
+                      ? "Implemented configuration"
+                      : "Suggested configuration — not yet implemented"}
                   </div>
+                  <section className="rack-suggestion-card">
+                    <header>
+                      <span>Suggested rack</span>
+                      <b>{selectedSuggestion.name}</b>
+                    </header>
+                    <p>{selectedSuggestion.description}</p>
+                    <dl>
+                      <div>
+                        <dt>Role</dt>
+                        <dd>{selectedSuggestion.role}</dd>
+                      </div>
+                      <div>
+                        <dt>Envelope</dt>
+                        <dd>
+                          {selectedSuggestion.totalUnits}U ·{" "}
+                          {selectedSuggestion.maxPowerKw} kW
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Cooling</dt>
+                        <dd>{selectedSuggestion.cooling}</dd>
+                      </div>
+                    </dl>
+                    {["generated", "rejected"].includes(
+                      bundle.model.status,
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={applyRackSuggestion}
+                        disabled={!!busy}
+                      >
+                        <CheckCircle2 size={14} /> Apply this suggestion
+                      </button>
+                    )}
+                  </section>
                   <dl className="rack-metric-grid">
                     <div>
                       <dt>Row / position</dt>
@@ -1983,6 +2182,196 @@ export function RackModelWorkbench({
                       </dd>
                     </div>
                   </dl>
+                  {implementationDraft && (
+                    <section className="rack-implementation-editor">
+                      <header>
+                        <div>
+                          <span>Implemented rack</span>
+                          <h4>Edit this rack only</h4>
+                        </div>
+                        <span className="rack-implementation-code">
+                          {selected.name}
+                        </span>
+                      </header>
+                      <fieldset
+                        disabled={
+                          !!busy ||
+                          !["generated", "rejected"].includes(
+                            bundle.model.status,
+                          )
+                        }
+                      >
+                        <label>
+                          <span>Rack ID / name</span>
+                          <input
+                            value={implementationDraft.name}
+                            onChange={(event) =>
+                              setImplementationDraft({
+                                ...implementationDraft,
+                                name: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>Rack profile</span>
+                          <select
+                            value={implementationDraft.profileKey}
+                            onChange={(event) =>
+                              chooseImplementationProfile(event.target.value)
+                            }
+                          >
+                            {suggestedRackProfiles.map((profile) => (
+                              <option key={profile.key} value={profile.key}>
+                                {profile.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>Implemented display name</span>
+                          <input
+                            value={implementationDraft.displayName}
+                            onChange={(event) =>
+                              setImplementationDraft({
+                                ...implementationDraft,
+                                displayName: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>Operational role</span>
+                          <input
+                            value={implementationDraft.role}
+                            onChange={(event) =>
+                              setImplementationDraft({
+                                ...implementationDraft,
+                                role: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <div className="rack-implementation-row">
+                          <label>
+                            <span>Rack units</span>
+                            <input
+                              type="number"
+                              min="12"
+                              max="60"
+                              value={implementationDraft.totalUnits}
+                              onChange={(event) =>
+                                setImplementationDraft({
+                                  ...implementationDraft,
+                                  totalUnits: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                          <label>
+                            <span>Power kW</span>
+                            <input
+                              type="number"
+                              min="0.1"
+                              max="500"
+                              step="0.1"
+                              value={implementationDraft.maxPowerKw}
+                              onChange={(event) =>
+                                setImplementationDraft({
+                                  ...implementationDraft,
+                                  maxPowerKw: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        </div>
+                        <div className="rack-implementation-row rack-implementation-dimensions">
+                          {(
+                            [
+                              ["widthMm", "Width mm"],
+                              ["depthMm", "Depth mm"],
+                              ["heightMm", "Height mm"],
+                            ] as const
+                          ).map(([field, label]) => (
+                            <label key={field}>
+                              <span>{label}</span>
+                              <input
+                                type="number"
+                                value={implementationDraft[field]}
+                                onChange={(event) =>
+                                  setImplementationDraft({
+                                    ...implementationDraft,
+                                    [field]: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <label>
+                          <span>Enclosure</span>
+                          <select
+                            value={implementationDraft.enclosure}
+                            onChange={(event) =>
+                              setImplementationDraft({
+                                ...implementationDraft,
+                                enclosure: event.target.value,
+                              })
+                            }
+                          >
+                            <option>Closed cabinet</option>
+                            <option>Open frame</option>
+                          </select>
+                        </label>
+                        {(
+                          [
+                            ["powerFeed", "Power and PDU arrangement"],
+                            ["cooling", "Cooling architecture"],
+                            ["cableManagement", "Cable management"],
+                            ["security", "Physical security"],
+                          ] as const
+                        ).map(([field, label]) => (
+                          <label key={field}>
+                            <span>{label}</span>
+                            <input
+                              value={implementationDraft[field]}
+                              onChange={(event) =>
+                                setImplementationDraft({
+                                  ...implementationDraft,
+                                  [field]: event.target.value,
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                      </fieldset>
+                      {["generated", "rejected"].includes(
+                        bundle.model.status,
+                      ) ? (
+                        <button
+                          type="button"
+                          onClick={() => saveRackImplementation()}
+                          disabled={
+                            !!busy ||
+                            !implementationDraft.name.trim() ||
+                            !implementationDraft.displayName.trim()
+                          }
+                        >
+                          {busy === "rack-update" ? (
+                            <LoaderCircle className="spin" size={14} />
+                          ) : (
+                            <CheckCircle2 size={14} />
+                          )}
+                          Save implemented rack
+                        </button>
+                      ) : (
+                        <p className="rack-editor-locked">
+                          Return this revision to draft to edit its implemented
+                          rack specification.
+                        </p>
+                      )}
+                    </section>
+                  )}
                   {equipmentOpen && (
                     <div className="rack-equipment-form">
                       <h4>Add rack-mounted component</h4>

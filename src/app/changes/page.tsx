@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { ChangeAssessmentList } from "@/components/change-assessment-list";
 import { FeatureShell } from "@/components/feature-shell";
-import { getDashboardData } from "@/lib/dashboard-data";
+import { getProjectShellData } from "@/lib/dashboard-data";
 import { db } from "@/lib/db/client";
 import { documents, documentVersions } from "@/lib/db/schema";
 import { getActiveProjectId } from "@/lib/projects/current";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function ChangesPage() {
   const projectId = await getActiveProjectId();
   const [data, rows] = await Promise.all([
-    getDashboardData(projectId),
+    getProjectShellData(projectId),
     db.select({ id: documentVersions.id, documentId: documents.id, title: documents.title, revision: documentVersions.revision, status: documentVersions.status, extractionStatus: documentVersions.extractionStatus, createdAt: documentVersions.createdAt }).from(documentVersions).innerJoin(documents, eq(documentVersions.documentId, documents.id)).where(eq(documents.projectId, projectId)).orderBy(desc(documentVersions.createdAt))
   ]);
   if (!data) throw new Error("Project not found");
